@@ -1,0 +1,439 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>LaboratoirePage</class>
+ <widget class="QWidget" name="LaboratoirePage">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>960</width>
+    <height>678</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>Smart Research – Laboratoire</string>
+  </property>
+  <layout class="QVBoxLayout" name="mainVLayout">
+   <property name="spacing">
+    <number>0</number>
+   </property>
+   <item>
+    <layout class="QHBoxLayout" name="headerLayout">
+     <property name="spacing">
+      <number>12</number>
+     </property>
+     <item>
+      <widget class="QLabel" name="lblLogo">
+       <property name="styleSheet">
+        <string>border-radius:22px; background: qlineargradient(x1:0,y1:0,x2:1,y2:1, stop:0 #1b3a6b, stop:1 #2e6b8a); border:3px solid #c8d6e0;</string>
+       </property>
+       <property name="fixedSize" stdset="0">
+        <size>
+         <width>44</width>
+         <height>44</height>
+        </size>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <layout class="QVBoxLayout" name="brandLayout">
+       <property name="spacing">
+        <number>1</number>
+       </property>
+       <item>
+        <widget class="QLabel" name="lblBrand">
+         <property name="styleSheet">
+          <string>font-size:16px; font-weight:700; color:#1b3a6b; letter-spacing:1.5px;</string>
+         </property>
+         <property name="text">
+          <string>SMART RESEARCH</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QLabel" name="lblSubBrand">
+         <property name="styleSheet">
+          <string>font-size:10px; font-weight:600; color:#2e8b7a; letter-spacing:1.8px;</string>
+         </property>
+         <property name="text">
+          <string>PUBLICATION &amp; LABORATOIRE</string>
+         </property>
+        </widget>
+       </item>
+      </layout>
+     </item>
+     <item>
+      <widget class="QPushButton" name="btnUser">
+       <property name="styleSheet">
+        <string>border:none; background:none; font-size:20px; color:#1b3a6b; cursor:pointer;</string>
+       </property>
+       <property name="text">
+        <string>👤</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QPushButton" name="btnExit">
+       <property name="styleSheet">
+        <string>border:none; background:none; font-size:20px; color:#2e8b7a; cursor:pointer;</string>
+       </property>
+       <property name="text">
+        <string>➡</string>
+       </property>
+      </widget>
+     </item>
+    </layout>
+   </item>
+   <item>
+    <layout class="QHBoxLayout" name="bodyLayout">
+     <property name="spacing">
+      <number>0</number>
+     </property>
+     <item>
+      <widget class="QFrame" name="sidebar">
+       <property name="styleSheet">
+        <string>QFrame#sidebar { background-color:#1b3a6b; }</string>
+       </property>
+       <property name="fixedWidth" stdset="0">
+        <number>200</number>
+       </property>
+       <layout class="QVBoxLayout" name="sidebarLayout">
+        <property name="spacing">
+         <number>0</number>
+        </property>
+        <item>
+         <widget class="QPushButton" name="btnDashboard">
+          <property name="styleSheet">
+           <string>QPushButton { border:none; background:none; color:#fff; font-size:13px; font-weight:500; text-align:left; padding:12px 20px; }
+QPushButton:hover { background:rgba(255,255,255,0.08); }</string>
+          </property>
+          <property name="text">
+           <string> ⊞ Dashboard</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QPushButton" name="btnPublications">
+          <property name="styleSheet">
+           <string>QPushButton { border:none; background:none; color:#fff; font-size:13px; font-weight:500; text-align:left; padding:12px 20px; }
+QPushButton:hover { background:rgba(255,255,255,0.08); }</string>
+          </property>
+          <property name="text">
+           <string> 📄 Publications</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QPushButton" name="btnLaboratoire">
+          <property name="styleSheet">
+           <string>QPushButton { border:none; background:rgba(255,255,255,0.13); color:#fff; font-size:13px; font-weight:500; text-align:left; padding:12px 20px; }
+QPushButton:hover { background:rgba(255,255,255,0.18); }</string>
+          </property>
+          <property name="text">
+           <string> 🧪 Laboratoire</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QPushButton" name="btnChercheurs">
+          <property name="styleSheet">
+           <string>QPushButton { border:none; background:none; color:#fff; font-size:13px; font-weight:500; text-align:left; padding:12px 20px; }
+QPushButton:hover { background:rgba(255,255,255,0.08); }</string>
+          </property>
+          <property name="text">
+           <string> 👥 Chercheurs</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QPushButton" name="btnEvenements">
+          <property name="styleSheet">
+           <string>QPushButton { border:none; background:none; color:#fff; font-size:13px; font-weight:500; text-align:left; padding:12px 20px; }
+QPushButton:hover { background:rgba(255,255,255,0.08); }</string>
+          </property>
+          <property name="text">
+           <string> 📅 Evénements</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QPushButton" name="btnEquipements">
+          <property name="styleSheet">
+           <string>QPushButton { border:none; background:none; color:#fff; font-size:13px; font-weight:500; text-align:left; padding:12px 20px; }
+QPushButton:hover { background:rgba(255,255,255,0.08); }</string>
+          </property>
+          <property name="text">
+           <string>🔬 Équipements</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QPushButton" name="btnProjets">
+          <property name="styleSheet">
+           <string>QPushButton { border:none; background:none; color:#fff; font-size:13px; font-weight:500; text-align:left; padding:12px 20px; }
+QPushButton:hover { background:rgba(255,255,255,0.08); }</string>
+          </property>
+          <property name="text">
+           <string>🧪 Projets</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <spacer name="sidebarSpacer">
+          <property name="orientation">
+           <enum>Qt::Orientation::Vertical</enum>
+          </property>
+          <property name="sizeHint" stdset="0">
+           <size>
+            <width>0</width>
+            <height>0</height>
+           </size>
+          </property>
+         </spacer>
+        </item>
+       </layout>
+      </widget>
+     </item>
+     <item>
+      <layout class="QVBoxLayout" name="contentLayout">
+       <property name="spacing">
+        <number>12</number>
+       </property>
+       <item>
+        <widget class="QLabel" name="lblPageTitle">
+         <property name="styleSheet">
+          <string>font-size:20px; font-weight:600; color:#2c3e6b;</string>
+         </property>
+         <property name="text">
+          <string>Laboratoire</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QTabWidget" name="tabWidget">
+         <property name="styleSheet">
+          <string>
+QTabWidget::pane { border:none; background:#f8fafc; }
+QTabBar::tab { background:none; border:none; padding:9px 20px; font-size:13px; font-weight:600; color:#6a7a8f; border-bottom:3px solid transparent; }
+QTabBar::tab:selected { color:#1b3a6b; border-bottom-color:#1b3a6b; }
+QTabBar::tab:hover:!selected { color:#2c3e6b; }
+          </string>
+         </property>
+         <property name="currentIndex">
+          <number>0</number>
+         </property>
+         <widget class="QWidget" name="tabExperiences">
+          <attribute name="title">
+           <string>Gestion Expériences / Projets</string>
+          </attribute>
+          <layout class="QVBoxLayout" name="tab1Layout">
+           <property name="spacing">
+            <number>12</number>
+           </property>
+           <item>
+            <layout class="QVBoxLayout" name="formCardLayout">
+             <property name="spacing">
+              <number>14</number>
+             </property>
+             <item>
+              <widget class="QLabel" name="lblFormTitle">
+               <property name="styleSheet">
+                <string>font-size:14px; font-weight:600; color:#2c3e6b;</string>
+               </property>
+               <property name="text">
+                <string>Ajouter / Modifier une expérience / un projet</string>
+               </property>
+              </widget>
+             </item>
+             <item>
+              <layout class="QGridLayout" name="formGrid">
+               <property name="spacing">
+                <number>10</number>
+               </property>
+               <item row="0" column="0">
+                <widget class="QLabel" name="lblId">
+                 <property name="text">
+                  <string>ID</string>
+                 </property>
+                </widget>
+               </item>
+               <item row="0" column="1">
+                <widget class="QLineEdit" name="id_experience"/>
+               </item>
+               <item row="1" column="0">
+                <widget class="QLabel" name="lblTitre">
+                 <property name="text">
+                  <string>Titre</string>
+                 </property>
+                </widget>
+               </item>
+               <item row="1" column="1">
+                <widget class="QLineEdit" name="titre_experience"/>
+               </item>
+               <item row="2" column="0">
+                <widget class="QLabel" name="lblType">
+                 <property name="text">
+                  <string>Type</string>
+                 </property>
+                </widget>
+               </item>
+               <item row="2" column="1">
+                <widget class="QComboBox" name="type_experience">
+                 <item>
+                  <property name="text">
+                   <string>— Sélectionner —</string>
+                  </property>
+                 </item>
+                 <item>
+                  <property name="text">
+                   <string>Expérience</string>
+                  </property>
+                 </item>
+                 <item>
+                  <property name="text">
+                   <string>Projet de recherche</string>
+                  </property>
+                 </item>
+                 <item>
+                  <property name="text">
+                   <string>Thèse</string>
+                  </property>
+                 </item>
+                 <item>
+                  <property name="text">
+                   <string>Collaboration</string>
+                  </property>
+                 </item>
+                 <item>
+                  <property name="text">
+                   <string>Preuve de concept</string>
+                  </property>
+                 </item>
+                </widget>
+               </item>
+               <item row="3" column="0">
+                <widget class="QLabel" name="lblDateDebut">
+                 <property name="text">
+                  <string>Date début</string>
+                 </property>
+                </widget>
+               </item>
+               <item row="3" column="1">
+                <widget class="QDateEdit" name="date_debut"/>
+               </item>
+               <item row="4" column="0">
+                <widget class="QLabel" name="lblDateFin">
+                 <property name="text">
+                  <string>Date fin (prévue)</string>
+                 </property>
+                </widget>
+               </item>
+               <item row="4" column="1">
+                <widget class="QDateEdit" name="date_fin"/>
+               </item>
+               <item row="5" column="0">
+                <widget class="QLabel" name="lblStatut">
+                 <property name="text">
+                  <string>Statut</string>
+                 </property>
+                </widget>
+               </item>
+               <item row="5" column="1">
+                <widget class="QComboBox" name="statut">
+                 <item>
+                  <property name="text">
+                   <string>Planifié</string>
+                  </property>
+                 </item>
+                 <item>
+                  <property name="text">
+                   <string>En cours</string>
+                  </property>
+                 </item>
+                 <item>
+                  <property name="text">
+                   <string>Terminé</string>
+                  </property>
+                 </item>
+                 <item>
+                  <property name="text">
+                   <string>Suspendu</string>
+                  </property>
+                 </item>
+                 <item>
+                  <property name="text">
+                   <string>Annulé</string>
+                  </property>
+                 </item>
+                </widget>
+               </item>
+               <item row="6" column="0" colspan="2">
+                <layout class="QHBoxLayout" name="formActionsLayout">
+                 <item>
+                  <widget class="QPushButton" name="btnAjouter">
+                   <property name="styleSheet">
+                    <string>background:#2e8b7a; color:white;</string>
+                   </property>
+                   <property name="text">
+                    <string>Ajouter</string>
+                   </property>
+                  </widget>
+                 </item>
+                 <item>
+                  <widget class="QPushButton" name="btnModifier">
+                   <property name="styleSheet">
+                    <string>background:#1b3a6b; color:white;</string>
+                   </property>
+                   <property name="text">
+                    <string>Modifier</string>
+                   </property>
+                  </widget>
+                 </item>
+                 <item>
+                  <widget class="QPushButton" name="btnSupprimer">
+                   <property name="styleSheet">
+                    <string>background:#c0392b; color:white;</string>
+                   </property>
+                   <property name="text">
+                    <string>Supprimer</string>
+                   </property>
+                  </widget>
+                 </item>
+                </layout>
+               </item>
+              </layout>
+             </item>
+            </layout>
+           </item>
+           <item>
+            <layout class="QVBoxLayout" name="tableCardLayout">
+             <item>
+              <widget class="QLabel" name="lblTableTitle">
+               <property name="text">
+                <string>Expériences / Projets enregistrés</string>
+               </property>
+              </widget>
+             </item>
+             <item>
+              <widget class="QTableView" name="tableExperiences"/>
+             </item>
+            </layout>
+           </item>
+          </layout>
+         </widget>
+         <widget class="QWidget" name="tabStats">
+          <attribute name="title">
+           <string>Statistiques</string>
+          </attribute>
+         </widget>
+        </widget>
+       </item>
+      </layout>
+     </item>
+    </layout>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>
