@@ -1,0 +1,350 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>MainWindow</class>
+ <widget class="QMainWindow" name="MainWindow">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>1200</width>
+    <height>750</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>Smart Research Publication Manager</string>
+  </property>
+  <property name="layoutDirection">
+   <enum>Qt::LayoutDirection::LeftToRight</enum>
+  </property>
+  <property name="autoFillBackground">
+   <bool>false</bool>
+  </property>
+  <property name="styleSheet">
+   <string notr="true">/* style.qss */
+QWidget {
+  background: #F3F6FA;
+  color: #1F2D3D;
+  font-family: &quot;Segoe UI&quot;, &quot;Inter&quot;, sans-serif;
+  font-size: 10pt;
+}
+
+/* Sidebar */
+QFrame#sideBar {
+  background: qlineargradient(x1:0,y1:0,x2:0,y2:1, stop:0 #0D3B73, stop:1 #1E5AA8);
+  color: white;
+}
+QLabel#labelTitle {
+  color: white;
+  font-weight: 700;
+  font-size: 14pt;
+}
+
+/* Header */
+QLabel#labelModule {
+  color: #1F2D3D;
+  font-size: 14pt;
+  font-weight: 600;
+}
+
+/* Buttons */
+QPushButton {
+  background: white;
+  border: 1px solid #D3DCE6;
+  border-radius: 6px;
+  padding: 6px 10px;
+}
+QPushButton#btnAdd {
+  background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 #2DBE5A, stop:1 #1DA14A);
+  color: white;
+  border: none;
+}
+QPushButton#exportBtn, QPushButton#matchmakingBtn {
+  background: #E9EEF5;
+}
+
+/* Table */
+QTableWidget {
+  background: white;
+  border: 1px solid #E6EDF5;
+  gridline-color: #F0F2F6;
+  selection-background-color: #DDEBF7;
+}
+
+/* Search field */
+QLineEdit#editSearch {
+  border: 1px solid #D3DCE6;
+  border-radius: 6px;
+  padding: 6px;
+}
+
+/* Small action buttons used inside table row */
+QPushButton.rowButton {
+  min-width: 70px;
+  max-height: 26px;
+  padding: 3px;
+}
+</string>
+  </property>
+  <widget class="QWidget" name="centralwidget">
+   <layout class="QHBoxLayout" name="horizontalLayout">
+    <item>
+     <widget class="QFrame" name="sideBar">
+      <property name="minimumSize">
+       <size>
+        <width>220</width>
+        <height>0</height>
+       </size>
+      </property>
+      <property name="frameShape">
+       <enum>QFrame::Shape::StyledPanel</enum>
+      </property>
+      <layout class="QVBoxLayout" name="sideBarLayout">
+       <item>
+        <widget class="QLabel" name="labelTitle">
+         <property name="maximumSize">
+          <size>
+           <width>200</width>
+           <height>200</height>
+          </size>
+         </property>
+         <property name="styleSheet">
+          <string notr="true">font-weight:600; font-size:14px;</string>
+         </property>
+         <property name="text">
+          <string/>
+         </property>
+         <property name="textFormat">
+          <enum>Qt::TextFormat::AutoText</enum>
+         </property>
+         <property name="scaledContents">
+          <bool>false</bool>
+         </property>
+         <property name="alignment">
+          <set>Qt::AlignmentFlag::AlignCenter</set>
+         </property>
+         <property name="wordWrap">
+          <bool>false</bool>
+         </property>
+         <property name="margin">
+          <number>0</number>
+         </property>
+         <property name="indent">
+          <number>-1</number>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QPushButton" name="btnDashboard">
+         <property name="text">
+          <string>Dashboard</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QPushButton" name="btnResearchers">
+         <property name="text">
+          <string>Chercheurs</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QPushButton" name="btnPublications">
+         <property name="text">
+          <string>Publications</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QPushButton" name="btnSettings">
+         <property name="text">
+          <string>Paramètres</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <spacer name="verticalSpacer">
+         <property name="orientation">
+          <enum>Qt::Orientation::Vertical</enum>
+         </property>
+         <property name="sizeHint" stdset="0">
+          <size>
+           <width>20</width>
+           <height>40</height>
+          </size>
+         </property>
+        </spacer>
+       </item>
+      </layout>
+     </widget>
+    </item>
+    <item>
+     <layout class="QVBoxLayout" name="mainLayout">
+      <item>
+       <layout class="QHBoxLayout" name="headerLayout">
+        <item>
+         <widget class="QLabel" name="labelModule">
+          <property name="styleSheet">
+           <string notr="true">font-size:16px; font-weight:600;</string>
+          </property>
+          <property name="text">
+           <string>Gestion des Chercheurs</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <spacer name="horizontalSpacer">
+          <property name="orientation">
+           <enum>Qt::Orientation::Horizontal</enum>
+          </property>
+          <property name="sizeHint" stdset="0">
+           <size>
+            <width>0</width>
+            <height>0</height>
+           </size>
+          </property>
+         </spacer>
+        </item>
+        <item>
+         <widget class="QLineEdit" name="editSearch">
+          <property name="placeholderText">
+           <string>Rechercher un chercheur...</string>
+          </property>
+         </widget>
+        </item>
+       </layout>
+      </item>
+      <item>
+       <layout class="QHBoxLayout" name="actionLayout">
+        <item>
+         <widget class="QPushButton" name="btnAdd">
+          <property name="text">
+           <string>Ajouter</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QPushButton" name="btnEdit">
+          <property name="text">
+           <string>Modifier</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QPushButton" name="btnDelete">
+          <property name="text">
+           <string>Supprimer</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <spacer name="actionSpacer">
+          <property name="orientation">
+           <enum>Qt::Orientation::Horizontal</enum>
+          </property>
+          <property name="sizeHint" stdset="0">
+           <size>
+            <width>0</width>
+            <height>0</height>
+           </size>
+          </property>
+         </spacer>
+        </item>
+       </layout>
+      </item>
+      <item>
+       <widget class="QTableWidget" name="tableResearchers">
+        <property name="rowCount">
+         <number>0</number>
+        </property>
+        <property name="columnCount">
+         <number>6</number>
+        </property>
+        <column>
+         <property name="text">
+          <string>ID</string>
+         </property>
+        </column>
+        <column>
+         <property name="text">
+          <string>Nom</string>
+         </property>
+        </column>
+        <column>
+         <property name="text">
+          <string>Prénom</string>
+         </property>
+        </column>
+        <column>
+         <property name="text">
+          <string>Email</string>
+         </property>
+        </column>
+        <column>
+         <property name="text">
+          <string>Institution</string>
+         </property>
+        </column>
+        <column>
+         <property name="text">
+          <string>Domaine</string>
+         </property>
+        </column>
+       </widget>
+      </item>
+      <item>
+       <layout class="QHBoxLayout" name="bottomBarLayout">
+        <item>
+         <widget class="QPushButton" name="exportBtn">
+          <property name="text">
+           <string>Exporter ▾</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QPushButton" name="matchmakingBtn">
+          <property name="text">
+           <string>Matchmaking</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <spacer name="bottomSpacer">
+          <property name="orientation">
+           <enum>Qt::Orientation::Horizontal</enum>
+          </property>
+          <property name="sizeHint" stdset="0">
+           <size>
+            <width>0</width>
+            <height>0</height>
+           </size>
+          </property>
+         </spacer>
+        </item>
+        <item>
+         <widget class="QLabel" name="statusCountLabel">
+          <property name="text">
+           <string>0 chercheurs</string>
+          </property>
+         </widget>
+        </item>
+       </layout>
+      </item>
+     </layout>
+    </item>
+   </layout>
+  </widget>
+  <widget class="QMenuBar" name="menubar">
+   <property name="geometry">
+    <rect>
+     <x>0</x>
+     <y>0</y>
+     <width>1200</width>
+     <height>27</height>
+    </rect>
+   </property>
+  </widget>
+  <widget class="QStatusBar" name="statusbar"/>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>
