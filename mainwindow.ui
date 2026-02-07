@@ -612,7 +612,7 @@ background: transparent;</string>
            <number>30</number>
           </property>
           <item>
-           <widget class="QTabWidget" name="tabWidget">
+           <widget class="QTabWidget" name="tabwidget">
             <property name="styleSheet">
              <string notr="true">QTabWidget::pane {
     background: white;
@@ -652,7 +652,7 @@ QTabBar::tab:selected:hover {
 }</string>
             </property>
             <property name="currentIndex">
-             <number>0</number>
+             <number>1</number>
             </property>
             <widget class="QWidget" name="tab_crud">
              <attribute name="title">
@@ -880,7 +880,7 @@ QLineEdit:focus {
                  <number>12</number>
                 </property>
                 <item>
-                 <widget class="QPushButton" name="btn_ajouter">
+                 <widget class="QPushButton" name="btn_ajouter_event">
                   <property name="minimumSize">
                    <size>
                     <width>140</width>
@@ -912,7 +912,7 @@ QPushButton:hover {
                  </widget>
                 </item>
                 <item>
-                 <widget class="QPushButton" name="btn_modifier">
+                 <widget class="QPushButton" name="btn_modifier_event">
                   <property name="minimumSize">
                    <size>
                     <width>140</width>
@@ -955,7 +955,7 @@ QPushButton:hover {
                  </spacer>
                 </item>
                 <item>
-                 <widget class="QPushButton" name="btn_supprimer">
+                 <widget class="QPushButton" name="btn_supprimer_event">
                   <property name="minimumSize">
                    <size>
                     <width>140</width>
