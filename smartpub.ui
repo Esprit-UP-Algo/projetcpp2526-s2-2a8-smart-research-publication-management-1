@@ -7,7 +7,7 @@
     <x>0</x>
     <y>0</y>
     <width>1462</width>
-    <height>920</height>
+    <height>1581</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -33,7 +33,7 @@
     <item>
      <widget class="QStackedWidget" name="stackedWidgetModules">
       <property name="currentIndex">
-       <number>0</number>
+       <number>3</number>
       </property>
       <widget class="QWidget" name="pageChercheurs">
        <layout class="QVBoxLayout" name="verticalLayoutChercheursMain">
@@ -960,13 +960,13 @@ border: none;</string>
                 <property name="minimumSize">
                  <size>
                   <width>0</width>
-                  <height>80</height>
+                  <height>90</height>
                  </size>
                 </property>
                 <property name="maximumSize">
                  <size>
                   <width>16777215</width>
-                  <height>80</height>
+                  <height>90</height>
                  </size>
                 </property>
                 <property name="frameShape">
@@ -1097,7 +1097,7 @@ border: none;</string>
                        <cursorShape>PointingHandCursor</cursorShape>
                       </property>
                       <property name="text">
-                       <string>Liste</string>
+                       <string>📋 Liste</string>
                       </property>
                       <property name="checkable">
                        <bool>true</bool>
@@ -1125,7 +1125,7 @@ border: none;</string>
                        <cursorShape>PointingHandCursor</cursorShape>
                       </property>
                       <property name="text">
-                       <string>Ajouter</string>
+                       <string>➕ Ajouter</string>
                       </property>
                       <property name="checkable">
                        <bool>true</bool>
@@ -1293,8 +1293,8 @@ border: none;</string>
                       <rect>
                        <x>0</x>
                        <y>0</y>
-                       <width>22</width>
-                       <height>22</height>
+                       <width>98</width>
+                       <height>28</height>
                       </rect>
                      </property>
                      <layout class="QGridLayout" name="cherchGridLayoutCards">
@@ -1809,7 +1809,7 @@ border: none;</string>
               </size>
              </property>
              <property name="styleSheet">
-              <string notr="true"/>
+              <string notr="true">background-color: #020617;</string>
              </property>
              <property name="frameShape">
               <enum>QFrame::Shape::NoFrame</enum>
@@ -2112,7 +2112,7 @@ QPushButton:hover {
 }</string>
                </property>
                <property name="text">
-                <string>📅 Evenements</string>
+                <string>📅 Événements</string>
                </property>
                <property name="checkable">
                 <bool>true</bool>
@@ -2186,13 +2186,13 @@ border-bottom: 1px solid #e2e8f0;</string>
               <number>30</number>
              </property>
              <property name="topMargin">
-              <number>0</number>
+              <number>11</number>
              </property>
              <property name="rightMargin">
               <number>30</number>
              </property>
              <property name="bottomMargin">
-              <number>0</number>
+              <number>11</number>
              </property>
              <item>
               <layout class="QVBoxLayout" name="SR_verticalLayoutTitle">
@@ -2334,13 +2334,13 @@ border: none;</string>
             <property name="minimumSize">
              <size>
               <width>0</width>
-              <height>100</height>
+              <height>90</height>
              </size>
             </property>
             <property name="maximumSize">
              <size>
               <width>16777215</width>
-              <height>100</height>
+              <height>90</height>
              </size>
             </property>
             <property name="styleSheet">
@@ -4521,21 +4521,21 @@ border: none;</string>
                </property>
                <property name="styleSheet">
                 <string notr="true">QPushButton {
-             background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-                 stop:0 #3b9cff, stop:1 #2dd4bf);
-             color: white;
-             border: none;
-             border-radius: 12px;
-             padding: 14px 20px;
-             font-size: 14px;
-             font-weight: 600;
-             text-align: left;
-             margin: 4px 12px;
-         }
-         QPushButton:hover {
-             background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-                 stop:0 #2b8cef, stop:1 #1dc4af);
-         }</string>
+              background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                  stop:0 #3b82f6, stop:1 #10b981);
+              color: white;
+              border: none;
+              border-radius: 12px;
+              padding: 14px 20px;
+              font-size: 14px;
+              font-weight: 600;
+              text-align: left;
+              margin: 4px 12px;
+          }
+          QPushButton:hover {
+              background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                  stop:0 #2563eb, stop:1 #059669);
+          }</string>
                </property>
                <property name="text">
                 <string>💰 Finances</string>
@@ -4919,17 +4919,17 @@ border: none;</string>
                </property>
                <property name="styleSheet">
                 <string notr="true">QPushButton {
-             background-color: #3b9cff;
-             color: white;
-             border: none;
-             border-radius: 12px;
-             padding: 12px 16px;
-             font-size: 13px;
-             font-weight: 600;
-         }
-         QPushButton:hover {
-             background-color: #2b8cef;
-         }</string>
+    background-color: #3b82f6;
+    color: white;
+    border: none;
+    border-radius: 12px;
+    padding: 12px 16px;
+    font-size: 13px;
+    font-weight: 600;
+}
+QPushButton:hover {
+    background-color: #2563eb;
+}</string>
                </property>
                <property name="text">
                 <string>🔍</string>
