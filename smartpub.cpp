@@ -991,28 +991,35 @@ void SmartPub::setupSidebar() {
             border-top: 1px solid #334155;
         }
     )");
-  profileWidget->setFixedHeight(80);
+  profileWidget->setFixedHeight(110);
 
-  QHBoxLayout *profileLayout = new QHBoxLayout(profileWidget);
-  profileLayout->setSpacing(15);
-  profileLayout->setContentsMargins(20, 10, 20, 10);
+  // Layout principal du profile widget (Vertical)
+  QVBoxLayout *profileMainLayout = new QVBoxLayout(profileWidget);
+  profileMainLayout->setSpacing(8);
+  profileMainLayout->setContentsMargins(15, 10, 15, 10);
 
-  // Avatar (Restoring Fix)
-  avatarLabel = new QLabel(profileWidget);
+  // Top row: Avatar - Info - Settings
+  QWidget *topRowWidget = new QWidget();
+  QHBoxLayout *topRowLayout = new QHBoxLayout(topRowWidget);
+  topRowLayout->setSpacing(12);
+  topRowLayout->setContentsMargins(0, 0, 0, 0);
+
+  // Avatar
+  avatarLabel = new QLabel();
   avatarLabel->setFixedSize(45, 45);
   avatarLabel->setStyleSheet(R"(
         QLabel {
             border-image: url(:/avatar.png);
             border-radius: 22px;
-            border: 2px solid white;
+            border: none;
             background-color: #10b981;
         }
     )");
-  // avatarLabel->setAlignment(Qt::AlignCenter);
+  topRowLayout->addWidget(avatarLabel);
 
-  // Info utilisateur
+  // Info utilisateur (Nom et Role)
   QVBoxLayout *infoLayout = new QVBoxLayout();
-  infoLayout->setSpacing(3);
+  infoLayout->setSpacing(2);
 
   nameLabel = new QLabel(currentUser.displayName);
   nameLabel->setStyleSheet("color: white; font-size: 14px; font-weight: 600;");
@@ -1023,38 +1030,10 @@ void SmartPub::setupSidebar() {
   roleLabel->setStyleSheet("font-size: 12px; color: #94a3b8;");
   infoLayout->addWidget(roleLabel);
 
-  infoLayout->addWidget(roleLabel);
+  topRowLayout->addLayout(infoLayout, 1);
 
-  // Bouton de déconnexion
-  btnLogout = new QPushButton("Déconnexion");
-  btnLogout->setStyleSheet(R"(
-        QPushButton {
-            background-color: transparent;
-            color: #ef4444; /* Rouge */
-            border: 1px solid #ef4444;
-            border-radius: 4px;
-            padding: 4px 8px;
-            font-size: 11px;
-            font-weight: bold;
-        }
-        QPushButton:hover {
-            background-color: #ef4444;
-            color: white;
-        }
-    )");
-  connect(btnLogout, &QPushButton::clicked, this, [this]() {
-    // Logique de déconnexion
-    mainStack->setCurrentIndex(0); // Retour au login
-    isUserLoggedIn = false;
-    // Optionnel : Reset other states if needed
-  });
-  infoLayout->addWidget(btnLogout);
-
-  profileLayout->addWidget(avatarLabel);
-  profileLayout->addLayout(infoLayout);
-
-  // Bouton settings (icon only)
-  btnSettings = new QPushButton("⚙️", profileWidget);
+  // Bouton settings
+  btnSettings = new QPushButton("⚙️");
   btnSettings->setFixedSize(35, 35);
   btnSettings->setCursor(Qt::PointingHandCursor);
   btnSettings->setStyleSheet(R"(
@@ -1072,10 +1051,32 @@ void SmartPub::setupSidebar() {
     )");
   connect(btnSettings, &QPushButton::clicked, this,
           &SmartPub::onSettingsClicked);
+  topRowLayout->addWidget(btnSettings);
 
-  profileLayout->addWidget(avatarLabel);
-  profileLayout->addLayout(infoLayout, 1);
-  profileLayout->addWidget(btnSettings);
+  profileMainLayout->addWidget(topRowWidget);
+
+  // Bottom: Bouton de déconnexion
+  btnLogout = new QPushButton("Déconnexion");
+  btnLogout->setStyleSheet(R"(
+        QPushButton {
+            background-color: transparent;
+            color: #ef4444;
+            border: 1px solid #ef4444;
+            border-radius: 4px;
+            padding: 6px 12px;
+            font-size: 11px;
+            font-weight: bold;
+        }
+        QPushButton:hover {
+            background-color: #ef4444;
+            color: white;
+        }
+    )");
+  connect(btnLogout, &QPushButton::clicked, this, [this]() {
+    mainStack->setCurrentIndex(0);
+    isUserLoggedIn = false;
+  });
+  profileMainLayout->addWidget(btnLogout);
 
   // Ajouter le profil au layout de la sidebar
   QVBoxLayout *sidebarLayout =
@@ -1088,8 +1089,11 @@ void SmartPub::setupSidebar() {
   ui->sidebarFrame->setMouseTracking(true);
   ui->sidebarFrame->installEventFilter(this);
 
-  // Initialisation Logo (Petit) (Restoring Fix)
+  // Initialisation Logo avec margin x=5
   ui->logoIcon->setFixedSize(40, 40);
+  if (ui->verticalLayoutSidebarHeader) {
+    ui->verticalLayoutSidebarHeader->setContentsMargins(15, 0, 20, 0);
+  }
 
   // Force l'état initial réduit correctement
   collapseSidebar();
@@ -1162,16 +1166,14 @@ void SmartPub::updateSidebarProfileVisibility() {
   if (btnLogout)
     btnLogout->setVisible(sidebarExpanded);
 
-  // Ajuster les marges pour centrer l'avatar quand réduit
-  QHBoxLayout *layout = qobject_cast<QHBoxLayout *>(profileWidget->layout());
+  // Ajuster les marges du layout principal (VBoxLayout maintenant)
+  QVBoxLayout *layout = qobject_cast<QVBoxLayout *>(profileWidget->layout());
   if (layout) {
     if (sidebarExpanded) {
-      layout->setContentsMargins(20, 10, 20, 10);
-      layout->setAlignment(Qt::AlignLeft);
+      layout->setContentsMargins(15, 10, 15, 10);
     } else {
-      layout->setContentsMargins(12, 10, 12,
-                                 10); // Ajusté pour centrer 45px dans 70px
-      layout->setAlignment(Qt::AlignCenter);
+      // Centrer l'avatar quand réduit
+      layout->setContentsMargins(12, 10, 12, 10);
     }
   }
 }
@@ -1663,14 +1665,13 @@ void SmartPub::cherchApplyModernStyle() {
 
   if (ui->cherchTitleLabel) {
     ui->cherchTitleLabel->setStyleSheet(
-        "color: #1e293b; font-size: 24px; font-weight: 700; background: "
-        "transparent; border: none;");
+
+      "color: #1e293b; font-size: 28px; font-weight: 700; background: transparent; border: none");
   }
 
   if (ui->cherchSubtitleLabel) {
     ui->cherchSubtitleLabel->setStyleSheet(
-        "color: #64748b; font-size: 13px; background: transparent; border: "
-        "none;");
+        "color: #64748b; font-size: 14px; background: transparent; border: none");
   }
 
   // === TOOLBAR STYLES ===
@@ -3451,9 +3452,7 @@ void SmartPub::on_cherchLineEditRecherche_textChanged(const QString &text) {
 // MODULE PUBLICATIONS
 // ============================================================================
 
-void SmartPub::SR_setupUI() {
-  ui->SR_stackedWidget->setCurrentIndex(0);
-}
+void SmartPub::SR_setupUI() { ui->SR_stackedWidget->setCurrentIndex(0); }
 
 void SmartPub::SR_connectSignals() {
   connect(ui->SR_btnVueListe, &QPushButton::clicked, this,
@@ -3656,8 +3655,8 @@ void SmartPub::on_SR_btnRecherche_clicked() {
 }
 
 void SmartPub::on_SR_btnTri_clicked() {
-    QMenu *menu = new QMenu(this);
-    menu->setStyleSheet(R"(
+  QMenu *menu = new QMenu(this);
+  menu->setStyleSheet(R"(
         QMenu {
             background-color: white;
             border: 1px solid #e2e8f0;
@@ -3683,25 +3682,25 @@ void SmartPub::on_SR_btnTri_clicked() {
         }
     )");
 
-    menu->addAction("Trier par Nom (A-Z)", this,
-                    [this]() { cherchTrierParNom(true); });
-    menu->addAction("Trier par Nom (Z-A)", this,
-                    [this]() { cherchTrierParNom(false); });
-    menu->addAction("Trier par Date (Plus récent)", this,
-                    [this]() { cherchTrierParDateCreation(true); });
-    menu->addAction("Trier par Date (Plus ancien)", this,
-                    [this]() { cherchTrierParDateCreation(false); });
+  menu->addAction("Trier par Nom (A-Z)", this,
+                  [this]() { cherchTrierParNom(true); });
+  menu->addAction("Trier par Nom (Z-A)", this,
+                  [this]() { cherchTrierParNom(false); });
+  menu->addAction("Trier par Date (Plus récent)", this,
+                  [this]() { cherchTrierParDateCreation(true); });
+  menu->addAction("Trier par Date (Plus ancien)", this,
+                  [this]() { cherchTrierParDateCreation(false); });
 
-    menu->exec(QCursor::pos());
+  menu->exec(QCursor::pos());
 }
 
 void SmartPub::on_SR_btnExport_clicked() {
-    QString fileName = QFileDialog::getSaveFileName(
-        this, "Exporter les transactions", QDir::homePath(), "CSV (*.csv)");
-    if (!fileName.isEmpty()) {
-        QMessageBox::information(this, "Export",
-                                 "Transactions exportées avec succès !");
-    }
+  QString fileName = QFileDialog::getSaveFileName(
+      this, "Exporter les transactions", QDir::homePath(), "CSV (*.csv)");
+  if (!fileName.isEmpty()) {
+    QMessageBox::information(this, "Export",
+                             "Transactions exportées avec succès !");
+  }
 }
 
 void SmartPub::on_SR_btnStatistiques_clicked() {
@@ -3813,11 +3812,13 @@ void SmartPub::finConnectSignals() {
   connect(ui->finBtnSupprimerTable, &QPushButton::clicked, this,
           &SmartPub::on_finBtnSupprimerTransaction_clicked);
 }
-
+//background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #3b9cff, stop:1 #2dd4bf);
+//background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #2b8cef, stop:1 #1dc4af);
 void SmartPub::finUpdateButtonStyles() {
   QString activeStyle = R"(
         QPushButton {
-            background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #3b9cff, stop:1 #2dd4bf);
+
+            background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #3b82f6, stop:1 #10b981);
             color: white;
             border: none;
             border-radius: 8px;
@@ -3826,7 +3827,7 @@ void SmartPub::finUpdateButtonStyles() {
             font-weight: 600;
         }
         QPushButton:hover {
-            background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #2b8cef, stop:1 #1dc4af);
+            background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #2563eb, stop:1 #059669);
         }
     )";
 

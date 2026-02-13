@@ -433,7 +433,7 @@
     <item>
      <widget class="QStackedWidget" name="stackedWidgetModules">
       <property name="currentIndex">
-       <number>0</number>
+       <number>2</number>
       </property>
       <widget class="QWidget" name="pageChercheurs">
        <layout class="QVBoxLayout" name="verticalLayoutChercheursMain">
@@ -3834,7 +3834,11 @@ border: none;</string>
                <item>
                 <widget class="QLabel" name="finTitleLabel">
                  <property name="styleSheet">
-                  <string notr="true">color: #1e293b; font-size: 28px; font-weight: 700; background: transparent; border: none;</string>
+                  <string notr="true">color: #1e293b;
+font-size: 28px;
+font-weight: 700;
+background: transparent;
+border: none;</string>
                  </property>
                  <property name="text">
                   <string>Gestion Financière</string>
@@ -3844,7 +3848,10 @@ border: none;</string>
                <item>
                 <widget class="QLabel" name="finSubtitleLabel">
                  <property name="styleSheet">
-                  <string notr="true">color: #64748b; font-size: 14px; background: transparent; border: none;</string>
+                  <string notr="true">color: #64748b;
+font-size: 14px;
+background: transparent;
+border: none;</string>
                  </property>
                  <property name="text">
                   <string>Gérez les transactions et budgets de recherche</string>
@@ -4123,8 +4130,8 @@ QPushButton:hover {
                </property>
                <property name="styleSheet">
                 <string notr="true">QPushButton {
-             background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-                 stop:0 #3b9cff, stop:1 #2dd4bf);
+            background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+        stop:0 #3b82f6, stop:1 #10b981);
              color: white;
              border: none;
              border-radius: 12px;
@@ -4133,8 +4140,8 @@ QPushButton:hover {
              font-weight: 600;
          }
          QPushButton:hover {
-             background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-                 stop:0 #2b8cef, stop:1 #1dc4af);
+              background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+        stop:0 #2563eb, stop:1 #059669);
          }</string>
                </property>
                <property name="text">
@@ -4968,6 +4975,9 @@ QPushButton:hover {
        </layout>
       </widget>
       <widget class="QWidget" name="pageEvenements">
+       <property name="styleSheet">
+        <string notr="true"/>
+       </property>
        <layout class="QVBoxLayout" name="horizontalLayoutEvenements">
         <property name="spacing">
          <number>0</number>
@@ -5027,7 +5037,11 @@ QPushButton:hover {
                <item>
                 <widget class="QLabel" name="evTitleLabel">
                  <property name="styleSheet">
-                  <string notr="true">color: #1e293b; font-size: 28px; font-weight: 700; background: transparent; border: none;</string>
+                  <string notr="true">color: #1e293b;
+font-size: 28px;
+font-weight: 700;
+background: transparent;
+border: none;</string>
                  </property>
                  <property name="text">
                   <string>Gestion des Événements</string>
@@ -5037,7 +5051,10 @@ QPushButton:hover {
                <item>
                 <widget class="QLabel" name="evSubtitleLabel">
                  <property name="styleSheet">
-                  <string notr="true">color: #64748b; font-size: 14px; background: transparent; border: none;</string>
+                  <string notr="true">color: #64748b;
+font-size: 14px;
+background: transparent;
+border: none;</string>
                  </property>
                  <property name="text">
                   <string>Gérez les événements scientifiques et leurs informations</string>
