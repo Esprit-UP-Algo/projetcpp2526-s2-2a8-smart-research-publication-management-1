@@ -1178,6 +1178,41 @@ void SmartPub::updateSidebarProfileVisibility() {
   }
 }
 
+void SmartPub::updateProfileName(int moduleIndex) {
+  if (!nameLabel)
+    return;
+
+  QString newName;
+  // Map module index to appropriate name
+  // Index: 0=Chercheurs, 1=Publications, 2=Finances, 3=Événements, 4=Projets,
+  // 5=Laboratoires
+  switch (moduleIndex) {
+  case 0: // Chercheurs
+    newName = "Responsable RH";
+    break;
+  case 1: // Publications
+    newName = "Chercheur";
+    break;
+  case 2: // Finances
+    newName = "Service finance";
+    break;
+  case 3: // Evenements
+    newName = "Secretere";
+    break;
+  case 4: // Projets
+    newName = "Chef de projet";
+    break;
+  case 5: // Laboratoire
+    newName = "Dr de recherche";
+    break;
+  default:
+    newName = "Administrateur";
+    break;
+  }
+
+  nameLabel->setText(newName);
+}
+
 bool SmartPub::eventFilter(QObject *obj, QEvent *event) {
   if (obj == ui->sidebarFrame) {
     if (event->type() == QEvent::Enter) {
@@ -1398,6 +1433,7 @@ void SmartPub::onSettingsClicked() {
 void SmartPub::on_btnChercheurs_clicked() {
   ui->stackedWidgetModules->setCurrentIndex(0);
   setActiveNavigationButton(0);
+  updateProfileName(0);
   if (cherchIsLoggedIn || currentUser.role == UserRole::Guest) {
     cherchShowMainView();
   }
@@ -1406,12 +1442,14 @@ void SmartPub::on_btnChercheurs_clicked() {
 void SmartPub::on_btnPublications_clicked() {
   ui->stackedWidgetModules->setCurrentIndex(1);
   setActiveNavigationButton(1);
+  updateProfileName(1);
   SR_updateButtonStyles();
 }
 
 void SmartPub::on_btnLaboratoires_clicked() {
   ui->stackedWidgetModules->setCurrentIndex(1);
   setActiveNavigationButton(5);
+  updateProfileName(5);
   QMessageBox::information(this, "Information",
                            "Module Laboratoires en cours de développement");
 }
@@ -1419,6 +1457,7 @@ void SmartPub::on_btnLaboratoires_clicked() {
 void SmartPub::on_btnFinances_clicked() {
   ui->stackedWidgetModules->setCurrentIndex(2);
   setActiveNavigationButton(2);
+  updateProfileName(2);
   finUpdateButtonStyles();
   finAfficherListeTransactions();
 }
@@ -1426,12 +1465,14 @@ void SmartPub::on_btnFinances_clicked() {
 void SmartPub::on_btnProjets_clicked() {
   ui->stackedWidgetModules->setCurrentIndex(4);
   setActiveNavigationButton(4);
+  updateProfileName(4);
   projChargerProjets();
 }
 
 void SmartPub::on_btnEvenements_clicked() {
   ui->stackedWidgetModules->setCurrentIndex(3);
   setActiveNavigationButton(3);
+  updateProfileName(3);
   evAfficherListeEvents();
 }
 
@@ -1666,12 +1707,14 @@ void SmartPub::cherchApplyModernStyle() {
   if (ui->cherchTitleLabel) {
     ui->cherchTitleLabel->setStyleSheet(
 
-      "color: #1e293b; font-size: 28px; font-weight: 700; background: transparent; border: none");
+        "color: #1e293b; font-size: 28px; font-weight: 700; background: "
+        "transparent; border: none");
   }
 
   if (ui->cherchSubtitleLabel) {
     ui->cherchSubtitleLabel->setStyleSheet(
-        "color: #64748b; font-size: 14px; background: transparent; border: none");
+        "color: #64748b; font-size: 14px; background: transparent; border: "
+        "none");
   }
 
   // === TOOLBAR STYLES ===
@@ -3812,8 +3855,9 @@ void SmartPub::finConnectSignals() {
   connect(ui->finBtnSupprimerTable, &QPushButton::clicked, this,
           &SmartPub::on_finBtnSupprimerTransaction_clicked);
 }
-//background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #3b9cff, stop:1 #2dd4bf);
-//background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #2b8cef, stop:1 #1dc4af);
+// background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #3b9cff, stop:1
+// #2dd4bf); background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #2b8cef,
+// stop:1 #1dc4af);
 void SmartPub::finUpdateButtonStyles() {
   QString activeStyle = R"(
         QPushButton {
@@ -4107,6 +4151,28 @@ void SmartPub::on_finBtnSupprimerTransaction_clicked() {
 void SmartPub::evSetupUI() {
   ui->evTabWidget->setCurrentIndex(0);
   evEventSelectionne = -1;
+
+  // Configure evTableEvents to stretch and fill available space
+  if (ui->evTableEvents) {
+    ui->evTableEvents->horizontalHeader()->setStretchLastSection(true);
+    ui->evTableEvents->horizontalHeader()->setSectionResizeMode(
+        QHeaderView::Stretch);
+    ui->evTableEvents->verticalHeader()->setSectionResizeMode(
+        QHeaderView::ResizeToContents);
+    ui->evTableEvents->setSizePolicy(QSizePolicy::Expanding,
+                                     QSizePolicy::Expanding);
+  }
+
+  // Configure evTableSearchEvents to stretch and fill available space
+  if (ui->evTableSearchEvents) {
+    ui->evTableSearchEvents->horizontalHeader()->setStretchLastSection(true);
+    ui->evTableSearchEvents->horizontalHeader()->setSectionResizeMode(
+        QHeaderView::Stretch);
+    ui->evTableSearchEvents->verticalHeader()->setSectionResizeMode(
+        QHeaderView::ResizeToContents);
+    ui->evTableSearchEvents->setSizePolicy(QSizePolicy::Expanding,
+                                           QSizePolicy::Expanding);
+  }
 }
 
 void SmartPub::evConnectSignals() {

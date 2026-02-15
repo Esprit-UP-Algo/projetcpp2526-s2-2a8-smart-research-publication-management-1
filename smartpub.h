@@ -375,6 +375,7 @@ private:
   void updateNavButtonStyles(QPushButton *activeBtn);
   void setActiveNavigationButton(int index);
   void updateSidebarProfileVisibility();
+  void updateProfileName(int moduleIndex);
   void checkPermissions();
   void applyGuestRestrictions();
 

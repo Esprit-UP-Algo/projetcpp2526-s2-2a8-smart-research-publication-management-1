@@ -433,7 +433,7 @@
     <item>
      <widget class="QStackedWidget" name="stackedWidgetModules">
       <property name="currentIndex">
-       <number>2</number>
+       <number>3</number>
       </property>
       <widget class="QWidget" name="pageChercheurs">
        <layout class="QVBoxLayout" name="verticalLayoutChercheursMain">
