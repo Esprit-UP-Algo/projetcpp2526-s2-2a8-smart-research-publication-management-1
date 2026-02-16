@@ -1,12 +1,15 @@
 QT       += core gui widgets charts
+QT += sql
 
 CONFIG += c++17
 
 SOURCES += \
+    connection.cpp \
     main.cpp \
     mainwindow.cpp
 
 HEADERS += \
+    connection.h \
     mainwindow.h
 
 FORMS += \

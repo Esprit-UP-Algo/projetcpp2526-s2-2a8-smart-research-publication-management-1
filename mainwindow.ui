@@ -198,7 +198,7 @@ background: transparent;</string>
                        <string/>
                       </property>
                       <property name="pixmap">
-                       <pixmap resource="ressources.qrc">:/logo.png</pixmap>
+                       <pixmap resource="../SmartPub/ressources.qrc">:/logo.png</pixmap>
                       </property>
                       <property name="scaledContents">
                        <bool>true</bool>
@@ -666,7 +666,7 @@ border: none;</string>
                  <string/>
                 </property>
                 <property name="pixmap">
-                 <pixmap resource="ressources.qrc">:/logo.png</pixmap>
+                 <pixmap resource="../SmartPub/ressources.qrc">:/logo.png</pixmap>
                 </property>
                 <property name="scaledContents">
                  <bool>true</bool>
@@ -1717,8 +1717,6 @@ border: none;</string>
    </layout>
   </widget>
  </widget>
- <resources>
-  <include location="ressources.qrc"/>
- </resources>
+ <resources/>
  <connections/>
 </ui>
