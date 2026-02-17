@@ -1,8 +1,9 @@
-QT += core gui widgets charts
+QT += core gui widgets charts sql
 
 greaterThan(QT_MAJOR_VERSION, 4): QT += widgets
 
 CONFIG += c++17
+CONFIG += console  # Pour afficher les messages de débogage
 
 # You can make your code fail to compile if it uses deprecated APIs.
 # In order to do so, uncomment the following line.
@@ -10,10 +11,12 @@ CONFIG += c++17
 
 SOURCES += \
     main.cpp \
-    smartpub.cpp
+    smartpub.cpp \
+    connection.cpp
 
 HEADERS += \
-    smartpub.h
+    smartpub.h \
+    connection.h
 
 FORMS += \
     smartpub.ui

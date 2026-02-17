@@ -1,8 +1,10 @@
 #include "smartpub.h"
 #include "ui_smartpub.h"
+#include "connection.h"
 #include <QApplication>
 #include <QProcess>
 #include <QScreen>
+#include <algorithm>
 
 // ============================================================================
 // FONCTIONS HELPER GLOBALES (pour module Projets)
@@ -802,7 +804,9 @@ SmartPub::SmartPub(QWidget *parent)
       finTransactionSelectionnee(-1), evEventSelectionne(-1), nextProjetId(1),
       currentProjetId(-1), isEditing(false), currentSortColumn(-1),
       currentSortOrder(Qt::AscendingOrder), filtresActifs(false),
-      editingPublicationRow(-1) {
+      editingPublicationRow(-1), cherchDonneesChargees(false),
+      finDonneesChargees(false), evDonneesChargees(false),
+      projDonneesChargees(false), SR_donneesChargees(false) {
   ui->setupUi(this);
   // Configurer les dimensions de la fenêtre
   this->setMinimumSize(1280, 720);
@@ -919,6 +923,7 @@ SmartPub::SmartPub(QWidget *parent)
 }
 
 SmartPub::~SmartPub() { delete ui; }
+
 // ============================================================================
 // SETUP UI ET SIDEBAR
 // ============================================================================
@@ -1477,7 +1482,658 @@ void SmartPub::on_btnEvenements_clicked() {
 }
 
 // ============================================================================
-// MODULE CHERCHEURS
+// MODULE CHERCHEURS - MÉTHODES BASE DE DONNÉES
+// ============================================================================
+
+bool SmartPub::cherchChargerDepuisBD()
+{
+    QSqlDatabase db = Connection::getInstance().database();
+    if (!db.isOpen()) {
+        qDebug() << "Base de données non ouverte!";
+        return false;
+    }
+    
+    QSqlQuery query(db);
+    cherchChercheursMap.clear();
+    
+    if (query.exec("SELECT ID, NOM, PRENOM, GRADE, EMAIL, CIN, "
+                   "DATE_CREATION, CARRIERE, AGE, PHOTO_PATH "
+                   "FROM CHERCHEURS ORDER BY ID")) {
+        
+        while (query.next()) {
+            ChercheurData data;
+            data.id = query.value("ID").toInt();
+            data.nom = query.value("NOM").toString();
+            data.prenom = query.value("PRENOM").toString();
+            data.grade = query.value("GRADE").toString();
+            data.email = query.value("EMAIL").toString();
+            data.cin = query.value("CIN").toString();
+            data.dateCreation = query.value("DATE_CREATION").toDateTime();
+            data.carriere = query.value("CARRIERE").toString();
+            data.age = query.value("AGE").toInt();
+            data.photoPath = query.value("PHOTO_PATH").toString();
+            
+            cherchChercheursMap[data.id] = data;
+        }
+        
+        qDebug() << cherchChercheursMap.size() << "chercheurs chargés depuis la BD";
+        cherchDonneesChargees = true;
+        return true;
+    } else {
+        qDebug() << "Erreur lors du chargement des chercheurs:" << query.lastError().text();
+        return false;
+    }
+}
+
+bool SmartPub::cherchSauvegarderDansBD(const ChercheurData &chercheur)
+{
+    QSqlDatabase db = Connection::getInstance().database();
+    if (!db.isOpen()) {
+        qDebug() << "Base de données non ouverte!";
+        return false;
+    }
+    
+    QSqlQuery query(db);
+    query.prepare("INSERT INTO CHERCHEURS (ID, NOM, PRENOM, GRADE, EMAIL, CIN, "
+                  "DATE_CREATION, CARRIERE, AGE, PHOTO_PATH) "
+                  "VALUES (SEQ_CHERCHEURS.NEXTVAL, :nom, :prenom, :grade, :email, "
+                  ":cin, SYSDATE, :carriere, :age, :photo_path)");
+    
+    query.bindValue(":nom", chercheur.nom);
+    query.bindValue(":prenom", chercheur.prenom);
+    query.bindValue(":grade", chercheur.grade);
+    query.bindValue(":email", chercheur.email);
+    query.bindValue(":cin", chercheur.cin);
+    query.bindValue(":carriere", chercheur.carriere);
+    query.bindValue(":age", chercheur.age);
+    query.bindValue(":photo_path", chercheur.photoPath);
+    
+    if (query.exec()) {
+        qDebug() << "Chercheur ajouté avec succès dans la BD";
+        return true;
+    } else {
+        qDebug() << "Erreur lors de l'ajout du chercheur:" << query.lastError().text();
+        return false;
+    }
+}
+
+bool SmartPub::cherchMettreAJourDansBD(int id, const ChercheurData &chercheur)
+{
+    QSqlDatabase db = Connection::getInstance().database();
+    if (!db.isOpen()) {
+        qDebug() << "Base de données non ouverte!";
+        return false;
+    }
+    
+    QSqlQuery query(db);
+    query.prepare("UPDATE CHERCHEURS SET NOM = :nom, PRENOM = :prenom, "
+                  "GRADE = :grade, EMAIL = :email, CIN = :cin, "
+                  "CARRIERE = :carriere, AGE = :age, PHOTO_PATH = :photo_path "
+                  "WHERE ID = :id");
+    
+    query.bindValue(":id", id);
+    query.bindValue(":nom", chercheur.nom);
+    query.bindValue(":prenom", chercheur.prenom);
+    query.bindValue(":grade", chercheur.grade);
+    query.bindValue(":email", chercheur.email);
+    query.bindValue(":cin", chercheur.cin);
+    query.bindValue(":carriere", chercheur.carriere);
+    query.bindValue(":age", chercheur.age);
+    query.bindValue(":photo_path", chercheur.photoPath);
+    
+    if (query.exec()) {
+        qDebug() << "Chercheur mis à jour avec succès dans la BD";
+        return true;
+    } else {
+        qDebug() << "Erreur lors de la mise à jour du chercheur:" << query.lastError().text();
+        return false;
+    }
+}
+
+bool SmartPub::cherchSupprimerDeBD(int id)
+{
+    QSqlDatabase db = Connection::getInstance().database();
+    if (!db.isOpen()) {
+        qDebug() << "Base de données non ouverte!";
+        return false;
+    }
+    
+    QSqlQuery query(db);
+    query.prepare("DELETE FROM CHERCHEURS WHERE ID = :id");
+    query.bindValue(":id", id);
+    
+    if (query.exec()) {
+        qDebug() << "Chercheur supprimé avec succès de la BD";
+        return true;
+    } else {
+        qDebug() << "Erreur lors de la suppression du chercheur:" << query.lastError().text();
+        return false;
+    }
+}
+
+// ============================================================================
+// MODULE PROJETS - MÉTHODES BASE DE DONNÉES
+// ============================================================================
+
+int SmartPub::projGetNextId()
+{
+    QSqlDatabase db = Connection::getInstance().database();
+    if (!db.isOpen()) {
+        return nextProjetId++;
+    }
+    
+    QSqlQuery query(db);
+    if (query.exec("SELECT SEQ_PROJETS.NEXTVAL FROM DUAL")) {
+        if (query.next()) {
+            return query.value(0).toInt();
+        }
+    }
+    return nextProjetId++;
+}
+
+bool SmartPub::projChargerDepuisBD()
+{
+    QSqlDatabase db = Connection::getInstance().database();
+    if (!db.isOpen()) {
+        qDebug() << "Base de données non ouverte!";
+        return false;
+    }
+    
+    QSqlQuery query(db);
+    projets.clear();
+    
+    if (query.exec("SELECT ID, CODE, TITRE, DATE_DEBUT, DATE_FIN, "
+                   "RESPONSABLE, ETAT, PROGRESSION, DESCRIPTION "
+                   "FROM PROJETS ORDER BY ID")) {
+        
+        while (query.next()) {
+            Projet projet;
+            projet.id = query.value("ID").toInt();
+            projet.code = query.value("CODE").toString();
+            projet.titre = query.value("TITRE").toString();
+            projet.dateDebut = query.value("DATE_DEBUT").toDate();
+            projet.dateFin = query.value("DATE_FIN").toDate();
+            projet.responsable = query.value("RESPONSABLE").toString();
+            projet.etat = query.value("ETAT").toString();
+            projet.progression = query.value("PROGRESSION").toString();
+            projet.description = query.value("DESCRIPTION").toString();
+            
+            projets.append(projet);
+            
+            if (projet.id >= nextProjetId) {
+                nextProjetId = projet.id + 1;
+            }
+        }
+        
+        qDebug() << projets.size() << "projets chargés depuis la BD";
+        projDonneesChargees = true;
+        return true;
+    } else {
+        qDebug() << "Erreur lors du chargement des projets:" << query.lastError().text();
+        return false;
+    }
+}
+
+bool SmartPub::projSauvegarderDansBD(const Projet &projet)
+{
+    QSqlDatabase db = Connection::getInstance().database();
+    if (!db.isOpen()) {
+        qDebug() << "Base de données non ouverte!";
+        return false;
+    }
+    
+    QSqlQuery query(db);
+    query.prepare("INSERT INTO PROJETS (ID, CODE, TITRE, DATE_DEBUT, DATE_FIN, "
+                  "RESPONSABLE, ETAT, PROGRESSION, DESCRIPTION) "
+                  "VALUES (SEQ_PROJETS.NEXTVAL, :code, :titre, :date_debut, "
+                  ":date_fin, :responsable, :etat, :progression, :description)");
+    
+    query.bindValue(":code", projet.code);
+    query.bindValue(":titre", projet.titre);
+    query.bindValue(":date_debut", projet.dateDebut);
+    query.bindValue(":date_fin", projet.dateFin);
+    query.bindValue(":responsable", projet.responsable);
+    query.bindValue(":etat", projet.etat);
+    query.bindValue(":progression", projet.progression);
+    query.bindValue(":description", projet.description);
+    
+    if (query.exec()) {
+        qDebug() << "Projet ajouté avec succès dans la BD";
+        return true;
+    } else {
+        qDebug() << "Erreur lors de l'ajout du projet:" << query.lastError().text();
+        return false;
+    }
+}
+
+bool SmartPub::projMettreAJourDansBD(int id, const Projet &projet)
+{
+    QSqlDatabase db = Connection::getInstance().database();
+    if (!db.isOpen()) {
+        qDebug() << "Base de données non ouverte!";
+        return false;
+    }
+    
+    QSqlQuery query(db);
+    query.prepare("UPDATE PROJETS SET CODE = :code, TITRE = :titre, "
+                  "DATE_DEBUT = :date_debut, DATE_FIN = :date_fin, "
+                  "RESPONSABLE = :responsable, ETAT = :etat, "
+                  "PROGRESSION = :progression, DESCRIPTION = :description "
+                  "WHERE ID = :id");
+    
+    query.bindValue(":id", id);
+    query.bindValue(":code", projet.code);
+    query.bindValue(":titre", projet.titre);
+    query.bindValue(":date_debut", projet.dateDebut);
+    query.bindValue(":date_fin", projet.dateFin);
+    query.bindValue(":responsable", projet.responsable);
+    query.bindValue(":etat", projet.etat);
+    query.bindValue(":progression", projet.progression);
+    query.bindValue(":description", projet.description);
+    
+    if (query.exec()) {
+        qDebug() << "Projet mis à jour avec succès dans la BD";
+        return true;
+    } else {
+        qDebug() << "Erreur lors de la mise à jour du projet:" << query.lastError().text();
+        return false;
+    }
+}
+
+bool SmartPub::projSupprimerDeBD(int id)
+{
+    QSqlDatabase db = Connection::getInstance().database();
+    if (!db.isOpen()) {
+        qDebug() << "Base de données non ouverte!";
+        return false;
+    }
+    
+    QSqlQuery query(db);
+    query.prepare("DELETE FROM PROJETS WHERE ID = :id");
+    query.bindValue(":id", id);
+    
+    if (query.exec()) {
+        qDebug() << "Projet supprimé avec succès de la BD";
+        return true;
+    } else {
+        qDebug() << "Erreur lors de la suppression du projet:" << query.lastError().text();
+        return false;
+    }
+}
+
+// ============================================================================
+// MODULE PUBLICATIONS - MÉTHODES BASE DE DONNÉES
+// ============================================================================
+
+bool SmartPub::SR_chargerDepuisBD()
+{
+    QSqlDatabase db = Connection::getInstance().database();
+    if (!db.isOpen()) {
+        qDebug() << "Base de données non ouverte!";
+        return false;
+    }
+    
+    QSqlQuery query(db);
+    ui->SR_tablePublications->setRowCount(0);
+    
+    if (query.exec("SELECT ID, TITRE, AUTEURS, DATE_PUBLICATION, REVUE, STATUT "
+                   "FROM PUBLICATIONS ORDER BY ID")) {
+        
+        int row = 0;
+        while (query.next()) {
+            ui->SR_tablePublications->insertRow(row);
+            ui->SR_tablePublications->setItem(row, 0, 
+                new QTableWidgetItem(query.value("TITRE").toString()));
+            ui->SR_tablePublications->setItem(row, 1, 
+                new QTableWidgetItem(query.value("AUTEURS").toString()));
+            ui->SR_tablePublications->setItem(row, 2, 
+                new QTableWidgetItem(query.value("DATE_PUBLICATION").toDate().toString("yyyy-MM-dd")));
+            ui->SR_tablePublications->setItem(row, 3, 
+                new QTableWidgetItem(query.value("REVUE").toString()));
+            ui->SR_tablePublications->setItem(row, 4, 
+                new QTableWidgetItem(query.value("STATUT").toString()));
+            
+            SR_addButtonsToRow(row);
+            row++;
+        }
+        
+        ui->SR_lblTotalNumber->setText(QString::number(row));
+        SR_donneesChargees = true;
+        qDebug() << row << "publications chargées depuis la BD";
+        return true;
+    } else {
+        qDebug() << "Erreur lors du chargement des publications:" << query.lastError().text();
+        return false;
+    }
+}
+
+bool SmartPub::SR_sauvegarderDansBD(const QString &titre, const QString &auteurs, 
+                                   const QDate &date, const QString &revue, 
+                                   const QString &statut)
+{
+    QSqlDatabase db = Connection::getInstance().database();
+    if (!db.isOpen()) {
+        qDebug() << "Base de données non ouverte!";
+        return false;
+    }
+    
+    QSqlQuery query(db);
+    query.prepare("INSERT INTO PUBLICATIONS (ID, TITRE, AUTEURS, DATE_PUBLICATION, "
+                  "REVUE, STATUT) VALUES (SEQ_PUBLICATIONS.NEXTVAL, :titre, "
+                  ":auteurs, :date_publication, :revue, :statut)");
+    
+    query.bindValue(":titre", titre);
+    query.bindValue(":auteurs", auteurs);
+    query.bindValue(":date_publication", date);
+    query.bindValue(":revue", revue);
+    query.bindValue(":statut", statut);
+    
+    if (query.exec()) {
+        qDebug() << "Publication ajoutée avec succès dans la BD";
+        return true;
+    } else {
+        qDebug() << "Erreur lors de l'ajout de la publication:" << query.lastError().text();
+        return false;
+    }
+}
+
+bool SmartPub::SR_mettreAJourDansBD(int row, const QString &titre, const QString &auteurs, 
+                                   const QDate &date, const QString &revue, 
+                                   const QString &statut)
+{
+    QSqlDatabase db = Connection::getInstance().database();
+    if (!db.isOpen()) {
+        qDebug() << "Base de données non ouverte!";
+        return false;
+    }
+    
+    // Récupérer l'ID (stocké dans une colonne cachée ou via requête)
+    QString titreOriginal = ui->SR_tablePublications->item(row, 0)->text();
+    
+    QSqlQuery query(db);
+    query.prepare("UPDATE PUBLICATIONS SET TITRE = :titre, AUTEURS = :auteurs, "
+                  "DATE_PUBLICATION = :date_publication, REVUE = :revue, "
+                  "STATUT = :statut WHERE TITRE = :titre_original");
+    
+    query.bindValue(":titre", titre);
+    query.bindValue(":auteurs", auteurs);
+    query.bindValue(":date_publication", date);
+    query.bindValue(":revue", revue);
+    query.bindValue(":statut", statut);
+    query.bindValue(":titre_original", titreOriginal);
+    
+    if (query.exec()) {
+        qDebug() << "Publication mise à jour avec succès dans la BD";
+        return true;
+    } else {
+        qDebug() << "Erreur lors de la mise à jour de la publication:" << query.lastError().text();
+        return false;
+    }
+}
+
+bool SmartPub::SR_supprimerDeBD(int row)
+{
+    QSqlDatabase db = Connection::getInstance().database();
+    if (!db.isOpen()) {
+        qDebug() << "Base de données non ouverte!";
+        return false;
+    }
+    
+    QString titre = ui->SR_tablePublications->item(row, 0)->text();
+    
+    QSqlQuery query(db);
+    query.prepare("DELETE FROM PUBLICATIONS WHERE TITRE = :titre");
+    query.bindValue(":titre", titre);
+    
+    if (query.exec()) {
+        qDebug() << "Publication supprimée avec succès de la BD";
+        return true;
+    } else {
+        qDebug() << "Erreur lors de la suppression de la publication:" << query.lastError().text();
+        return false;
+    }
+}
+
+// ============================================================================
+// MODULE FINANCES - MÉTHODES BASE DE DONNÉES
+// ============================================================================
+
+bool SmartPub::finChargerDepuisBD()
+{
+    QSqlDatabase db = Connection::getInstance().database();
+    if (!db.isOpen()) {
+        qDebug() << "Base de données non ouverte!";
+        return false;
+    }
+    
+    QSqlQuery query(db);
+    finTransactionsMap.clear();
+    
+    if (query.exec("SELECT ID, PROJET, TYPE, MONTANT, DATE_TRANSACTION, "
+                   "CATEGORIE, STATUT, DESCRIPTION FROM TRANSACTIONS ORDER BY ID")) {
+        
+        while (query.next()) {
+            TransactionData data;
+            data.id = query.value("ID").toInt();
+            data.projet = query.value("PROJET").toString();
+            data.type = query.value("TYPE").toString();
+            data.montant = query.value("MONTANT").toDouble();
+            data.date = query.value("DATE_TRANSACTION").toDate();
+            data.categorie = query.value("CATEGORIE").toString();
+            data.statut = query.value("STATUT").toString();
+            data.description = query.value("DESCRIPTION").toString();
+            
+            finTransactionsMap[data.id] = data;
+        }
+        
+        qDebug() << finTransactionsMap.size() << "transactions chargées depuis la BD";
+        finDonneesChargees = true;
+        return true;
+    } else {
+        qDebug() << "Erreur lors du chargement des transactions:" << query.lastError().text();
+        return false;
+    }
+}
+
+bool SmartPub::finSauvegarderDansBD(const TransactionData &transaction)
+{
+    QSqlDatabase db = Connection::getInstance().database();
+    if (!db.isOpen()) {
+        qDebug() << "Base de données non ouverte!";
+        return false;
+    }
+    
+    QSqlQuery query(db);
+    query.prepare("INSERT INTO TRANSACTIONS (ID, PROJET, TYPE, MONTANT, "
+                  "DATE_TRANSACTION, CATEGORIE, STATUT, DESCRIPTION) "
+                  "VALUES (SEQ_TRANSACTIONS.NEXTVAL, :projet, :type, :montant, "
+                  ":date_transaction, :categorie, :statut, :description)");
+    
+    query.bindValue(":projet", transaction.projet);
+    query.bindValue(":type", transaction.type);
+    query.bindValue(":montant", transaction.montant);
+    query.bindValue(":date_transaction", transaction.date);
+    query.bindValue(":categorie", transaction.categorie);
+    query.bindValue(":statut", transaction.statut);
+    query.bindValue(":description", transaction.description);
+    
+    if (query.exec()) {
+        qDebug() << "Transaction ajoutée avec succès dans la BD";
+        return true;
+    } else {
+        qDebug() << "Erreur lors de l'ajout de la transaction:" << query.lastError().text();
+        return false;
+    }
+}
+
+bool SmartPub::finMettreAJourDansBD(int id, const TransactionData &transaction)
+{
+    QSqlDatabase db = Connection::getInstance().database();
+    if (!db.isOpen()) {
+        qDebug() << "Base de données non ouverte!";
+        return false;
+    }
+    
+    QSqlQuery query(db);
+    query.prepare("UPDATE TRANSACTIONS SET PROJET = :projet, TYPE = :type, "
+                  "MONTANT = :montant, DATE_TRANSACTION = :date_transaction, "
+                  "CATEGORIE = :categorie, STATUT = :statut, DESCRIPTION = :description "
+                  "WHERE ID = :id");
+    
+    query.bindValue(":id", id);
+    query.bindValue(":projet", transaction.projet);
+    query.bindValue(":type", transaction.type);
+    query.bindValue(":montant", transaction.montant);
+    query.bindValue(":date_transaction", transaction.date);
+    query.bindValue(":categorie", transaction.categorie);
+    query.bindValue(":statut", transaction.statut);
+    query.bindValue(":description", transaction.description);
+    
+    if (query.exec()) {
+        qDebug() << "Transaction mise à jour avec succès dans la BD";
+        return true;
+    } else {
+        qDebug() << "Erreur lors de la mise à jour de la transaction:" << query.lastError().text();
+        return false;
+    }
+}
+
+bool SmartPub::finSupprimerDeBD(int id)
+{
+    QSqlDatabase db = Connection::getInstance().database();
+    if (!db.isOpen()) {
+        qDebug() << "Base de données non ouverte!";
+        return false;
+    }
+    
+    QSqlQuery query(db);
+    query.prepare("DELETE FROM TRANSACTIONS WHERE ID = :id");
+    query.bindValue(":id", id);
+    
+    if (query.exec()) {
+        qDebug() << "Transaction supprimée avec succès de la BD";
+        return true;
+    } else {
+        qDebug() << "Erreur lors de la suppression de la transaction:" << query.lastError().text();
+        return false;
+    }
+}
+
+// ============================================================================
+// MODULE EVENEMENTS - MÉTHODES BASE DE DONNÉES
+// ============================================================================
+
+bool SmartPub::evChargerDepuisBD()
+{
+    QSqlDatabase db = Connection::getInstance().database();
+    if (!db.isOpen()) {
+        qDebug() << "Base de données non ouverte!";
+        return false;
+    }
+    
+    QSqlQuery query(db);
+    evEventsMap.clear();
+    
+    if (query.exec("SELECT ID, NOM, LIEU, DATE_EVENEMENT, DESCRIPTION "
+                   "FROM EVENEMENTS ORDER BY ID")) {
+        
+        while (query.next()) {
+            EventData data;
+            data.id = query.value("ID").toInt();
+            data.nom = query.value("NOM").toString();
+            data.lieu = query.value("LIEU").toString();
+            data.date = query.value("DATE_EVENEMENT").toDate();
+            data.description = query.value("DESCRIPTION").toString();
+            
+            evEventsMap[data.id] = data;
+        }
+        
+        qDebug() << evEventsMap.size() << "événements chargés depuis la BD";
+        evDonneesChargees = true;
+        return true;
+    } else {
+        qDebug() << "Erreur lors du chargement des événements:" << query.lastError().text();
+        return false;
+    }
+}
+
+bool SmartPub::evSauvegarderDansBD(const EventData &event)
+{
+    QSqlDatabase db = Connection::getInstance().database();
+    if (!db.isOpen()) {
+        qDebug() << "Base de données non ouverte!";
+        return false;
+    }
+    
+    QSqlQuery query(db);
+    query.prepare("INSERT INTO EVENEMENTS (ID, NOM, LIEU, DATE_EVENEMENT, DESCRIPTION) "
+                  "VALUES (SEQ_EVENEMENTS.NEXTVAL, :nom, :lieu, :date_evenement, :description)");
+    
+    query.bindValue(":nom", event.nom);
+    query.bindValue(":lieu", event.lieu);
+    query.bindValue(":date_evenement", event.date);
+    query.bindValue(":description", event.description);
+    
+    if (query.exec()) {
+        qDebug() << "Événement ajouté avec succès dans la BD";
+        return true;
+    } else {
+        qDebug() << "Erreur lors de l'ajout de l'événement:" << query.lastError().text();
+        return false;
+    }
+}
+
+bool SmartPub::evMettreAJourDansBD(int id, const EventData &event)
+{
+    QSqlDatabase db = Connection::getInstance().database();
+    if (!db.isOpen()) {
+        qDebug() << "Base de données non ouverte!";
+        return false;
+    }
+    
+    QSqlQuery query(db);
+    query.prepare("UPDATE EVENEMENTS SET NOM = :nom, LIEU = :lieu, "
+                  "DATE_EVENEMENT = :date_evenement, DESCRIPTION = :description "
+                  "WHERE ID = :id");
+    
+    query.bindValue(":id", id);
+    query.bindValue(":nom", event.nom);
+    query.bindValue(":lieu", event.lieu);
+    query.bindValue(":date_evenement", event.date);
+    query.bindValue(":description", event.description);
+    
+    if (query.exec()) {
+        qDebug() << "Événement mis à jour avec succès dans la BD";
+        return true;
+    } else {
+        qDebug() << "Erreur lors de la mise à jour de l'événement:" << query.lastError().text();
+        return false;
+    }
+}
+
+bool SmartPub::evSupprimerDeBD(int id)
+{
+    QSqlDatabase db = Connection::getInstance().database();
+    if (!db.isOpen()) {
+        qDebug() << "Base de données non ouverte!";
+        return false;
+    }
+    
+    QSqlQuery query(db);
+    query.prepare("DELETE FROM EVENEMENTS WHERE ID = :id");
+    query.bindValue(":id", id);
+    
+    if (query.exec()) {
+        qDebug() << "Événement supprimé avec succès de la BD";
+        return true;
+    } else {
+        qDebug() << "Erreur lors de la suppression de l'événement:" << query.lastError().text();
+        return false;
+    }
+}
+
+// ============================================================================
+// MODULE CHERCHEURS (suite)
 // ============================================================================
 
 void SmartPub::cherchSetupUI() {
@@ -2088,6 +2744,9 @@ void SmartPub::cherchAjouterDonneesTest() {
     data.photoPath = ":/avatar.png";
 
     cherchChercheursMap[i + 1] = data;
+    
+    // Sauvegarder dans la base de données
+    cherchSauvegarderDansBD(data);
   }
 }
 
@@ -2112,6 +2771,26 @@ void SmartPub::cherchShowLoginView() {
 void SmartPub::cherchShowMainView() {
   // Transition vers l'application principale
   mainStack->setCurrentIndex(1);
+  
+  // Charger les données depuis la base de données si nécessaire
+  if (!cherchDonneesChargees) {
+    cherchChargerDepuisBD();
+  }
+  if (!projDonneesChargees) {
+    projChargerDepuisBD();
+  }
+  if (!SR_donneesChargees) {
+    SR_chargerDepuisBD();
+  }
+  if (!finDonneesChargees) {
+    finChargerDepuisBD();
+  }
+  if (!evDonneesChargees) {
+    evChargerDepuisBD();
+  }
+  
+  cherchAfficherListeChercheurs();
+  projChargerProjets();
 }
 
 void SmartPub::cherchCheckLogin() {
@@ -2135,7 +2814,7 @@ void SmartPub::cherchCheckLogin() {
   // RAFRAICHIR LA LISTE DES CHERCHEURS POUR AFFICHER LES BOUTONS
   // Important : On le fait ici pour être sûr que l'interface réagit au rôle
   // Admin
-  cherchAfficherListeChercheurs();
+  cherchShowMainView();
 
   // Afficher l'application
   mainStack->setCurrentIndex(1);
@@ -3114,6 +3793,12 @@ void SmartPub::on_cherchBtnUploadPhoto_clicked() {
 }
 
 void SmartPub::on_cherchBtnAjouterChercheur_clicked() {
+  if (currentUser.role == UserRole::Guest) {
+    QMessageBox::warning(this, "Accès refusé",
+                         "Les invités ne peuvent pas ajouter de chercheurs.");
+    return;
+  }
+
   QString nom = ui->cherchLineEditNom->text().trimmed();
   QString prenom = ui->cherchLineEditPrenom->text().trimmed();
   QString cin = ui->cherchLineEditCIN->text().trimmed();
@@ -3124,9 +3809,6 @@ void SmartPub::on_cherchBtnAjouterChercheur_clicked() {
     return;
   }
 
-  int newId =
-      cherchChercheursMap.isEmpty() ? 1 : cherchChercheursMap.keys().last() + 1;
-
   ChercheurData data;
   data.nom = nom;
   data.prenom = prenom;
@@ -3135,12 +3817,17 @@ void SmartPub::on_cherchBtnAjouterChercheur_clicked() {
   data.grade = ui->cherchComboBoxGrade->currentText();
   data.dateCreation = QDateTime::currentDateTime();
   data.age = 35;
-  data.carriere = "Junior";
+  data.carriere = cherchDeterminerCarriere(0, data.grade);
   data.photoPath = ":/avatar.png";
 
-  cherchChercheursMap[newId] = data;
-
-  QMessageBox::information(this, "Succès", "Chercheur ajouté !");
+  // Sauvegarder dans la base de données
+  if (cherchSauvegarderDansBD(data)) {
+    // Recharger les données depuis la BD pour obtenir l'ID auto-généré
+    cherchChargerDepuisBD();
+    QMessageBox::information(this, "Succès", "Chercheur ajouté avec succès !");
+  } else {
+    QMessageBox::critical(this, "Erreur", "Erreur lors de l'ajout du chercheur.");
+  }
 
   ui->cherchLineEditNom->clear();
   ui->cherchLineEditPrenom->clear();
@@ -3256,8 +3943,15 @@ void SmartPub::on_cherchModifierChercheur(int id) {
     newData.prenom = editPrenom->text();
     newData.email = editEmail->text();
     newData.grade = comboGrade->currentText();
-    cherchChercheursMap[id] = newData;
-    cherchAfficherListeChercheurs();
+    
+    // Mettre à jour dans la base de données
+    if (cherchMettreAJourDansBD(id, newData)) {
+      cherchChercheursMap[id] = newData;
+      cherchAfficherListeChercheurs();
+      QMessageBox::information(this, "Succès", "Chercheur modifié avec succès !");
+    } else {
+      QMessageBox::critical(this, "Erreur", "Erreur lors de la modification.");
+    }
   }
 }
 
@@ -3271,8 +3965,13 @@ void SmartPub::on_cherchSupprimerChercheur(int id) {
   auto reply =
       QMessageBox::question(this, "Supprimer", "Confirmer la suppression ?");
   if (reply == QMessageBox::Yes) {
-    cherchChercheursMap.remove(id);
-    cherchAfficherListeChercheurs();
+    if (cherchSupprimerDeBD(id)) {
+      cherchChercheursMap.remove(id);
+      cherchAfficherListeChercheurs();
+      QMessageBox::information(this, "Succès", "Chercheur supprimé avec succès !");
+    } else {
+      QMessageBox::critical(this, "Erreur", "Erreur lors de la suppression.");
+    }
   }
 }
 
@@ -3643,6 +4342,10 @@ void SmartPub::SR_loadSampleData() {
     ui->SR_tablePublications->setItem(i, 4, new QTableWidgetItem(statuts[i]));
 
     SR_addButtonsToRow(i);
+    
+    // Sauvegarder dans la base de données
+    SR_sauvegarderDansBD(titres[i], auteurs[i], QDate::fromString(dates[i], "yyyy-MM-dd"),
+                        revues[i], statuts[i]);
   }
 
   ui->SR_tablePublications->resizeRowsToContents();
@@ -3762,6 +4465,7 @@ void SmartPub::on_SR_btnAjouterPublication_clicked() {
   QString auteurs = ui->SR_lineEditAuteurs->text();
   QString revue = ui->SR_lineEditRevue->text();
   QString statut = ui->SR_comboBoxStatut->currentText();
+  QDate date = ui->SR_dateEditPublication->date();
 
   if (titre.isEmpty() || auteurs.isEmpty() || revue.isEmpty()) {
     QMessageBox::warning(this, "Erreur",
@@ -3771,40 +4475,40 @@ void SmartPub::on_SR_btnAjouterPublication_clicked() {
 
   if (editingPublicationRow != -1) {
     // Edit mode
-    ui->SR_tablePublications->item(editingPublicationRow, 0)->setText(titre);
-    ui->SR_tablePublications->item(editingPublicationRow, 1)->setText(auteurs);
-    ui->SR_tablePublications->item(editingPublicationRow, 3)->setText(revue);
-    ui->SR_tablePublications->item(editingPublicationRow, 4)->setText(statut);
+    if (SR_mettreAJourDansBD(editingPublicationRow, titre, auteurs, date, revue, statut)) {
+      ui->SR_tablePublications->item(editingPublicationRow, 0)->setText(titre);
+      ui->SR_tablePublications->item(editingPublicationRow, 1)->setText(auteurs);
+      ui->SR_tablePublications->item(editingPublicationRow, 2)->setText(date.toString("yyyy-MM-dd"));
+      ui->SR_tablePublications->item(editingPublicationRow, 3)->setText(revue);
+      ui->SR_tablePublications->item(editingPublicationRow, 4)->setText(statut);
 
-    QMessageBox::information(this, "Succès",
+      QMessageBox::information(this, "Succès",
                              "Publication modifiée avec succès");
+    } else {
+      QMessageBox::critical(this, "Erreur", "Erreur lors de la modification.");
+    }
     editingPublicationRow = -1;
     ui->SR_btnAjouterPublication->setText("Ajouter");
   } else {
     // Add mode
-    QMessageBox::information(this, "Succès",
-                             "Publication ajoutée avec succès (simulation)");
-    // In a real app we would append to the table here, but SR_loadSampleData
-    // populates it. For consistency with the requested task "add/modify
-    // buttons", we should probably insert it into the table or reload. For now,
-    // let's just clear the form as per original code, but finding where to
-    // insert to the table to make it visible would be better. However, the
-    // original code just showed a message and cleared. Let's at least add it to
-    // the table visually to be complete.
+    if (SR_sauvegarderDansBD(titre, auteurs, date, revue, statut)) {
+      int row = ui->SR_tablePublications->rowCount();
+      ui->SR_tablePublications->insertRow(row);
+      ui->SR_tablePublications->setItem(row, 0, new QTableWidgetItem(titre));
+      ui->SR_tablePublications->setItem(row, 1, new QTableWidgetItem(auteurs));
+      ui->SR_tablePublications->setItem(
+          row, 2, new QTableWidgetItem(date.toString("yyyy-MM-dd")));
+      ui->SR_tablePublications->setItem(row, 3, new QTableWidgetItem(revue));
+      ui->SR_tablePublications->setItem(row, 4, new QTableWidgetItem(statut));
 
-    int row = ui->SR_tablePublications->rowCount();
-    ui->SR_tablePublications->insertRow(row);
-    ui->SR_tablePublications->setItem(row, 0, new QTableWidgetItem(titre));
-    ui->SR_tablePublications->setItem(row, 1, new QTableWidgetItem(auteurs));
-    ui->SR_tablePublications->setItem(
-        row, 2,
-        new QTableWidgetItem(QDate::currentDate().toString("yyyy-MM-dd")));
-    ui->SR_tablePublications->setItem(row, 3, new QTableWidgetItem(revue));
-    ui->SR_tablePublications->setItem(row, 4, new QTableWidgetItem(statut));
-
-    // Add buttons to new row
-    SR_addButtonsToRow(row);
-    ui->SR_tablePublications->resizeRowsToContents();
+      SR_addButtonsToRow(row);
+      ui->SR_tablePublications->resizeRowsToContents();
+      
+      QMessageBox::information(this, "Succès",
+                             "Publication ajoutée avec succès");
+    } else {
+      QMessageBox::critical(this, "Erreur", "Erreur lors de l'ajout.");
+    }
   }
 
   ui->SR_stackedWidget->setCurrentIndex(0);
@@ -3910,33 +4614,36 @@ void SmartPub::finAjouterDonneesTest() {
   t1.projet = "Projet AI-2024-001";
   t1.type = "Recette";
   t1.montant = 50000.00;
-  t1.date = "15/01/2024";
+  t1.date = QDate::fromString("15/01/2024", "dd/MM/yyyy");
   t1.categorie = "Équipement";
   t1.statut = "Validée";
   t1.description = "Achat de serveurs GPU";
   finTransactionsMap[1] = t1;
+  finSauvegarderDansBD(t1);
 
   TransactionData t2;
   t2.id = 2;
   t2.projet = "Projet Quantum-2024-002";
   t2.type = "Dépense";
   t2.montant = 25000.00;
-  t2.date = "20/02/2024";
+  t2.date = QDate::fromString("20/02/2024", "dd/MM/yyyy");
   t2.categorie = "Personnel";
   t2.statut = "En attente";
   t2.description = "Salaire chercheur post-doc";
   finTransactionsMap[2] = t2;
+  finSauvegarderDansBD(t2);
 
   TransactionData t3;
   t3.id = 3;
   t3.projet = "Projet BioTech-2024-003";
   t3.type = "Dépense";
   t3.montant = 8000.00;
-  t3.date = "10/03/2024";
+  t3.date = QDate::fromString("10/03/2024", "dd/MM/yyyy");
   t3.categorie = "Consommables";
   t3.statut = "Validée";
   t3.description = "Réactifs de laboratoire";
   finTransactionsMap[3] = t3;
+  finSauvegarderDansBD(t3);
 
   finAfficherListeTransactions();
 }
@@ -3955,15 +4662,15 @@ void SmartPub::finAjouterTransactionTable(const TransactionData &data) {
 
   ui->finTableTransactions->setItem(
       row, 0, new QTableWidgetItem(QString::number(data.id)));
-  ui->finTableTransactions->setItem(row, 1, new QTableWidgetItem(data.projet));
-  ui->finTableTransactions->setItem(row, 2, new QTableWidgetItem(data.type));
+  ui->finTableTransactions->setItem(row, 1, new QTableWidgetItem(QString(data.projet)));
+  ui->finTableTransactions->setItem(row, 2, new QTableWidgetItem(QString(data.type)));
   ui->finTableTransactions->setItem(
       row, 3,
       new QTableWidgetItem(QString::number(data.montant, 'f', 2) + " €"));
-  ui->finTableTransactions->setItem(row, 4, new QTableWidgetItem(data.date));
+  ui->finTableTransactions->setItem(row, 4, new QTableWidgetItem(QDate(data.date).toString("dd/MM/yyyy")));
   ui->finTableTransactions->setItem(row, 5,
-                                    new QTableWidgetItem(data.categorie));
-  ui->finTableTransactions->setItem(row, 6, new QTableWidgetItem(data.statut));
+                                    new QTableWidgetItem(QString(data.categorie)));
+  ui->finTableTransactions->setItem(row, 6, new QTableWidgetItem(QString(data.statut)));
   ui->finTableTransactions->setItem(
       row, 7, new QTableWidgetItem("Modifier | Supprimer"));
 }
@@ -4041,8 +4748,472 @@ void SmartPub::on_finBtnExport_clicked() {
 }
 
 void SmartPub::on_finBtnStatistiques_clicked() {
-  QMessageBox::information(this, "Statistiques",
-                           "Module statistiques finances - À implémenter");
+  // Vérifier s'il y a des données
+  if (finTransactionsMap.isEmpty()) {
+    QMessageBox::information(this, "Statistiques", 
+      "Aucune transaction disponible.\nAjoutez des transactions pour voir les statistiques.");
+    return;
+  }
+  
+  // Créer le dialogue des statistiques
+  QDialog *statsDialog = new QDialog(this);
+  statsDialog->setWindowTitle("Statistiques Financières");
+  statsDialog->setMinimumSize(1400, 900);
+  
+  QVBoxLayout *mainLayout = new QVBoxLayout(statsDialog);
+  mainLayout->setSpacing(20);
+  mainLayout->setContentsMargins(20, 20, 20, 20);
+  
+  // ========== TITRE ==========
+  QLabel *titleLabel = new QLabel("📊 Tableau de Bord Financier", statsDialog);
+  QFont titleFont;
+  titleFont.setPointSize(20);
+  titleFont.setBold(true);
+  titleLabel->setFont(titleFont);
+  titleLabel->setAlignment(Qt::AlignCenter);
+  titleLabel->setStyleSheet("color: #2c3e50; padding: 15px; background: #ecf0f1; border-radius: 8px;");
+  mainLayout->addWidget(titleLabel);
+  
+  // ========== CALCULER LES STATISTIQUES ==========
+  double totalDepenses = 0;
+  double totalRecettes = 0;
+  int nombreTransactions = finTransactionsMap.size();
+  QMap<QString, double> montantsParCategorie;
+  QMap<QString, int> nombreParStatut;
+  QMap<QString, double> montantsParMois;
+  QMap<QString, double> depensesParMois;
+  QList<double> historiqueMontants;
+  
+  // Parcourir toutes les transactions
+  for (const TransactionData &trans : finTransactionsMap) {
+    if (trans.type == "Dépense") {
+      totalDepenses += trans.montant;
+      historiqueMontants.append(trans.montant);
+    } else if (trans.type == "Recette") {
+      totalRecettes += trans.montant;
+    }
+    
+    montantsParCategorie[trans.categorie] += trans.montant;
+    nombreParStatut[trans.statut]++;
+    
+    QString mois = trans.date.toString("yyyy-MM");
+    if (trans.type == "Dépense") {
+      montantsParMois[mois] -= trans.montant;
+      depensesParMois[mois] += trans.montant;
+    } else {
+      montantsParMois[mois] += trans.montant;
+    }
+  }
+  
+  double solde = totalRecettes - totalDepenses;
+  double moyenneDepenses = totalDepenses / qMax(1, nombreTransactions);
+  
+  // Calculer le Burn Rate (taux de combustion budgétaire)
+  double burnRate = 0;
+  if (!depensesParMois.isEmpty()) {
+    int nbMois = depensesParMois.size();
+    burnRate = totalDepenses / qMax(1, nbMois);
+  }
+  
+  // Détecter les anomalies (montants 2x supérieurs à la moyenne)
+  QStringList anomalies;
+  double seuilAnomalie = moyenneDepenses * 2.0;
+  for (const TransactionData &trans : finTransactionsMap) {
+    if (trans.type == "Dépense" && trans.montant > seuilAnomalie) {
+      anomalies.append(QString("%1: %2 TND").arg(trans.projet).arg(trans.montant, 0, 'f', 2));
+    }
+  }
+  
+  // ========== SECTION INDICATEURS CLÉS ==========
+  QGroupBox *kpiGroup = new QGroupBox("📊 Indicateurs Clés de Performance", statsDialog);
+  kpiGroup->setStyleSheet(
+    "QGroupBox {"
+    "   font-size: 15px;"
+    "   font-weight: bold;"
+    "   border: 2px solid #3498db;"
+    "   border-radius: 12px;"
+    "   margin-top: 12px;"
+    "   padding: 20px 15px 15px 15px;"
+    "   background: white;"
+    "}"
+    "QGroupBox::title {"
+    "   subcontrol-origin: margin;"
+    "   left: 25px;"
+    "   padding: 0 8px;"
+    "   background: white;"
+    "}"
+  );
+  
+  QGridLayout *kpiLayout = new QGridLayout(kpiGroup);
+  kpiLayout->setSpacing(20);
+  kpiLayout->setContentsMargins(10, 25, 10, 10);
+  
+  // Fonction lambda améliorée pour créer une carte KPI
+  auto createKPICard = [](const QString &title, const QString &value, 
+                          const QString &color, const QString &icon) -> QFrame* {
+    QFrame *card = new QFrame();
+    card->setMinimumHeight(120);
+    card->setStyleSheet(QString(
+      "QFrame {"
+      "   background: qlineargradient(x1:0, y1:0, x2:1, y2:1, "
+      "   stop:0 %1, stop:1 %2);"
+      "   border-radius: 12px;"
+      "   border: 2px solid rgba(255, 255, 255, 0.3);"
+      "}"
+    ).arg(color).arg(color));
+    
+    QVBoxLayout *cardLayout = new QVBoxLayout(card);
+    cardLayout->setSpacing(8);
+    cardLayout->setContentsMargins(15, 15, 15, 15);
+    
+    QLabel *iconLabel = new QLabel(icon);
+    iconLabel->setStyleSheet("color: white; font-size: 28px; background: transparent;");
+    iconLabel->setAlignment(Qt::AlignCenter);
+    
+    QLabel *titleLabel = new QLabel(title);
+    titleLabel->setStyleSheet(
+      "color: rgba(255, 255, 255, 0.95);"
+      "font-size: 11px;"
+      "font-weight: 600;"
+      "background: transparent;"
+      "letter-spacing: 0.5px;"
+    );
+    titleLabel->setAlignment(Qt::AlignCenter);
+    titleLabel->setWordWrap(true);
+    
+    QLabel *valueLabel = new QLabel(value);
+    QFont valueFont("Segoe UI", 18, QFont::Bold);
+    valueLabel->setFont(valueFont);
+    valueLabel->setStyleSheet("color: white; background: transparent;");
+    valueLabel->setAlignment(Qt::AlignCenter);
+    valueLabel->setWordWrap(true);
+    
+    cardLayout->addWidget(iconLabel);
+    cardLayout->addWidget(titleLabel);
+    cardLayout->addWidget(valueLabel);
+    cardLayout->addStretch();
+    
+    return card;
+  };
+  
+  // Créer les 7 cartes KPI
+  QFrame *card1 = createKPICard(
+    "Total Transactions", 
+    QString::number(nombreTransactions), 
+    "#3498db", "📝"
+  );
+  
+  QFrame *card2 = createKPICard(
+    "Total Recettes", 
+    QString("%1 TND").arg(totalRecettes, 0, 'f', 2), 
+    "#27ae60", "💰"
+  );
+  
+  QFrame *card3 = createKPICard(
+    "Total Dépenses", 
+    QString("%1 TND").arg(totalDepenses, 0, 'f', 2), 
+    "#e74c3c", "💸"
+  );
+  
+  QString soldeColor = (solde >= 0) ? "#27ae60" : "#e74c3c";
+  QString soldeIcon = (solde >= 0) ? "✅" : "⚠️";
+  QFrame *card4 = createKPICard(
+    "Solde Net", 
+    QString("%1 TND").arg(solde, 0, 'f', 2), 
+    soldeColor, soldeIcon
+  );
+  
+  QFrame *card5 = createKPICard(
+    "Dépense Moyenne", 
+    QString("%1 TND").arg(moyenneDepenses, 0, 'f', 2), 
+    "#9b59b6", "📊"
+  );
+  
+  // BURN RATE - Fonctionnalité du cahier des charges
+  QFrame *card6 = createKPICard(
+    "Burn Rate Mensuel", 
+    QString("%1 TND/mois").arg(burnRate, 0, 'f', 2), 
+    "#e67e22", "🔥"
+  );
+  
+  // Anomalies détectées
+  QString anomalieText = anomalies.isEmpty() ? "Aucune" : QString::number(anomalies.size());
+  QString anomalieColor = anomalies.isEmpty() ? "#27ae60" : "#e74c3c";
+  QFrame *card7 = createKPICard(
+    "Anomalies Détectées", 
+    anomalieText, 
+    anomalieColor, "🔍"
+  );
+  
+  kpiLayout->addWidget(card1, 0, 0);
+  kpiLayout->addWidget(card2, 0, 1);
+  kpiLayout->addWidget(card3, 0, 2);
+  kpiLayout->addWidget(card4, 0, 3);
+  kpiLayout->addWidget(card5, 1, 0);
+  kpiLayout->addWidget(card6, 1, 1);
+  kpiLayout->addWidget(card7, 1, 2, 1, 2);
+  
+  mainLayout->addWidget(kpiGroup);
+  
+  // ========== PANEL D'ALERTES (Détecteur d'anomalies - Cahier des charges) ==========
+  if (!anomalies.isEmpty()) {
+    QGroupBox *alertGroup = new QGroupBox("⚠️ Alertes et Anomalies Détectées", statsDialog);
+    alertGroup->setStyleSheet(
+      "QGroupBox {"
+      "   font-size: 14px;"
+      "   font-weight: bold;"
+      "   border: 2px solid #e74c3c;"
+      "   border-radius: 10px;"
+      "   margin-top: 10px;"
+      "   padding: 15px;"
+      "   background: #fee;"
+      "}"
+    );
+    
+    QVBoxLayout *alertLayout = new QVBoxLayout(alertGroup);
+    QLabel *alertText = new QLabel(
+      QString("🔍 <b>%1 transaction(s)</b> avec montant anormal détecté(s) (>%2 TND):<br>%3")
+      .arg(anomalies.size())
+      .arg(seuilAnomalie, 0, 'f', 2)
+      .arg(anomalies.join("<br>"))
+    );
+    alertText->setWordWrap(true);
+    alertText->setStyleSheet("color: #c0392b; background: transparent; padding: 5px;");
+    alertLayout->addWidget(alertText);
+    
+    mainLayout->addWidget(alertGroup);
+  }
+  
+  // ========== GRAPHIQUES ==========
+  QGroupBox *chartsGroup = new QGroupBox("📈 Analyses Graphiques", statsDialog);
+  chartsGroup->setStyleSheet(
+    "QGroupBox {"
+    "   font-size: 15px;"
+    "   font-weight: bold;"
+    "   border: 2px solid #3498db;"
+    "   border-radius: 12px;"
+    "   margin-top: 12px;"
+    "   padding: 20px 15px 15px 15px;"
+    "   background: white;"
+    "}"
+    "QGroupBox::title {"
+    "   subcontrol-origin: margin;"
+    "   left: 25px;"
+    "   padding: 0 8px;"
+    "   background: white;"
+    "}"
+  );
+  
+  QHBoxLayout *chartsLayout = new QHBoxLayout(chartsGroup);
+  chartsLayout->setSpacing(20);
+  
+  // GRAPHIQUE 1: Répartition par Catégorie (Barres)
+  QBarSeries *categoriesSeries = new QBarSeries();
+  QBarSet *set = new QBarSet("Montants");
+  set->setColor(QColor("#3498db"));
+  
+  QStringList categories;
+  for (auto it = montantsParCategorie.begin(); it != montantsParCategorie.end(); ++it) {
+    categories << it.key();
+    *set << it.value();
+  }
+  categoriesSeries->append(set);
+  
+  QChart *categoriesChart = new QChart();
+  categoriesChart->addSeries(categoriesSeries);
+  categoriesChart->setTitle("Répartition par Catégorie");
+  categoriesChart->setAnimationOptions(QChart::SeriesAnimations);
+  categoriesChart->legend()->setVisible(true);
+  categoriesChart->legend()->setAlignment(Qt::AlignBottom);
+  
+  QBarCategoryAxis *axisX = new QBarCategoryAxis();
+  axisX->append(categories);
+  categoriesChart->addAxis(axisX, Qt::AlignBottom);
+  categoriesSeries->attachAxis(axisX);
+  
+  QValueAxis *axisY = new QValueAxis();
+  axisY->setTitleText("Montant (TND)");
+  categoriesChart->addAxis(axisY, Qt::AlignLeft);
+  categoriesSeries->attachAxis(axisY);
+  
+  QChartView *chartCategoriesView = new QChartView(categoriesChart);
+  chartCategoriesView->setRenderHint(QPainter::Antialiasing);
+  chartCategoriesView->setMinimumHeight(300);
+  
+  // GRAPHIQUE 2: Répartition par Statut (Circulaire)
+  QPieSeries *statutSeries = new QPieSeries();
+  
+  QList<QColor> colors = {QColor("#27ae60"), QColor("#f39c12"), QColor("#e74c3c"), QColor("#95a5a6")};
+  int colorIndex = 0;
+  
+  for (auto it = nombreParStatut.begin(); it != nombreParStatut.end(); ++it) {
+    QPieSlice *slice = statutSeries->append(it.key(), it.value());
+    slice->setLabelVisible(true);
+    slice->setLabel(QString("%1: %2 (%3%)")
+      .arg(it.key())
+      .arg(it.value())
+      .arg(100.0 * it.value() / nombreTransactions, 0, 'f', 1));
+    
+    if (colorIndex < colors.size()) {
+      slice->setColor(colors[colorIndex]);
+    }
+    colorIndex++;
+  }
+  
+  QChart *statutChart = new QChart();
+  statutChart->addSeries(statutSeries);
+  statutChart->setTitle("Répartition par Statut");
+  statutChart->setAnimationOptions(QChart::SeriesAnimations);
+  statutChart->legend()->setAlignment(Qt::AlignRight);
+  
+  QChartView *chartStatutView = new QChartView(statutChart);
+  chartStatutView->setRenderHint(QPainter::Antialiasing);
+  chartStatutView->setMinimumHeight(300);
+  
+  chartsLayout->addWidget(chartCategoriesView);
+  chartsLayout->addWidget(chartStatutView);
+  
+  mainLayout->addWidget(chartsGroup);
+  
+  // GRAPHIQUE 3: Évolution Temporelle avec Burn Rate
+  QGroupBox *evolutionGroup = new QGroupBox("📉 Évolution Temporelle & Simulateur Burn Rate", statsDialog);
+  evolutionGroup->setStyleSheet(
+    "QGroupBox {"
+    "   font-size: 15px;"
+    "   font-weight: bold;"
+    "   border: 2px solid #3498db;"
+    "   border-radius: 12px;"
+    "   margin-top: 12px;"
+    "   padding: 20px 15px 15px 15px;"
+    "   background: white;"
+    "}"
+    "QGroupBox::title {"
+    "   subcontrol-origin: margin;"
+    "   left: 25px;"
+    "   padding: 0 8px;"
+    "   background: white;"
+    "}"
+  );
+  
+  QLineSeries *evolutionSeries = new QLineSeries();
+  evolutionSeries->setName("Solde Cumulé Réel");
+  
+  // Ligne de prévision Burn Rate
+  QLineSeries *previsionSeries = new QLineSeries();
+  previsionSeries->setName("Prévision Burn Rate");
+  
+  QStringList moisOrdonnes = montantsParMois.keys();
+  std::sort(moisOrdonnes.begin(), moisOrdonnes.end());
+  
+  double soldeCumule = 0;
+  int index = 0;
+  double dernierSolde = 0;
+  
+  for (const QString &mois : moisOrdonnes) {
+    soldeCumule += montantsParMois[mois];
+    evolutionSeries->append(index, soldeCumule);
+    dernierSolde = soldeCumule;
+    index++;
+  }
+  
+  // Calculer la prévision sur 3 mois futurs
+  if (index > 0 && burnRate > 0) {
+    for (int i = 0; i < 3; i++) {
+      dernierSolde -= burnRate;
+      previsionSeries->append(index + i, dernierSolde);
+    }
+  }
+  
+  QChart *evolutionChart = new QChart();
+  evolutionChart->addSeries(evolutionSeries);
+  if (!previsionSeries->points().isEmpty()) {
+    evolutionChart->addSeries(previsionSeries);
+  }
+  evolutionChart->setTitle("Évolution du Solde dans le Temps");
+  evolutionChart->setAnimationOptions(QChart::SeriesAnimations);
+  
+  QPen pen(QColor("#2c3e50"));
+  pen.setWidth(3);
+  evolutionSeries->setPen(pen);
+  evolutionSeries->setPointsVisible(true);
+  
+  QPen penPrevision(QColor("#e74c3c"));
+  penPrevision.setWidth(2);
+  penPrevision.setStyle(Qt::DashLine);
+  previsionSeries->setPen(penPrevision);
+  previsionSeries->setPointsVisible(true);
+  
+  QValueAxis *axisXEvol = new QValueAxis();
+  axisXEvol->setRange(0, index + 2);
+  axisXEvol->setLabelFormat("%d");
+  axisXEvol->setTitleText("Période (Mois)");
+  evolutionChart->addAxis(axisXEvol, Qt::AlignBottom);
+  evolutionSeries->attachAxis(axisXEvol);
+  if (!previsionSeries->points().isEmpty()) {
+    previsionSeries->attachAxis(axisXEvol);
+  }
+  
+  QValueAxis *axisYEvol = new QValueAxis();
+  axisYEvol->setTitleText("Solde (TND)");
+  evolutionChart->addAxis(axisYEvol, Qt::AlignLeft);
+  evolutionSeries->attachAxis(axisYEvol);
+  if (!previsionSeries->points().isEmpty()) {
+    previsionSeries->attachAxis(axisYEvol);
+  }
+  
+  evolutionChart->legend()->setVisible(true);
+  evolutionChart->legend()->setAlignment(Qt::AlignBottom);
+  
+  QChartView *chartEvolutionView = new QChartView(evolutionChart);
+  chartEvolutionView->setRenderHint(QPainter::Antialiasing);
+  chartEvolutionView->setMinimumHeight(350);
+  
+  QVBoxLayout *evolutionLayout = new QVBoxLayout(evolutionGroup);
+  evolutionLayout->addWidget(chartEvolutionView);
+  
+  // Ajouter un label explicatif du Burn Rate
+  QLabel *burnRateInfo = new QLabel(
+    QString("💡 <b>Burn Rate:</b> %1 TND/mois | "
+            "<b>Mois restants avec budget actuel:</b> %2 mois (estimation)")
+    .arg(burnRate, 0, 'f', 2)
+    .arg(burnRate > 0 ? QString::number(solde / burnRate, 'f', 1) : "∞")
+  );
+  burnRateInfo->setStyleSheet(
+    "background: #e8f5e9; padding: 10px; border-radius: 5px; "
+    "color: #2e7d32; font-size: 12px;"
+  );
+  burnRateInfo->setWordWrap(true);
+  evolutionLayout->addWidget(burnRateInfo);
+  
+  mainLayout->addWidget(evolutionGroup);
+  
+  // ========== BOUTON FERMER ==========
+  QPushButton *btnClose = new QPushButton("Fermer", statsDialog);
+  btnClose->setStyleSheet(
+    "QPushButton {"
+    "   background-color: #3498db;"
+    "   color: white;"
+    "   border: none;"
+    "   padding: 10px 30px;"
+    "   border-radius: 5px;"
+    "   font-size: 14px;"
+    "   font-weight: bold;"
+    "}"
+    "QPushButton:hover {"
+    "   background-color: #2980b9;"
+    "}"
+  );
+  connect(btnClose, &QPushButton::clicked, statsDialog, &QDialog::accept);
+  
+  QHBoxLayout *btnLayout = new QHBoxLayout();
+  btnLayout->addStretch();
+  btnLayout->addWidget(btnClose);
+  btnLayout->addStretch();
+  mainLayout->addLayout(btnLayout);
+  
+  // Afficher le dialogue
+  statsDialog->exec();
+  delete statsDialog;
 }
 
 void SmartPub::on_finBtnAjouterTransaction_clicked() {
@@ -4055,7 +5226,7 @@ void SmartPub::on_finBtnAjouterTransaction_clicked() {
   QString projet = ui->finComboBoxProjet->currentText();
   QString type = ui->finComboBoxType->currentText();
   QString montantStr = ui->finLineEditMontant->text();
-  QString date = ui->finDateEdit->date().toString("dd/MM/yyyy");
+  QDate date = ui->finDateEdit->date();
   QString categorie = ui->finComboBoxCategorie->currentText();
   QString statut = ui->finComboBoxStatut->currentText();
   QString description = ui->finTextEditDescription->toPlainText();
@@ -4073,11 +5244,8 @@ void SmartPub::on_finBtnAjouterTransaction_clicked() {
     return;
   }
 
-  int newId =
-      finTransactionsMap.isEmpty() ? 1 : finTransactionsMap.keys().last() + 1;
-
   TransactionData data;
-  data.id = newId;
+  data.id = finTransactionsMap.isEmpty() ? 1 : finTransactionsMap.keys().last() + 1;
   data.projet = projet;
   data.type = type;
   data.montant = montant;
@@ -4086,9 +5254,12 @@ void SmartPub::on_finBtnAjouterTransaction_clicked() {
   data.statut = statut;
   data.description = description;
 
-  finTransactionsMap[newId] = data;
-
-  QMessageBox::information(this, "Succès", "Transaction ajoutée avec succès !");
+  if (finSauvegarderDansBD(data)) {
+    finTransactionsMap[data.id] = data;
+    QMessageBox::information(this, "Succès", "Transaction ajoutée avec succès !");
+  } else {
+    QMessageBox::critical(this, "Erreur", "Erreur lors de l'ajout.");
+  }
 
   ui->finStackedWidget->setCurrentIndex(0);
   finUpdateButtonStyles();
@@ -4117,8 +5288,159 @@ void SmartPub::on_finBtnModifierTransaction_clicked() {
                          "Veuillez sélectionner une transaction à modifier");
     return;
   }
-  QMessageBox::information(this, "Modifier",
-                           "Fonctionnalité de modification - À implémenter");
+  
+  // Récupérer l'ID de la transaction
+  int id = ui->finTableTransactions->item(currentRow, 0)->text().toInt();
+  
+  if (!finTransactionsMap.contains(id)) {
+    QMessageBox::warning(this, "Erreur", "Transaction introuvable");
+    return;
+  }
+  
+  TransactionData transaction = finTransactionsMap[id];
+  
+  // Créer un dialogue de modification
+  QDialog *modifDialog = new QDialog(this);
+  modifDialog->setWindowTitle("Modifier la Transaction");
+  modifDialog->setMinimumWidth(500);
+  
+  QVBoxLayout *mainLayout = new QVBoxLayout(modifDialog);
+  
+  // Titre
+  QLabel *titleLabel = new QLabel("✏️ Modification de la Transaction #" + QString::number(id));
+  QFont titleFont;
+  titleFont.setPointSize(14);
+  titleFont.setBold(true);
+  titleLabel->setFont(titleFont);
+  titleLabel->setStyleSheet("color: #2c3e50; padding: 10px; background: #ecf0f1; border-radius: 5px;");
+  mainLayout->addWidget(titleLabel);
+  
+  // Formulaire
+  QFormLayout *formLayout = new QFormLayout();
+  formLayout->setSpacing(15);
+  formLayout->setContentsMargins(10, 20, 10, 10);
+  
+  // Projet
+  QLineEdit *projetEdit = new QLineEdit(transaction.projet);
+  projetEdit->setStyleSheet("padding: 8px; border: 2px solid #bdc3c7; border-radius: 5px;");
+  formLayout->addRow("Projet *:", projetEdit);
+  
+  // Type
+  QComboBox *typeCombo = new QComboBox();
+  typeCombo->addItems({"Dépense", "Recette"});
+  typeCombo->setCurrentText(transaction.type);
+  typeCombo->setStyleSheet("padding: 8px; border: 2px solid #bdc3c7; border-radius: 5px;");
+  formLayout->addRow("Type *:", typeCombo);
+  
+  // Montant
+  QLineEdit *montantEdit = new QLineEdit(QString::number(transaction.montant, 'f', 2));
+  montantEdit->setStyleSheet("padding: 8px; border: 2px solid #bdc3c7; border-radius: 5px;");
+  formLayout->addRow("Montant (TND) *:", montantEdit);
+  
+  // Date
+  QDateEdit *dateEdit = new QDateEdit(transaction.date);
+  dateEdit->setCalendarPopup(true);
+  dateEdit->setStyleSheet("padding: 8px; border: 2px solid #bdc3c7; border-radius: 5px;");
+  formLayout->addRow("Date *:", dateEdit);
+  
+  // Catégorie
+  QComboBox *categorieCombo = new QComboBox();
+  categorieCombo->addItems({"Équipement", "Personnel", "Fournitures", "Logiciel", 
+                           "Formation", "Déplacement", "Subvention", "Partenariat", "Autre"});
+  categorieCombo->setCurrentText(transaction.categorie);
+  categorieCombo->setEditable(true);
+  categorieCombo->setStyleSheet("padding: 8px; border: 2px solid #bdc3c7; border-radius: 5px;");
+  formLayout->addRow("Catégorie *:", categorieCombo);
+  
+  // Statut
+  QComboBox *statutCombo = new QComboBox();
+  statutCombo->addItems({"Validé", "En attente", "Rejeté"});
+  statutCombo->setCurrentText(transaction.statut);
+  statutCombo->setStyleSheet("padding: 8px; border: 2px solid #bdc3c7; border-radius: 5px;");
+  formLayout->addRow("Statut *:", statutCombo);
+  
+  // Description
+  QTextEdit *descriptionEdit = new QTextEdit(transaction.description);
+  descriptionEdit->setMaximumHeight(80);
+  descriptionEdit->setStyleSheet("padding: 8px; border: 2px solid #bdc3c7; border-radius: 5px;");
+  formLayout->addRow("Description:", descriptionEdit);
+  
+  mainLayout->addLayout(formLayout);
+  
+  // Boutons
+  QHBoxLayout *btnLayout = new QHBoxLayout();
+  
+  QPushButton *btnSave = new QPushButton("💾 Enregistrer");
+  btnSave->setStyleSheet(
+    "QPushButton {"
+    "  background-color: #27ae60; color: white; padding: 10px 20px;"
+    "  border-radius: 5px; font-weight: bold; font-size: 13px;"
+    "}"
+    "QPushButton:hover { background-color: #229954; }"
+  );
+  
+  QPushButton *btnCancel = new QPushButton("❌ Annuler");
+  btnCancel->setStyleSheet(
+    "QPushButton {"
+    "  background-color: #95a5a6; color: white; padding: 10px 20px;"
+    "  border-radius: 5px; font-weight: bold; font-size: 13px;"
+    "}"
+    "QPushButton:hover { background-color: #7f8c8d; }"
+  );
+  
+  btnLayout->addStretch();
+  btnLayout->addWidget(btnSave);
+  btnLayout->addWidget(btnCancel);
+  mainLayout->addLayout(btnLayout);
+  
+  // Connexions
+  connect(btnCancel, &QPushButton::clicked, modifDialog, &QDialog::reject);
+  
+  connect(btnSave, &QPushButton::clicked, [=, this]() {
+    // Validation
+    if (projetEdit->text().isEmpty() || montantEdit->text().isEmpty()) {
+      QMessageBox::warning(modifDialog, "Erreur", "Veuillez remplir tous les champs obligatoires (*)");
+      return;
+    }
+    
+    bool ok;
+    double montant = montantEdit->text().toDouble(&ok);
+    if (!ok || montant <= 0) {
+      QMessageBox::warning(modifDialog, "Erreur", "Montant invalide");
+      return;
+    }
+    
+    // Mettre à jour les données locales
+    TransactionData updatedTransaction;
+    updatedTransaction.projet = projetEdit->text();
+    updatedTransaction.type = typeCombo->currentText();
+    updatedTransaction.montant = montant;
+    updatedTransaction.date = dateEdit->date();
+    updatedTransaction.categorie = categorieCombo->currentText();
+    updatedTransaction.statut = statutCombo->currentText();
+    updatedTransaction.description = descriptionEdit->toPlainText();
+    
+    // Sauvegarder en BD
+    if (finMettreAJourDansBD(id, updatedTransaction)) {
+      finTransactionsMap[id] = updatedTransaction;
+      
+      // Mettre à jour la ligne dans le tableau
+      ui->finTableTransactions->setItem(currentRow, 1, new QTableWidgetItem(updatedTransaction.projet));
+      ui->finTableTransactions->setItem(currentRow, 2, new QTableWidgetItem(updatedTransaction.type));
+      ui->finTableTransactions->item(currentRow, 3)->setText(QString::number(updatedTransaction.montant, 'f', 2));
+      ui->finTableTransactions->item(currentRow, 4)->setText(updatedTransaction.date.toString("dd/MM/yyyy"));
+      ui->finTableTransactions->setItem(currentRow, 5, new QTableWidgetItem(updatedTransaction.categorie));
+      ui->finTableTransactions->setItem(currentRow, 6, new QTableWidgetItem(updatedTransaction.statut));
+      
+      QMessageBox::information(modifDialog, "Succès", "Transaction modifiée avec succès !");
+      modifDialog->accept();
+    } else {
+      QMessageBox::critical(modifDialog, "Erreur", "Erreur lors de la modification en base de données");
+    }
+  });
+  
+  modifDialog->exec();
+  delete modifDialog;
 }
 
 void SmartPub::on_finBtnSupprimerTransaction_clicked() {
@@ -4139,8 +5461,14 @@ void SmartPub::on_finBtnSupprimerTransaction_clicked() {
   auto reply = QMessageBox::question(
       this, "Supprimer", "Confirmer la suppression de cette transaction ?");
   if (reply == QMessageBox::Yes) {
-    QMessageBox::information(this, "Succès", "Transaction supprimée");
-    ui->finTableTransactions->removeRow(currentRow);
+    int id = ui->finTableTransactions->item(currentRow, 0)->text().toInt();
+    if (finSupprimerDeBD(id)) {
+      finTransactionsMap.remove(id);
+      ui->finTableTransactions->removeRow(currentRow);
+      QMessageBox::information(this, "Succès", "Transaction supprimée");
+    } else {
+      QMessageBox::critical(this, "Erreur", "Erreur lors de la suppression.");
+    }
   }
 }
 
@@ -4201,25 +5529,28 @@ void SmartPub::evAjouterDonneesTest() {
   e1.id = 1;
   e1.nom = "Conférence Internationale sur l'IA";
   e1.lieu = "Paris, France";
-  e1.date = "15/03/2024";
+  e1.date = QDate::fromString("15/03/2024", "dd/MM/yyyy");
   e1.description = "Conférence sur les avancées en intelligence artificielle";
   evEventsMap[1] = e1;
+  evSauvegarderDansBD(e1);
 
   EventData e2;
   e2.id = 2;
   e2.nom = "Workshop Quantum Computing";
   e2.lieu = "Lyon, France";
-  e2.date = "22/04/2024";
+  e2.date = QDate::fromString("22/04/2024", "dd/MM/yyyy");
   e2.description = "Atelier pratique sur l'informatique quantique";
   evEventsMap[2] = e2;
+  evSauvegarderDansBD(e2);
 
   EventData e3;
   e3.id = 3;
   e3.nom = "Séminaire BioTech";
   e3.lieu = "Marseille, France";
-  e3.date = "10/05/2024";
+  e3.date = QDate::fromString("10/05/2024", "dd/MM/yyyy");
   e3.description = "Séminaire sur les biotechnologies";
   evEventsMap[3] = e3;
+  evSauvegarderDansBD(e3);
 
   evAfficherListeEvents();
 }
@@ -4241,7 +5572,7 @@ void SmartPub::evAfficherListeEvents() {
     ui->evTableSearchEvents->setItem(row, 2,
                                      new QTableWidgetItem(it.value().lieu));
     ui->evTableSearchEvents->setItem(row, 3,
-                                     new QTableWidgetItem(it.value().date));
+                                     new QTableWidgetItem(it.value().date.toString("dd/MM/yyyy")));
   }
 }
 
@@ -4253,7 +5584,7 @@ void SmartPub::evAjouterEventTable(const EventData &data) {
                              new QTableWidgetItem(QString::number(data.id)));
   ui->evTableEvents->setItem(row, 1, new QTableWidgetItem(data.nom));
   ui->evTableEvents->setItem(row, 2, new QTableWidgetItem(data.lieu));
-  ui->evTableEvents->setItem(row, 3, new QTableWidgetItem(data.date));
+  ui->evTableEvents->setItem(row, 3, new QTableWidgetItem(data.date.toString("dd/MM/yyyy")));
 }
 
 void SmartPub::evRechercherParLieu() {
@@ -4275,7 +5606,7 @@ void SmartPub::evRechercherParLieu() {
       ui->evTableSearchEvents->setItem(row, 2,
                                        new QTableWidgetItem(it.value().lieu));
       ui->evTableSearchEvents->setItem(row, 3,
-                                       new QTableWidgetItem(it.value().date));
+                                       new QTableWidgetItem(it.value().date.toString("dd/MM/yyyy")));
     }
   }
 }
@@ -4308,12 +5639,15 @@ void SmartPub::on_evBtnAjouterEvent_clicked() {
   data.id = idNum;
   data.nom = nom;
   data.lieu = lieu;
-  data.date = date;
+  data.date = QDate::fromString(date, "dd/MM/yyyy");
   data.description = "";
 
-  evEventsMap[idNum] = data;
-
-  QMessageBox::information(this, "Succès", "Événement ajouté avec succès !");
+  if (evSauvegarderDansBD(data)) {
+    evEventsMap[idNum] = data;
+    QMessageBox::information(this, "Succès", "Événement ajouté avec succès !");
+  } else {
+    QMessageBox::critical(this, "Erreur", "Erreur lors de l'ajout.");
+  }
 
   evAfficherListeEvents();
 
@@ -4359,9 +5693,13 @@ void SmartPub::on_evBtnSupprimerEvent_clicked() {
       this, "Supprimer", "Confirmer la suppression de cet événement ?");
   if (reply == QMessageBox::Yes) {
     int id = ui->evTableEvents->item(currentRow, 0)->text().toInt();
-    evEventsMap.remove(id);
-    evAfficherListeEvents();
-    QMessageBox::information(this, "Succès", "Événement supprimé");
+    if (evSupprimerDeBD(id)) {
+      evEventsMap.remove(id);
+      evAfficherListeEvents();
+      QMessageBox::information(this, "Succès", "Événement supprimé");
+    } else {
+      QMessageBox::critical(this, "Erreur", "Erreur lors de la suppression.");
+    }
   }
 }
 
@@ -4667,42 +6005,52 @@ void SmartPub::projSetupSampleData() {
   projets.clear();
 
   projets.append(Projet(
-      nextProjetId++, "PRJ-2024-AI-01", "Smart-Traffic 2026",
+      1, "PRJ-2024-AI-01", "Smart-Traffic 2026",
       QDate(2024, 1, 15), QDate(2026, 12, 31), "Dr. Ahmed Ben Ali", "Actif",
       "75%",
       "Développement d'un système de gestion du trafic intelligent utilisant "
       "l'IA et le machine learning pour optimiser les flux urbains."));
 
-  projets.append(Projet(nextProjetId++, "PRJ-2024-BIO-02",
+  projets.append(Projet(2, "PRJ-2024-BIO-02",
                         "Analyse Génome Humain", QDate(2024, 3, 1),
                         QDate(2025, 6, 30), "Pr. Fatima Zohra", "Actif", "60%",
                         "Analyse approfondie du génome humain pour identifier "
                         "les marqueurs génétiques de maladies rares."));
 
-  projets.append(Projet(nextProjetId++, "PRJ-2023-QUANT-01",
+  projets.append(Projet(3, "PRJ-2023-QUANT-01",
                         "Calculateur Quantique", QDate(2023, 9, 10),
                         QDate(2024, 8, 15), "Dr. Mohamed Salah", "En pause",
                         "45%",
                         "Développement d'un prototype de calculateur quantique "
                         "pour applications cryptographiques."));
 
-  projets.append(Projet(nextProjetId++, "PRJ-2024-ENV-03",
+  projets.append(Projet(4, "PRJ-2024-ENV-03",
                         "Énergies Renouvelables", QDate(2024, 2, 1),
                         QDate(2025, 12, 31), "Dr. Sarah Johnson", "Actif",
                         "30%",
                         "Développement de nouvelles technologies pour "
                         "l'énergie solaire à haut rendement."));
 
-  projets.append(Projet(nextProjetId++, "PRJ-2023-MED-04",
+  projets.append(Projet(5, "PRJ-2023-MED-04",
                         "Vaccins Nouvelle Génération", QDate(2023, 11, 15),
                         QDate(2024, 10, 30), "Pr. Robert Chen", "Terminé",
                         "100%",
                         "Recherche sur des vaccins à ARNm pour maladies "
                         "infectieuses émergentes."));
+  
+  nextProjetId = 6;
 }
 
 void SmartPub::projChargerProjets() {
   projViderTable();
+
+  // Charger depuis la base de données si nécessaire
+  if (!projDonneesChargees) {
+    if (!projChargerDepuisBD()) {
+      // Si échec, utiliser les données de test
+      projSetupSampleData();
+    }
+  }
 
   const QVector<Projet> &projetsACharger =
       filtresActifs ? projetsFiltres : projets;
@@ -4914,16 +6262,19 @@ void SmartPub::on_btnSupprimerProjet_clicked() {
                             QMessageBox::Yes | QMessageBox::No);
 
   if (reply == QMessageBox::Yes) {
-    for (int i = 0; i < projets.size(); ++i) {
-      if (projets[i].id == projetId) {
-        projets.remove(i);
-        break;
+    if (projSupprimerDeBD(projetId)) {
+      for (int i = 0; i < projets.size(); ++i) {
+        if (projets[i].id == projetId) {
+          projets.remove(i);
+          break;
+        }
       }
-    }
-
-    ui->tableWidgetProjets->removeRow(row);
-    QMessageBox::information(this, "Suppression",
+      ui->tableWidgetProjets->removeRow(row);
+      QMessageBox::information(this, "Suppression",
                              "Projet supprimé avec succès");
+    } else {
+      QMessageBox::critical(this, "Erreur", "Erreur lors de la suppression.");
+    }
   }
 }
 
@@ -4963,25 +6314,34 @@ void SmartPub::on_btnEnregistrerForm_clicked() {
   if (isEditing) {
     for (int i = 0; i < projets.size(); ++i) {
       if (projets[i].id == currentProjetId) {
-        projets[i] = projet;
-        for (int row = 0; row < ui->tableWidgetProjets->rowCount(); ++row) {
-          if (ui->tableWidgetProjets->item(row, 0)->text().toInt() ==
-              currentProjetId) {
-            projMettreAJourProjetTable(row, projet);
-            break;
+        projet.id = currentProjetId;
+        if (projMettreAJourDansBD(currentProjetId, projet)) {
+          projets[i] = projet;
+          for (int row = 0; row < ui->tableWidgetProjets->rowCount(); ++row) {
+            if (ui->tableWidgetProjets->item(row, 0)->text().toInt() ==
+                currentProjetId) {
+              projMettreAJourProjetTable(row, projet);
+              break;
+            }
           }
-        }
-        QMessageBox::information(this, "Modification",
+          QMessageBox::information(this, "Modification",
                                  "Projet modifié avec succès");
+        } else {
+          QMessageBox::critical(this, "Erreur", "Erreur lors de la modification.");
+        }
         break;
       }
     }
   } else {
-    projet.id = nextProjetId++;
-    projets.append(projet);
-    projAjouterProjetTable(projet, projets.size() - 1);
-    QMessageBox::information(this, "Ajout",
+    if (projSauvegarderDansBD(projet)) {
+      // Recharger pour obtenir l'ID
+      projChargerDepuisBD();
+      projChargerProjets();
+      QMessageBox::information(this, "Ajout",
                              "Nouveau projet ajouté avec succès");
+    } else {
+      QMessageBox::critical(this, "Erreur", "Erreur lors de l'ajout.");
+    }
   }
 
   projCacherFormulaire();
@@ -5517,37 +6877,23 @@ void SmartPub::SR_addButtonsToRow(int row) {
   ui->SR_tablePublications->setCellWidget(row, 5, pWidget);
 
   // Connect buttons
-  connect(btnDelete, &QPushButton::clicked, this, [this]() {
+  connect(btnDelete, &QPushButton::clicked, this, [this, row]() {
     if (currentUser.role == UserRole::Guest) {
       QMessageBox::warning(
           this, "Accès refusé",
           "Les invités ne peuvent pas supprimer de publications.");
       return;
     }
-    QPushButton *senderBtn = qobject_cast<QPushButton *>(sender());
-    if (!senderBtn)
-      return;
-    QWidget *widget = senderBtn->parentWidget();
-    int validRow = -1;
-    for (int r = 0; r < ui->SR_tablePublications->rowCount(); ++r) {
-      if (ui->SR_tablePublications->cellWidget(r, 5) == widget) {
-        validRow = r;
-        break;
-      }
-    }
-    if (validRow == -1)
-      return;
-
-    auto reply = QMessageBox::question(
-        this, "Confirmation",
-        "Voulez-vous vraiment supprimer cette publication ?",
-        QMessageBox::Yes | QMessageBox::No);
-    if (reply == QMessageBox::Yes) {
-      ui->SR_tablePublications->removeRow(validRow);
+    
+    if (SR_supprimerDeBD(row)) {
+      ui->SR_tablePublications->removeRow(row);
+      QMessageBox::information(this, "Succès", "Publication supprimée avec succès");
+    } else {
+      QMessageBox::critical(this, "Erreur", "Erreur lors de la suppression.");
     }
   });
 
-  connect(btnEdit, &QPushButton::clicked, this, [this]() {
+  connect(btnEdit, &QPushButton::clicked, this, [this, row]() {
     if (currentUser.role == UserRole::Guest) {
       QMessageBox::warning(
           this, "Accès refusé",
@@ -5555,31 +6901,19 @@ void SmartPub::SR_addButtonsToRow(int row) {
       return;
     }
 
-    QPushButton *senderBtn = qobject_cast<QPushButton *>(sender());
-    if (!senderBtn)
-      return;
-    QWidget *widget = senderBtn->parentWidget();
-    int validRow = -1;
-    for (int r = 0; r < ui->SR_tablePublications->rowCount(); ++r) {
-      if (ui->SR_tablePublications->cellWidget(r, 5) == widget) {
-        validRow = r;
-        break;
-      }
-    }
-    if (validRow == -1)
-      return;
+    editingPublicationRow = row;
 
-    editingPublicationRow = validRow;
-
-    QString t = ui->SR_tablePublications->item(validRow, 0)->text();
-    QString a = ui->SR_tablePublications->item(validRow, 1)->text();
-    QString r = ui->SR_tablePublications->item(validRow, 3)->text();
-    QString s = ui->SR_tablePublications->item(validRow, 4)->text();
+    QString t = ui->SR_tablePublications->item(row, 0)->text();
+    QString a = ui->SR_tablePublications->item(row, 1)->text();
+    QString d = ui->SR_tablePublications->item(row, 2)->text();
+    QString r = ui->SR_tablePublications->item(row, 3)->text();
+    QString s = ui->SR_tablePublications->item(row, 4)->text();
 
     ui->SR_lineEditTitre->setText(t);
     ui->SR_lineEditAuteurs->setText(a);
     ui->SR_lineEditRevue->setText(r);
     ui->SR_comboBoxStatut->setCurrentText(s);
+    ui->SR_dateEditPublication->setDate(QDate::fromString(d, "yyyy-MM-dd"));
 
     ui->SR_btnAjouterPublication->setText("Enregistrer modifications");
 

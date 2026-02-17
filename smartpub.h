@@ -57,6 +57,11 @@
 #include <QLineSeries>
 #include <QPieSeries>
 #include <QValueAxis>
+// Qt SQL
+#include <QSqlDatabase>
+#include <QSqlQuery>
+#include <QSqlError>
+#include <QSqlRecord>
 
 QT_BEGIN_NAMESPACE
 class QPieSeries;
@@ -92,6 +97,7 @@ struct Projet {
 
 // Structure pour le module Chercheurs
 struct ChercheurData {
+  int id;
   QString nom;
   QString prenom;
   QString grade;
@@ -110,7 +116,7 @@ struct TransactionData {
   QString projet;
   QString type;
   double montant;
-  QString date;
+  QDate date;
   QString categorie;
   QString statut;
   QString description;
@@ -121,7 +127,7 @@ struct EventData {
   int id;
   QString nom;
   QString lieu;
-  QString date;
+  QDate date;
   QString description;
 };
 
@@ -303,7 +309,6 @@ private slots:
   void on_cherchSupprimerChercheur(int id);
   void on_cherchVoirDetailsChercheur(int id);
   void on_cherchLineEditRecherche_textChanged(const QString &text);
-  //     void on_cherchUserProfileFrame_clicked();
   void on_cherchBtnLogin_clicked();
   void on_cherchBtnMotDePasseOublie_clicked();
   void on_cherchBtnRetourLogin_clicked();
@@ -314,7 +319,6 @@ private slots:
   // === MODULE PUBLICATIONS ===
   void on_SR_btnVueListe_clicked();
   void on_SR_btnAjouter_clicked();
-
   void on_SR_btnRecherche_clicked();
   void on_SR_btnTri_clicked();
   void on_SR_btnExport_clicked();
@@ -403,6 +407,12 @@ private:
   void cherchAfficherStatistiques();
   void cherchAjouterDonneesTest();
   QString cherchDeterminerCarriere(int projetsCount, const QString &grade);
+  
+  // === NOUVELLES MÉTHODES BASE DE DONNÉES CHERCHEURS ===
+  bool cherchChargerDepuisBD();
+  bool cherchSauvegarderDansBD(const ChercheurData &chercheur);
+  bool cherchMettreAJourDansBD(int id, const ChercheurData &chercheur);
+  bool cherchSupprimerDeBD(int id);
 
   // === MODULE PUBLICATIONS ===
   void SR_setupUI();
@@ -410,6 +420,16 @@ private:
   void SR_loadSampleData();
   void SR_updateButtonStyles();
   void SR_addButtonsToRow(int row);
+  
+  // === NOUVELLES MÉTHODES BASE DE DONNÉES PUBLICATIONS ===
+  bool SR_chargerDepuisBD();
+  bool SR_sauvegarderDansBD(const QString &titre, const QString &auteurs, 
+                           const QDate &date, const QString &revue, 
+                           const QString &statut);
+  bool SR_mettreAJourDansBD(int row, const QString &titre, const QString &auteurs, 
+                           const QDate &date, const QString &revue, 
+                           const QString &statut);
+  bool SR_supprimerDeBD(int row);
 
   // === MODULE FINANCES ===
   void finSetupUI();
@@ -418,6 +438,12 @@ private:
   void finAjouterDonneesTest();
   void finAfficherListeTransactions();
   void finAjouterTransactionTable(const TransactionData &data);
+  
+  // === NOUVELLES MÉTHODES BASE DE DONNÉES FINANCES ===
+  bool finChargerDepuisBD();
+  bool finSauvegarderDansBD(const TransactionData &transaction);
+  bool finMettreAJourDansBD(int id, const TransactionData &transaction);
+  bool finSupprimerDeBD(int id);
 
   // === MODULE EVENEMENTS ===
   void evSetupUI();
@@ -426,6 +452,12 @@ private:
   void evAfficherListeEvents();
   void evAjouterEventTable(const EventData &data);
   void evRechercherParLieu();
+  
+  // === NOUVELLES MÉTHODES BASE DE DONNÉES EVENEMENTS ===
+  bool evChargerDepuisBD();
+  bool evSauvegarderDansBD(const EventData &event);
+  bool evMettreAJourDansBD(int id, const EventData &event);
+  bool evSupprimerDeBD(int id);
 
   // === MODULE PROJETS (Ton travail) ===
   void projSetupUI();
@@ -459,6 +491,13 @@ private:
   int projCompterProjetsEnRetard() const;
   void projAjusterColonnesTable();
   void projSetActiveCrudButton(int index);
+  
+  // === NOUVELLES MÉTHODES BASE DE DONNÉES PROJETS ===
+  bool projChargerDepuisBD();
+  bool projSauvegarderDansBD(const Projet &projet);
+  bool projMettreAJourDansBD(int id, const Projet &projet);
+  bool projSupprimerDeBD(int id);
+  int projGetNextId();
 
   Ui::SmartPub *ui;
 
@@ -488,15 +527,24 @@ private:
   bool cherchIsLoggedIn;
   QPushButton *cherchBtnToggleVue;
   QMap<int, ChercheurData> cherchChercheursMap;
+  
+  // === VARIABLES BASE DE DONNÉES CHERCHEURS ===
+  bool cherchDonneesChargees;
 
   // === VARIABLES MODULE FINANCES ===
   bool finVueListeActive;
   int finTransactionSelectionnee;
   QMap<int, TransactionData> finTransactionsMap;
+  
+  // === VARIABLES BASE DE DONNÉES FINANCES ===
+  bool finDonneesChargees;
 
   // === VARIABLES MODULE EVENEMENTS ===
   int evEventSelectionne;
   QMap<int, EventData> evEventsMap;
+  
+  // === VARIABLES BASE DE DONNÉES EVENEMENTS ===
+  bool evDonneesChargees;
 
   // === VARIABLES MODULE PROJETS ===
   QVector<Projet> projets;
@@ -511,9 +559,16 @@ private:
   QDate filtreDateDebutMin;
   QDate filtreDateDebutMax;
   bool filtresActifs;
+  
+  // === VARIABLES BASE DE DONNÉES PROJETS ===
+  bool projDonneesChargees;
 
   // === VARIABLES MODULE PUBLICATIONS ===
   int editingPublicationRow;
+  
+  // === VARIABLES BASE DE DONNÉES PUBLICATIONS ===
+  bool SR_donneesChargees;
 };
+// test push
 
 #endif // SMARTPUB_H
