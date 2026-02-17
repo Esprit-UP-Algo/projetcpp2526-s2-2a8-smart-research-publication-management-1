@@ -16,8 +16,8 @@
   <property name="styleSheet">
    <string notr="true">background-color: #f1f5f9;</string>
   </property>
-  <widget class="QWidget" name="centralwidget">
-   <layout class="QHBoxLayout" name="horizontalLayoutMain">
+  <widget class="QWidget" name="SR_centralwidget">
+   <layout class="QHBoxLayout" name="SR_horizontalLayoutMain">
     <property name="spacing">
      <number>0</number>
     </property>
@@ -34,7 +34,7 @@
      <number>0</number>
     </property>
     <item>
-     <widget class="QFrame" name="sidebarFrame">
+     <widget class="QFrame" name="SR_sidebarFrame">
       <property name="minimumSize">
        <size>
         <width>260</width>
@@ -51,9 +51,9 @@
        <string notr="true">background-color: #1e293b;</string>
       </property>
       <property name="frameShape">
-       <enum>QFrame::NoFrame</enum>
+       <enum>QFrame::Shape::NoFrame</enum>
       </property>
-      <layout class="QVBoxLayout" name="verticalLayoutSidebar">
+      <layout class="QVBoxLayout" name="SR_verticalLayoutSidebar">
        <property name="spacing">
         <number>0</number>
        </property>
@@ -70,7 +70,7 @@
         <number>0</number>
        </property>
        <item>
-        <widget class="QFrame" name="logoFrame">
+        <widget class="QFrame" name="SR_logoFrame">
          <property name="minimumSize">
           <size>
            <width>0</width>
@@ -87,9 +87,9 @@
           <string notr="true">background-color: #0f172a;</string>
          </property>
          <property name="frameShape">
-          <enum>QFrame::NoFrame</enum>
+          <enum>QFrame::Shape::NoFrame</enum>
          </property>
-         <layout class="QVBoxLayout" name="verticalLayoutLogo">
+         <layout class="QVBoxLayout" name="SR_verticalLayoutLogo">
           <property name="spacing">
            <number>0</number>
           </property>
@@ -106,7 +106,7 @@
            <number>0</number>
           </property>
           <item>
-           <widget class="QLabel" name="logoLabel">
+           <widget class="QLabel" name="SR_logoLabel">
             <property name="minimumSize">
              <size>
               <width>200</width>
@@ -127,10 +127,16 @@ background: transparent;
 border: none;</string>
             </property>
             <property name="text">
-             <string>🔬 Smart Research</string>
+             <string/>
+            </property>
+            <property name="pixmap">
+             <pixmap resource="ressources.qrc">:/new/prefix1/logo.png-removebg-preview.png</pixmap>
+            </property>
+            <property name="scaledContents">
+             <bool>true</bool>
             </property>
             <property name="alignment">
-             <set>Qt::AlignCenter</set>
+             <set>Qt::AlignmentFlag::AlignCenter</set>
             </property>
            </widget>
           </item>
@@ -138,7 +144,7 @@ border: none;</string>
         </widget>
        </item>
        <item>
-        <layout class="QVBoxLayout" name="verticalLayoutNav">
+        <layout class="QVBoxLayout" name="SR_verticalLayoutNav">
          <property name="spacing">
           <number>8</number>
          </property>
@@ -155,7 +161,7 @@ border: none;</string>
           <number>20</number>
          </property>
          <item>
-          <widget class="QPushButton" name="btnPublications">
+          <widget class="QPushButton" name="SR_btnPublications">
            <property name="minimumSize">
             <size>
              <width>0</width>
@@ -198,7 +204,7 @@ QPushButton:hover {
           </widget>
          </item>
          <item>
-          <widget class="QPushButton" name="btnChercheurs">
+          <widget class="QPushButton" name="SR_btnChercheurs">
            <property name="minimumSize">
             <size>
              <width>0</width>
@@ -237,7 +243,7 @@ QPushButton:hover {
           </widget>
          </item>
          <item>
-          <widget class="QPushButton" name="btnLaboratoires">
+          <widget class="QPushButton" name="SR_btnLaboratoires">
            <property name="minimumSize">
             <size>
              <width>0</width>
@@ -276,7 +282,7 @@ QPushButton:hover {
           </widget>
          </item>
          <item>
-          <widget class="QPushButton" name="btnProjets">
+          <widget class="QPushButton" name="SR_btnProjets">
            <property name="minimumSize">
             <size>
              <width>0</width>
@@ -315,7 +321,7 @@ QPushButton:hover {
           </widget>
          </item>
          <item>
-          <widget class="QPushButton" name="btnFinances">
+          <widget class="QPushButton" name="SR_btnFinances">
            <property name="minimumSize">
             <size>
              <width>0</width>
@@ -354,7 +360,7 @@ QPushButton:hover {
           </widget>
          </item>
          <item>
-          <widget class="QPushButton" name="btnEvenements">
+          <widget class="QPushButton" name="SR_btnEvenements">
            <property name="minimumSize">
             <size>
              <width>0</width>
@@ -393,9 +399,9 @@ QPushButton:hover {
           </widget>
          </item>
          <item>
-          <spacer name="verticalSpacerSidebar">
+          <spacer name="SR_verticalSpacerSidebar">
            <property name="orientation">
-            <enum>Qt::Vertical</enum>
+            <enum>Qt::Orientation::Vertical</enum>
            </property>
            <property name="sizeHint" stdset="0">
             <size>
@@ -411,7 +417,7 @@ QPushButton:hover {
      </widget>
     </item>
     <item>
-     <layout class="QVBoxLayout" name="verticalLayoutMainContent">
+     <layout class="QVBoxLayout" name="SR_verticalLayoutMainContent">
       <property name="spacing">
        <number>0</number>
       </property>
@@ -428,7 +434,7 @@ QPushButton:hover {
        <number>0</number>
       </property>
       <item>
-       <widget class="QFrame" name="headerFrame">
+       <widget class="QFrame" name="SR_headerFrame">
         <property name="minimumSize">
          <size>
           <width>0</width>
@@ -446,9 +452,9 @@ QPushButton:hover {
 border-bottom: 1px solid #e2e8f0;</string>
         </property>
         <property name="frameShape">
-         <enum>QFrame::NoFrame</enum>
+         <enum>QFrame::Shape::NoFrame</enum>
         </property>
-        <layout class="QHBoxLayout" name="horizontalLayoutHeader">
+        <layout class="QHBoxLayout" name="SR_horizontalLayoutHeader">
          <property name="spacing">
           <number>20</number>
          </property>
@@ -465,12 +471,12 @@ border-bottom: 1px solid #e2e8f0;</string>
           <number>0</number>
          </property>
          <item>
-          <layout class="QVBoxLayout" name="verticalLayoutTitle">
+          <layout class="QVBoxLayout" name="SR_verticalLayoutTitle">
            <property name="spacing">
             <number>4</number>
            </property>
            <item>
-            <widget class="QLabel" name="titleLabel">
+            <widget class="QLabel" name="SR_titleLabel">
              <property name="styleSheet">
               <string notr="true">color: #1e293b;
 font-size: 28px;
@@ -484,7 +490,7 @@ border: none;</string>
             </widget>
            </item>
            <item>
-            <widget class="QLabel" name="subtitleLabel">
+            <widget class="QLabel" name="SR_subtitleLabel">
              <property name="styleSheet">
               <string notr="true">color: #64748b;
 font-size: 14px;
@@ -499,9 +505,9 @@ border: none;</string>
           </layout>
          </item>
          <item>
-          <spacer name="horizontalSpacerHeader">
+          <spacer name="SR_horizontalSpacerHeader">
            <property name="orientation">
-            <enum>Qt::Horizontal</enum>
+            <enum>Qt::Orientation::Horizontal</enum>
            </property>
            <property name="sizeHint" stdset="0">
             <size>
@@ -512,7 +518,7 @@ border: none;</string>
           </spacer>
          </item>
          <item>
-          <widget class="QFrame" name="userFrame">
+          <widget class="QFrame" name="SR_userFrame">
            <property name="minimumSize">
             <size>
              <width>180</width>
@@ -531,9 +537,9 @@ border-radius: 25px;
 border: 1px solid #e2e8f0;</string>
            </property>
            <property name="frameShape">
-            <enum>QFrame::NoFrame</enum>
+            <enum>QFrame::Shape::NoFrame</enum>
            </property>
-           <layout class="QHBoxLayout" name="horizontalLayoutUser">
+           <layout class="QHBoxLayout" name="SR_horizontalLayoutUser">
             <property name="spacing">
              <number>10</number>
             </property>
@@ -550,7 +556,7 @@ border: 1px solid #e2e8f0;</string>
              <number>5</number>
             </property>
             <item>
-             <widget class="QLabel" name="userAvatar">
+             <widget class="QLabel" name="SR_userAvatar">
               <property name="minimumSize">
                <size>
                 <width>36</width>
@@ -575,12 +581,12 @@ border: none;</string>
                <string>RP</string>
               </property>
               <property name="alignment">
-               <set>Qt::AlignCenter</set>
+               <set>Qt::AlignmentFlag::AlignCenter</set>
               </property>
              </widget>
             </item>
             <item>
-             <widget class="QLabel" name="userName">
+             <widget class="QLabel" name="SR_userName">
               <property name="styleSheet">
                <string notr="true">color: #334155;
 font-size: 13px;
@@ -600,7 +606,7 @@ border: none;</string>
        </widget>
       </item>
       <item>
-       <widget class="QFrame" name="toolbarFrame">
+       <widget class="QFrame" name="SR_toolbarFrame">
         <property name="minimumSize">
          <size>
           <width>0</width>
@@ -618,9 +624,9 @@ border: none;</string>
 border: none;</string>
         </property>
         <property name="frameShape">
-         <enum>QFrame::NoFrame</enum>
+         <enum>QFrame::Shape::NoFrame</enum>
         </property>
-        <layout class="QHBoxLayout" name="horizontalLayoutToolbar">
+        <layout class="QHBoxLayout" name="SR_horizontalLayoutToolbar">
          <property name="spacing">
           <number>15</number>
          </property>
@@ -637,7 +643,7 @@ border: none;</string>
           <number>20</number>
          </property>
          <item>
-          <widget class="QFrame" name="tabsFrame">
+          <widget class="QFrame" name="SR_tabsFrame">
            <property name="minimumSize">
             <size>
              <width>360</width>
@@ -656,9 +662,9 @@ border-radius: 12px;
 border: 1px solid #e2e8f0;</string>
            </property>
            <property name="frameShape">
-            <enum>QFrame::NoFrame</enum>
+            <enum>QFrame::Shape::NoFrame</enum>
            </property>
-           <layout class="QHBoxLayout" name="horizontalLayoutTabs">
+           <layout class="QHBoxLayout" name="SR_horizontalLayoutTabs">
             <property name="spacing">
              <number>0</number>
             </property>
@@ -675,7 +681,7 @@ border: 1px solid #e2e8f0;</string>
              <number>6</number>
             </property>
             <item>
-             <widget class="QPushButton" name="btnVueListe">
+             <widget class="QPushButton" name="SR_btnVueListe">
               <property name="minimumSize">
                <size>
                 <width>110</width>
@@ -719,7 +725,7 @@ QPushButton:hover {
              </widget>
             </item>
             <item>
-             <widget class="QPushButton" name="btnAjouter">
+             <widget class="QPushButton" name="SR_btnAjouter">
               <property name="minimumSize">
                <size>
                 <width>110</width>
@@ -759,7 +765,7 @@ QPushButton:hover {
              </widget>
             </item>
             <item>
-             <widget class="QPushButton" name="btnSupprimer">
+             <widget class="QPushButton" name="SR_btnSupprimer">
               <property name="minimumSize">
                <size>
                 <width>110</width>
@@ -799,9 +805,9 @@ QPushButton:hover {
           </widget>
          </item>
          <item>
-          <spacer name="horizontalSpacerToolbar">
+          <spacer name="SR_horizontalSpacerToolbar">
            <property name="orientation">
-            <enum>Qt::Horizontal</enum>
+            <enum>Qt::Orientation::Horizontal</enum>
            </property>
            <property name="sizeHint" stdset="0">
             <size>
@@ -812,7 +818,7 @@ QPushButton:hover {
           </spacer>
          </item>
          <item>
-          <widget class="QLineEdit" name="lineEditRecherche">
+          <widget class="QLineEdit" name="SR_lineEditRecherche">
            <property name="minimumSize">
             <size>
              <width>280</width>
@@ -844,7 +850,7 @@ QLineEdit:focus {
           </widget>
          </item>
          <item>
-          <widget class="QPushButton" name="btnRecherche">
+          <widget class="QPushButton" name="SR_btnRecherche">
            <property name="minimumSize">
             <size>
              <width>100</width>
@@ -880,7 +886,7 @@ QPushButton:hover {
           </widget>
          </item>
          <item>
-          <widget class="QPushButton" name="btnTri">
+          <widget class="QPushButton" name="SR_btnTri">
            <property name="minimumSize">
             <size>
              <width>90</width>
@@ -917,7 +923,7 @@ QPushButton:hover {
           </widget>
          </item>
          <item>
-          <widget class="QPushButton" name="btnExport">
+          <widget class="QPushButton" name="SR_btnExport">
            <property name="minimumSize">
             <size>
              <width>100</width>
@@ -954,7 +960,7 @@ QPushButton:hover {
           </widget>
          </item>
          <item>
-          <widget class="QPushButton" name="btnStatistiques">
+          <widget class="QPushButton" name="SR_btnStatistiques">
            <property name="minimumSize">
             <size>
              <width>120</width>
@@ -995,12 +1001,12 @@ QPushButton:hover {
        </widget>
       </item>
       <item>
-       <widget class="QStackedWidget" name="stackedWidget">
+       <widget class="QStackedWidget" name="SR_stackedWidget">
         <property name="styleSheet">
          <string notr="true">background-color: transparent;</string>
         </property>
-        <widget class="QWidget" name="pageListe">
-         <layout class="QVBoxLayout" name="verticalLayoutListe">
+        <widget class="QWidget" name="SR_pageListe">
+         <layout class="QVBoxLayout" name="SR_verticalLayoutListe">
           <property name="spacing">
            <number>0</number>
           </property>
@@ -1017,16 +1023,16 @@ QPushButton:hover {
            <number>30</number>
           </property>
           <item>
-           <widget class="QFrame" name="tableFrame">
+           <widget class="QFrame" name="SR_tableFrame">
             <property name="styleSheet">
              <string notr="true">background-color: white;
 border: 1px solid #e2e8f0;
 border-radius: 16px;</string>
             </property>
             <property name="frameShape">
-             <enum>QFrame::NoFrame</enum>
+             <enum>QFrame::Shape::NoFrame</enum>
             </property>
-            <layout class="QVBoxLayout" name="tableLayout">
+            <layout class="QVBoxLayout" name="SR_tableLayout">
              <property name="spacing">
               <number>20</number>
              </property>
@@ -1043,7 +1049,7 @@ border-radius: 16px;</string>
               <number>25</number>
              </property>
              <item>
-              <widget class="QLabel" name="lblListeTitre">
+              <widget class="QLabel" name="SR_lblListeTitre">
                <property name="styleSheet">
                 <string notr="true">font-size: 20px;
 font-weight: bold;
@@ -1057,7 +1063,7 @@ border: none;</string>
               </widget>
              </item>
              <item>
-              <widget class="QTableWidget" name="tablePublications">
+              <widget class="QTableWidget" name="SR_tablePublications">
                <property name="styleSheet">
                 <string notr="true">QTableWidget {
     background-color: white;
@@ -1094,7 +1100,7 @@ QTableWidget::item:hover {
                 <bool>false</bool>
                </property>
                <property name="selectionBehavior">
-                <enum>QAbstractItemView::SelectRows</enum>
+                <enum>QAbstractItemView::SelectionBehavior::SelectRows</enum>
                </property>
                <property name="showGrid">
                 <bool>false</bool>
@@ -1102,11 +1108,11 @@ QTableWidget::item:hover {
                <property name="columnCount">
                 <number>6</number>
                </property>
-               <attribute name="horizontalHeaderStretchLastSection">
-                <bool>true</bool>
-               </attribute>
                <attribute name="horizontalHeaderDefaultSectionSize">
                 <number>200</number>
+               </attribute>
+               <attribute name="horizontalHeaderStretchLastSection">
+                <bool>true</bool>
                </attribute>
                <attribute name="verticalHeaderVisible">
                 <bool>false</bool>
@@ -1148,8 +1154,8 @@ QTableWidget::item:hover {
           </item>
          </layout>
         </widget>
-        <widget class="QWidget" name="pageAjout">
-         <layout class="QVBoxLayout" name="verticalLayoutAjout">
+        <widget class="QWidget" name="SR_pageAjout">
+         <layout class="QVBoxLayout" name="SR_verticalLayoutAjout">
           <property name="spacing">
            <number>0</number>
           </property>
@@ -1166,16 +1172,16 @@ QTableWidget::item:hover {
            <number>30</number>
           </property>
           <item>
-           <widget class="QFrame" name="formFrame">
+           <widget class="QFrame" name="SR_formFrame">
             <property name="styleSheet">
              <string notr="true">background-color: white;
 border-radius: 20px;
 border: 1px solid #e2e8f0;</string>
             </property>
             <property name="frameShape">
-             <enum>QFrame::NoFrame</enum>
+             <enum>QFrame::Shape::NoFrame</enum>
             </property>
-            <layout class="QVBoxLayout" name="verticalLayoutForm">
+            <layout class="QVBoxLayout" name="SR_verticalLayoutForm">
              <property name="spacing">
               <number>25</number>
              </property>
@@ -1192,12 +1198,12 @@ border: 1px solid #e2e8f0;</string>
               <number>40</number>
              </property>
              <item>
-              <layout class="QVBoxLayout" name="verticalLayoutFormTitle">
+              <layout class="QVBoxLayout" name="SR_verticalLayoutFormTitle">
                <property name="spacing">
                 <number>8</number>
                </property>
                <item>
-                <widget class="QLabel" name="formTitle">
+                <widget class="QLabel" name="SR_formTitle">
                  <property name="styleSheet">
                   <string notr="true">color: #1e293b;
 font-size: 24px;
@@ -1211,7 +1217,7 @@ border: none;</string>
                 </widget>
                </item>
                <item>
-                <widget class="QLabel" name="formSubtitle">
+                <widget class="QLabel" name="SR_formSubtitle">
                  <property name="styleSheet">
                   <string notr="true">color: #64748b;
 font-size: 14px;
@@ -1226,7 +1232,7 @@ border: none;</string>
               </layout>
              </item>
              <item>
-              <widget class="QFrame" name="lineFrame">
+              <widget class="QFrame" name="SR_lineFrame">
                <property name="minimumSize">
                 <size>
                  <width>0</width>
@@ -1244,12 +1250,12 @@ border: none;</string>
 border: none;</string>
                </property>
                <property name="frameShape">
-                <enum>QFrame::NoFrame</enum>
+                <enum>QFrame::Shape::NoFrame</enum>
                </property>
               </widget>
              </item>
              <item>
-              <layout class="QGridLayout" name="gridLayoutInputs">
+              <layout class="QGridLayout" name="SR_gridLayoutInputs">
                <property name="horizontalSpacing">
                 <number>30</number>
                </property>
@@ -1257,12 +1263,12 @@ border: none;</string>
                 <number>20</number>
                </property>
                <item row="0" column="0">
-                <layout class="QVBoxLayout" name="verticalLayoutTitre">
+                <layout class="QVBoxLayout" name="SR_verticalLayoutTitre">
                  <property name="spacing">
                   <number>8</number>
                  </property>
                  <item>
-                  <widget class="QLabel" name="labelTitre">
+                  <widget class="QLabel" name="SR_labelTitre">
                    <property name="styleSheet">
                     <string notr="true">color: #334155;
 font-size: 14px;
@@ -1276,7 +1282,7 @@ border: none;</string>
                   </widget>
                  </item>
                  <item>
-                  <widget class="QLineEdit" name="lineEditTitre">
+                  <widget class="QLineEdit" name="SR_lineEditTitre">
                    <property name="minimumSize">
                     <size>
                      <width>0</width>
@@ -1305,12 +1311,12 @@ QLineEdit:focus {
                 </layout>
                </item>
                <item row="0" column="1">
-                <layout class="QVBoxLayout" name="verticalLayoutAuteurs">
+                <layout class="QVBoxLayout" name="SR_verticalLayoutAuteurs">
                  <property name="spacing">
                   <number>8</number>
                  </property>
                  <item>
-                  <widget class="QLabel" name="labelAuteurs">
+                  <widget class="QLabel" name="SR_labelAuteurs">
                    <property name="styleSheet">
                     <string notr="true">color: #334155;
 font-size: 14px;
@@ -1324,7 +1330,7 @@ border: none;</string>
                   </widget>
                  </item>
                  <item>
-                  <widget class="QLineEdit" name="lineEditAuteurs">
+                  <widget class="QLineEdit" name="SR_lineEditAuteurs">
                    <property name="minimumSize">
                     <size>
                      <width>0</width>
@@ -1353,12 +1359,12 @@ QLineEdit:focus {
                 </layout>
                </item>
                <item row="1" column="0">
-                <layout class="QVBoxLayout" name="verticalLayoutRevue">
+                <layout class="QVBoxLayout" name="SR_verticalLayoutRevue">
                  <property name="spacing">
                   <number>8</number>
                  </property>
                  <item>
-                  <widget class="QLabel" name="labelRevue">
+                  <widget class="QLabel" name="SR_labelRevue">
                    <property name="styleSheet">
                     <string notr="true">color: #334155;
 font-size: 14px;
@@ -1372,7 +1378,7 @@ border: none;</string>
                   </widget>
                  </item>
                  <item>
-                  <widget class="QLineEdit" name="lineEditRevue">
+                  <widget class="QLineEdit" name="SR_lineEditRevue">
                    <property name="minimumSize">
                     <size>
                      <width>0</width>
@@ -1401,12 +1407,12 @@ QLineEdit:focus {
                 </layout>
                </item>
                <item row="1" column="1">
-                <layout class="QVBoxLayout" name="verticalLayoutDate">
+                <layout class="QVBoxLayout" name="SR_verticalLayoutDate">
                  <property name="spacing">
                   <number>8</number>
                  </property>
                  <item>
-                  <widget class="QLabel" name="labelDate">
+                  <widget class="QLabel" name="SR_labelDate">
                    <property name="styleSheet">
                     <string notr="true">color: #334155;
 font-size: 14px;
@@ -1420,7 +1426,7 @@ border: none;</string>
                   </widget>
                  </item>
                  <item>
-                  <widget class="QDateEdit" name="dateEditPublication">
+                  <widget class="QDateEdit" name="SR_dateEditPublication">
                    <property name="minimumSize">
                     <size>
                      <width>0</width>
@@ -1453,12 +1459,12 @@ QDateEdit::drop-down {
                 </layout>
                </item>
                <item row="2" column="0" colspan="2">
-                <layout class="QVBoxLayout" name="verticalLayoutStatut">
+                <layout class="QVBoxLayout" name="SR_verticalLayoutStatut">
                  <property name="spacing">
                   <number>8</number>
                  </property>
                  <item>
-                  <widget class="QLabel" name="labelStatut">
+                  <widget class="QLabel" name="SR_labelStatut">
                    <property name="styleSheet">
                     <string notr="true">color: #334155;
 font-size: 14px;
@@ -1472,7 +1478,7 @@ border: none;</string>
                   </widget>
                  </item>
                  <item>
-                  <widget class="QComboBox" name="comboBoxStatut">
+                  <widget class="QComboBox" name="SR_comboBoxStatut">
                    <property name="minimumSize">
                     <size>
                      <width>0</width>
@@ -1537,14 +1543,14 @@ QComboBox QAbstractItemView {
               </layout>
              </item>
              <item>
-              <layout class="QHBoxLayout" name="horizontalLayoutFormButtons">
+              <layout class="QHBoxLayout" name="SR_horizontalLayoutFormButtons">
                <property name="spacing">
                 <number>15</number>
                </property>
                <item>
-                <spacer name="horizontalSpacerForm">
+                <spacer name="SR_horizontalSpacerForm">
                  <property name="orientation">
-                  <enum>Qt::Horizontal</enum>
+                  <enum>Qt::Orientation::Horizontal</enum>
                  </property>
                  <property name="sizeHint" stdset="0">
                   <size>
@@ -1555,7 +1561,7 @@ QComboBox QAbstractItemView {
                 </spacer>
                </item>
                <item>
-                <widget class="QPushButton" name="btnAnnulerAjout">
+                <widget class="QPushButton" name="SR_btnAnnulerAjout">
                  <property name="minimumSize">
                   <size>
                    <width>140</width>
@@ -1586,7 +1592,7 @@ QPushButton:hover {
                 </widget>
                </item>
                <item>
-                <widget class="QPushButton" name="btnAjouterPublication">
+                <widget class="QPushButton" name="SR_btnAjouterPublication">
                  <property name="minimumSize">
                   <size>
                    <width>180</width>
@@ -1624,8 +1630,8 @@ QPushButton:hover {
           </item>
          </layout>
         </widget>
-        <widget class="QWidget" name="pageStats">
-         <layout class="QVBoxLayout" name="verticalLayoutStats">
+        <widget class="QWidget" name="SR_pageStats">
+         <layout class="QVBoxLayout" name="SR_verticalLayoutStats">
           <property name="spacing">
            <number>30</number>
           </property>
@@ -1642,12 +1648,12 @@ QPushButton:hover {
            <number>30</number>
           </property>
           <item>
-           <layout class="QHBoxLayout" name="horizontalLayoutStatCards">
+           <layout class="QHBoxLayout" name="SR_horizontalLayoutStatCards">
             <property name="spacing">
              <number>20</number>
             </property>
             <item>
-             <widget class="QFrame" name="cardTotal">
+             <widget class="QFrame" name="SR_cardTotal">
               <property name="minimumSize">
                <size>
                 <width>0</width>
@@ -1662,9 +1668,9 @@ QPushButton:hover {
 }</string>
               </property>
               <property name="frameShape">
-               <enum>QFrame::NoFrame</enum>
+               <enum>QFrame::Shape::NoFrame</enum>
               </property>
-              <layout class="QHBoxLayout" name="horizontalLayoutCardTotal">
+              <layout class="QHBoxLayout" name="SR_horizontalLayoutCardTotal">
                <property name="spacing">
                 <number>20</number>
                </property>
@@ -1681,7 +1687,7 @@ QPushButton:hover {
                 <number>20</number>
                </property>
                <item>
-                <widget class="QFrame" name="iconFrameTotal">
+                <widget class="QFrame" name="SR_iconFrameTotal">
                  <property name="minimumSize">
                   <size>
                    <width>60</width>
@@ -1700,14 +1706,14 @@ QPushButton:hover {
 border-radius: 12px;</string>
                  </property>
                  <property name="frameShape">
-                  <enum>QFrame::NoFrame</enum>
+                  <enum>QFrame::Shape::NoFrame</enum>
                  </property>
-                 <layout class="QVBoxLayout" name="verticalLayoutIconTotal">
-                  <property name="margin">
+                 <layout class="QVBoxLayout" name="SR_verticalLayoutIconTotal">
+                  <property name="margin" stdset="0">
                    <number>0</number>
                   </property>
                   <item>
-                   <widget class="QLabel" name="lblTotalIcon">
+                   <widget class="QLabel" name="SR_lblTotalIcon">
                     <property name="styleSheet">
                      <string notr="true">color: white;
 font-size: 28px;
@@ -1718,7 +1724,7 @@ border: none;</string>
                      <string>📚</string>
                     </property>
                     <property name="alignment">
-                     <set>Qt::AlignCenter</set>
+                     <set>Qt::AlignmentFlag::AlignCenter</set>
                     </property>
                    </widget>
                   </item>
@@ -1726,12 +1732,12 @@ border: none;</string>
                 </widget>
                </item>
                <item>
-                <layout class="QVBoxLayout" name="verticalLayoutTotalText">
+                <layout class="QVBoxLayout" name="SR_verticalLayoutTotalText">
                  <property name="spacing">
                   <number>5</number>
                  </property>
                  <item>
-                  <widget class="QLabel" name="lblTotalNumber">
+                  <widget class="QLabel" name="SR_lblTotalNumber">
                    <property name="styleSheet">
                     <string notr="true">color: #1e293b;
 font-size: 32px;
@@ -1745,7 +1751,7 @@ border: none;</string>
                   </widget>
                  </item>
                  <item>
-                  <widget class="QLabel" name="lblTotalLabel">
+                  <widget class="QLabel" name="SR_lblTotalLabel">
                    <property name="styleSheet">
                     <string notr="true">color: #64748b;
 font-size: 14px;
@@ -1760,9 +1766,9 @@ border: none;</string>
                 </layout>
                </item>
                <item>
-                <spacer name="horizontalSpacerCardTotal">
+                <spacer name="SR_horizontalSpacerCardTotal">
                  <property name="orientation">
-                  <enum>Qt::Horizontal</enum>
+                  <enum>Qt::Orientation::Horizontal</enum>
                  </property>
                 </spacer>
                </item>
@@ -1770,7 +1776,7 @@ border: none;</string>
              </widget>
             </item>
             <item>
-             <widget class="QFrame" name="cardThisYear">
+             <widget class="QFrame" name="SR_cardThisYear">
               <property name="minimumSize">
                <size>
                 <width>0</width>
@@ -1785,9 +1791,9 @@ border: none;</string>
 }</string>
               </property>
               <property name="frameShape">
-               <enum>QFrame::NoFrame</enum>
+               <enum>QFrame::Shape::NoFrame</enum>
               </property>
-              <layout class="QHBoxLayout" name="horizontalLayoutCardThisYear">
+              <layout class="QHBoxLayout" name="SR_horizontalLayoutCardThisYear">
                <property name="spacing">
                 <number>20</number>
                </property>
@@ -1804,7 +1810,7 @@ border: none;</string>
                 <number>20</number>
                </property>
                <item>
-                <widget class="QFrame" name="iconFrameThisYear">
+                <widget class="QFrame" name="SR_iconFrameThisYear">
                  <property name="minimumSize">
                   <size>
                    <width>60</width>
@@ -1823,14 +1829,14 @@ border: none;</string>
 border-radius: 12px;</string>
                  </property>
                  <property name="frameShape">
-                  <enum>QFrame::NoFrame</enum>
+                  <enum>QFrame::Shape::NoFrame</enum>
                  </property>
-                 <layout class="QVBoxLayout" name="verticalLayoutIconThisYear">
-                  <property name="margin">
+                 <layout class="QVBoxLayout" name="SR_verticalLayoutIconThisYear">
+                  <property name="margin" stdset="0">
                    <number>0</number>
                   </property>
                   <item>
-                   <widget class="QLabel" name="lblThisYearIcon">
+                   <widget class="QLabel" name="SR_lblThisYearIcon">
                     <property name="styleSheet">
                      <string notr="true">color: white;
 font-size: 28px;
@@ -1841,7 +1847,7 @@ border: none;</string>
                      <string>🆕</string>
                     </property>
                     <property name="alignment">
-                     <set>Qt::AlignCenter</set>
+                     <set>Qt::AlignmentFlag::AlignCenter</set>
                     </property>
                    </widget>
                   </item>
@@ -1849,12 +1855,12 @@ border: none;</string>
                 </widget>
                </item>
                <item>
-                <layout class="QVBoxLayout" name="verticalLayoutThisYearText">
+                <layout class="QVBoxLayout" name="SR_verticalLayoutThisYearText">
                  <property name="spacing">
                   <number>5</number>
                  </property>
                  <item>
-                  <widget class="QLabel" name="lblThisYearNumber">
+                  <widget class="QLabel" name="SR_lblThisYearNumber">
                    <property name="styleSheet">
                     <string notr="true">color: #1e293b;
 font-size: 32px;
@@ -1868,7 +1874,7 @@ border: none;</string>
                   </widget>
                  </item>
                  <item>
-                  <widget class="QLabel" name="lblThisYearLabel">
+                  <widget class="QLabel" name="SR_lblThisYearLabel">
                    <property name="styleSheet">
                     <string notr="true">color: #64748b;
 font-size: 14px;
@@ -1883,9 +1889,9 @@ border: none;</string>
                 </layout>
                </item>
                <item>
-                <spacer name="horizontalSpacerCardThisYear">
+                <spacer name="SR_horizontalSpacerCardThisYear">
                  <property name="orientation">
-                  <enum>Qt::Horizontal</enum>
+                  <enum>Qt::Orientation::Horizontal</enum>
                  </property>
                 </spacer>
                </item>
@@ -1893,7 +1899,7 @@ border: none;</string>
              </widget>
             </item>
             <item>
-             <widget class="QFrame" name="cardPlanS">
+             <widget class="QFrame" name="SR_cardPlanS">
               <property name="minimumSize">
                <size>
                 <width>0</width>
@@ -1908,9 +1914,9 @@ border: none;</string>
 }</string>
               </property>
               <property name="frameShape">
-               <enum>QFrame::NoFrame</enum>
+               <enum>QFrame::Shape::NoFrame</enum>
               </property>
-              <layout class="QHBoxLayout" name="horizontalLayoutCardPlanS">
+              <layout class="QHBoxLayout" name="SR_horizontalLayoutCardPlanS">
                <property name="spacing">
                 <number>20</number>
                </property>
@@ -1927,7 +1933,7 @@ border: none;</string>
                 <number>20</number>
                </property>
                <item>
-                <widget class="QFrame" name="iconFramePlanS">
+                <widget class="QFrame" name="SR_iconFramePlanS">
                  <property name="minimumSize">
                   <size>
                    <width>60</width>
@@ -1946,14 +1952,14 @@ border: none;</string>
 border-radius: 12px;</string>
                  </property>
                  <property name="frameShape">
-                  <enum>QFrame::NoFrame</enum>
+                  <enum>QFrame::Shape::NoFrame</enum>
                  </property>
-                 <layout class="QVBoxLayout" name="verticalLayoutIconPlanS">
-                  <property name="margin">
+                 <layout class="QVBoxLayout" name="SR_verticalLayoutIconPlanS">
+                  <property name="margin" stdset="0">
                    <number>0</number>
                   </property>
                   <item>
-                   <widget class="QLabel" name="lblPlanSIcon">
+                   <widget class="QLabel" name="SR_lblPlanSIcon">
                     <property name="styleSheet">
                      <string notr="true">color: white;
 font-size: 28px;
@@ -1964,7 +1970,7 @@ border: none;</string>
                      <string>🔓</string>
                     </property>
                     <property name="alignment">
-                     <set>Qt::AlignCenter</set>
+                     <set>Qt::AlignmentFlag::AlignCenter</set>
                     </property>
                    </widget>
                   </item>
@@ -1972,12 +1978,12 @@ border: none;</string>
                 </widget>
                </item>
                <item>
-                <layout class="QVBoxLayout" name="verticalLayoutPlanSText">
+                <layout class="QVBoxLayout" name="SR_verticalLayoutPlanSText">
                  <property name="spacing">
                   <number>5</number>
                  </property>
                  <item>
-                  <widget class="QLabel" name="lblPlanSNumber">
+                  <widget class="QLabel" name="SR_lblPlanSNumber">
                    <property name="styleSheet">
                     <string notr="true">color: #1e293b;
 font-size: 32px;
@@ -1991,7 +1997,7 @@ border: none;</string>
                   </widget>
                  </item>
                  <item>
-                  <widget class="QLabel" name="lblPlanSLabel">
+                  <widget class="QLabel" name="SR_lblPlanSLabel">
                    <property name="styleSheet">
                     <string notr="true">color: #64748b;
 font-size: 14px;
@@ -2006,9 +2012,9 @@ border: none;</string>
                 </layout>
                </item>
                <item>
-                <spacer name="horizontalSpacerCardPlanS">
+                <spacer name="SR_horizontalSpacerCardPlanS">
                  <property name="orientation">
-                  <enum>Qt::Horizontal</enum>
+                  <enum>Qt::Orientation::Horizontal</enum>
                  </property>
                 </spacer>
                </item>
@@ -2018,16 +2024,16 @@ border: none;</string>
            </layout>
           </item>
           <item>
-           <widget class="QFrame" name="chartsContainerFrame">
+           <widget class="QFrame" name="SR_chartsContainerFrame">
             <property name="styleSheet">
              <string notr="true">background-color: white;
 border-radius: 20px;
 border: 1px solid #e2e8f0;</string>
             </property>
             <property name="frameShape">
-             <enum>QFrame::NoFrame</enum>
+             <enum>QFrame::Shape::NoFrame</enum>
             </property>
-            <layout class="QHBoxLayout" name="horizontalLayoutChartsContainer">
+            <layout class="QHBoxLayout" name="SR_horizontalLayoutChartsContainer">
              <property name="spacing">
               <number>30</number>
              </property>
@@ -2044,7 +2050,7 @@ border: 1px solid #e2e8f0;</string>
               <number>30</number>
              </property>
              <item>
-              <widget class="QFrame" name="barChartFrame">
+              <widget class="QFrame" name="SR_barChartFrame">
                <property name="minimumSize">
                 <size>
                  <width>0</width>
@@ -2057,9 +2063,9 @@ border-radius: 16px;
 border: 1px solid #e2e8f0;</string>
                </property>
                <property name="frameShape">
-                <enum>QFrame::NoFrame</enum>
+                <enum>QFrame::Shape::NoFrame</enum>
                </property>
-               <layout class="QVBoxLayout" name="verticalLayoutBarChart">
+               <layout class="QVBoxLayout" name="SR_verticalLayoutBarChart">
                 <property name="spacing">
                  <number>20</number>
                 </property>
@@ -2076,7 +2082,7 @@ border: 1px solid #e2e8f0;</string>
                  <number>25</number>
                 </property>
                 <item>
-                 <widget class="QLabel" name="lblBarChartTitle">
+                 <widget class="QLabel" name="SR_lblBarChartTitle">
                   <property name="styleSheet">
                    <string notr="true">font-size: 16px;
 font-weight: 600;
@@ -2090,7 +2096,7 @@ border: none;</string>
                  </widget>
                 </item>
                 <item>
-                 <widget class="QWidget" name="placeholderBars" native="true">
+                 <widget class="QWidget" name="SR_placeholderBars" native="true">
                   <property name="minimumSize">
                    <size>
                     <width>0</width>
@@ -2100,14 +2106,14 @@ border: none;</string>
                   <property name="styleSheet">
                    <string notr="true">background-color: transparent;</string>
                   </property>
-                  <layout class="QHBoxLayout" name="barsLayout">
+                  <layout class="QHBoxLayout" name="SR_barsLayout">
                    <property name="spacing">
                     <number>30</number>
                    </property>
                    <item>
-                    <layout class="QVBoxLayout" name="bar1Layout">
+                    <layout class="QVBoxLayout" name="SR_bar1Layout">
                      <item>
-                      <widget class="QFrame" name="bar1">
+                      <widget class="QFrame" name="SR_bar1">
                        <property name="minimumSize">
                         <size>
                          <width>50</width>
@@ -2126,12 +2132,12 @@ border: none;</string>
 border-radius: 6px 6px 0 0;</string>
                        </property>
                        <property name="frameShape">
-                        <enum>QFrame::NoFrame</enum>
+                        <enum>QFrame::Shape::NoFrame</enum>
                        </property>
                       </widget>
                      </item>
                      <item>
-                      <widget class="QLabel" name="lblBar1">
+                      <widget class="QLabel" name="SR_lblBar1">
                        <property name="styleSheet">
                         <string notr="true">font-size: 12px;
 color: #64748b;
@@ -2143,16 +2149,16 @@ border: none;</string>
                         <string>2021</string>
                        </property>
                        <property name="alignment">
-                        <set>Qt::AlignCenter</set>
+                        <set>Qt::AlignmentFlag::AlignCenter</set>
                        </property>
                       </widget>
                      </item>
                     </layout>
                    </item>
                    <item>
-                    <layout class="QVBoxLayout" name="bar2Layout">
+                    <layout class="QVBoxLayout" name="SR_bar2Layout">
                      <item>
-                      <widget class="QFrame" name="bar2">
+                      <widget class="QFrame" name="SR_bar2">
                        <property name="minimumSize">
                         <size>
                          <width>50</width>
@@ -2171,12 +2177,12 @@ border: none;</string>
 border-radius: 6px 6px 0 0;</string>
                        </property>
                        <property name="frameShape">
-                        <enum>QFrame::NoFrame</enum>
+                        <enum>QFrame::Shape::NoFrame</enum>
                        </property>
                       </widget>
                      </item>
                      <item>
-                      <widget class="QLabel" name="lblBar2">
+                      <widget class="QLabel" name="SR_lblBar2">
                        <property name="styleSheet">
                         <string notr="true">font-size: 12px;
 color: #64748b;
@@ -2188,16 +2194,16 @@ border: none;</string>
                         <string>2022</string>
                        </property>
                        <property name="alignment">
-                        <set>Qt::AlignCenter</set>
+                        <set>Qt::AlignmentFlag::AlignCenter</set>
                        </property>
                       </widget>
                      </item>
                     </layout>
                    </item>
                    <item>
-                    <layout class="QVBoxLayout" name="bar3Layout">
+                    <layout class="QVBoxLayout" name="SR_bar3Layout">
                      <item>
-                      <widget class="QFrame" name="bar3">
+                      <widget class="QFrame" name="SR_bar3">
                        <property name="minimumSize">
                         <size>
                          <width>50</width>
@@ -2216,12 +2222,12 @@ border: none;</string>
 border-radius: 6px 6px 0 0;</string>
                        </property>
                        <property name="frameShape">
-                        <enum>QFrame::NoFrame</enum>
+                        <enum>QFrame::Shape::NoFrame</enum>
                        </property>
                       </widget>
                      </item>
                      <item>
-                      <widget class="QLabel" name="lblBar3">
+                      <widget class="QLabel" name="SR_lblBar3">
                        <property name="styleSheet">
                         <string notr="true">font-size: 12px;
 color: #64748b;
@@ -2233,16 +2239,16 @@ border: none;</string>
                         <string>2023</string>
                        </property>
                        <property name="alignment">
-                        <set>Qt::AlignCenter</set>
+                        <set>Qt::AlignmentFlag::AlignCenter</set>
                        </property>
                       </widget>
                      </item>
                     </layout>
                    </item>
                    <item>
-                    <layout class="QVBoxLayout" name="bar4Layout">
+                    <layout class="QVBoxLayout" name="SR_bar4Layout">
                      <item>
-                      <widget class="QFrame" name="bar4">
+                      <widget class="QFrame" name="SR_bar4">
                        <property name="minimumSize">
                         <size>
                          <width>50</width>
@@ -2261,12 +2267,12 @@ border: none;</string>
 border-radius: 6px 6px 0 0;</string>
                        </property>
                        <property name="frameShape">
-                        <enum>QFrame::NoFrame</enum>
+                        <enum>QFrame::Shape::NoFrame</enum>
                        </property>
                       </widget>
                      </item>
                      <item>
-                      <widget class="QLabel" name="lblBar4">
+                      <widget class="QLabel" name="SR_lblBar4">
                        <property name="styleSheet">
                         <string notr="true">font-size: 12px;
 color: #64748b;
@@ -2278,7 +2284,7 @@ border: none;</string>
                         <string>2024</string>
                        </property>
                        <property name="alignment">
-                        <set>Qt::AlignCenter</set>
+                        <set>Qt::AlignmentFlag::AlignCenter</set>
                        </property>
                       </widget>
                      </item>
@@ -2291,7 +2297,7 @@ border: none;</string>
               </widget>
              </item>
              <item>
-              <widget class="QFrame" name="pieChartFrame">
+              <widget class="QFrame" name="SR_pieChartFrame">
                <property name="minimumSize">
                 <size>
                  <width>350</width>
@@ -2310,9 +2316,9 @@ border-radius: 16px;
 border: 1px solid #e2e8f0;</string>
                </property>
                <property name="frameShape">
-                <enum>QFrame::NoFrame</enum>
+                <enum>QFrame::Shape::NoFrame</enum>
                </property>
-               <layout class="QVBoxLayout" name="verticalLayoutPieChart">
+               <layout class="QVBoxLayout" name="SR_verticalLayoutPieChart">
                 <property name="spacing">
                  <number>20</number>
                 </property>
@@ -2329,7 +2335,7 @@ border: 1px solid #e2e8f0;</string>
                  <number>25</number>
                 </property>
                 <item>
-                 <widget class="QLabel" name="lblPieChartTitle">
+                 <widget class="QLabel" name="SR_lblPieChartTitle">
                   <property name="styleSheet">
                    <string notr="true">font-size: 16px;
 font-weight: 600;
@@ -2343,12 +2349,12 @@ border: none;</string>
                  </widget>
                 </item>
                 <item>
-                 <layout class="QHBoxLayout" name="horizontalLayoutPieContent">
+                 <layout class="QHBoxLayout" name="SR_horizontalLayoutPieContent">
                   <property name="spacing">
                    <number>20</number>
                   </property>
                   <item>
-                   <widget class="QFrame" name="pieChartCircle">
+                   <widget class="QFrame" name="SR_pieChartCircle">
                     <property name="minimumSize">
                      <size>
                       <width>150</width>
@@ -2371,17 +2377,17 @@ border: none;</string>
 border-radius: 75px;</string>
                     </property>
                     <property name="frameShape">
-                     <enum>QFrame::NoFrame</enum>
+                     <enum>QFrame::Shape::NoFrame</enum>
                     </property>
                    </widget>
                   </item>
                   <item>
-                   <layout class="QVBoxLayout" name="verticalLayoutLegend">
+                   <layout class="QVBoxLayout" name="SR_verticalLayoutLegend">
                     <property name="spacing">
                      <number>12</number>
                     </property>
                     <item>
-                     <widget class="QLabel" name="lblStatPublie">
+                     <widget class="QLabel" name="SR_lblStatPublie">
                       <property name="styleSheet">
                        <string notr="true">font-size: 13px;
 color: #3b82f6;
@@ -2395,7 +2401,7 @@ border: none;</string>
                      </widget>
                     </item>
                     <item>
-                     <widget class="QLabel" name="lblStatSoumis">
+                     <widget class="QLabel" name="SR_lblStatSoumis">
                       <property name="styleSheet">
                        <string notr="true">font-size: 13px;
 color: #10b981;
@@ -2409,7 +2415,7 @@ border: none;</string>
                      </widget>
                     </item>
                     <item>
-                     <widget class="QLabel" name="lblStatRevision">
+                     <widget class="QLabel" name="SR_lblStatRevision">
                       <property name="styleSheet">
                        <string notr="true">font-size: 13px;
 color: #f59e0b;
@@ -2423,7 +2429,7 @@ border: none;</string>
                      </widget>
                     </item>
                     <item>
-                     <widget class="QLabel" name="lblStatAccepte">
+                     <widget class="QLabel" name="SR_lblStatAccepte">
                       <property name="styleSheet">
                        <string notr="true">font-size: 13px;
 color: #8b5cf6;
@@ -2437,9 +2443,9 @@ border: none;</string>
                      </widget>
                     </item>
                     <item>
-                     <spacer name="verticalSpacerLegend">
+                     <spacer name="SR_verticalSpacerLegend">
                       <property name="orientation">
-                       <enum>Qt::Vertical</enum>
+                       <enum>Qt::Orientation::Vertical</enum>
                       </property>
                      </spacer>
                     </item>
@@ -2462,6 +2468,8 @@ border: none;</string>
    </layout>
   </widget>
  </widget>
- <resources/>
+ <resources>
+  <include location="ressources.qrc"/>
+ </resources>
  <connections/>
 </ui>
