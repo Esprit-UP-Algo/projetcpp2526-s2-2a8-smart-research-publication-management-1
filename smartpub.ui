@@ -433,7 +433,7 @@
     <item>
      <widget class="QStackedWidget" name="stackedWidgetModules">
       <property name="currentIndex">
-       <number>3</number>
+       <number>1</number>
       </property>
       <widget class="QWidget" name="pageChercheurs">
        <layout class="QVBoxLayout" name="verticalLayoutChercheursMain">
@@ -5884,6 +5884,86 @@ border: none;</string>
         <property name="bottomMargin">
          <number>0</number>
         </property>
+        <item>
+         <widget class="QFrame" name="projHeaderFrame">
+          <property name="minimumSize">
+           <size>
+            <width>0</width>
+            <height>90</height>
+           </size>
+          </property>
+          <property name="maximumSize">
+           <size>
+            <width>16777215</width>
+            <height>90</height>
+           </size>
+          </property>
+          <property name="styleSheet">
+           <string notr="true">background-color: white; border-bottom: 1px solid #e2e8f0;</string>
+          </property>
+          <property name="frameShape">
+           <enum>QFrame::Shape::NoFrame</enum>
+          </property>
+          <layout class="QHBoxLayout" name="projHeaderLayoutMain">
+           <property name="spacing">
+            <number>20</number>
+           </property>
+           <property name="leftMargin">
+            <number>30</number>
+           </property>
+           <property name="rightMargin">
+            <number>30</number>
+           </property>
+           <item>
+            <layout class="QVBoxLayout" name="projTitleLayoutHeader">
+             <property name="spacing">
+              <number>4</number>
+             </property>
+             <item>
+              <widget class="QLabel" name="projTitleLabel">
+               <property name="styleSheet">
+                <string notr="true">color: #1e293b;
+font-size: 28px;
+font-weight: 700;
+background: transparent;
+border: none;</string>
+               </property>
+               <property name="text">
+                <string>Gestion de Projets</string>
+               </property>
+              </widget>
+             </item>
+             <item>
+              <widget class="QLabel" name="projSubtitleLabel">
+               <property name="styleSheet">
+                <string notr="true">color: #64748b;
+font-size: 14px;
+background: transparent;
+border: none;</string>
+               </property>
+               <property name="text">
+                <string>Planifiez, suivez et optimisez vos projets de recherche</string>
+               </property>
+              </widget>
+             </item>
+            </layout>
+           </item>
+           <item>
+            <spacer name="projHeaderSpacer">
+             <property name="orientation">
+              <enum>Qt::Orientation::Horizontal</enum>
+             </property>
+             <property name="sizeHint" stdset="0">
+              <size>
+               <width>0</width>
+               <height>0</height>
+              </size>
+             </property>
+            </spacer>
+           </item>
+          </layout>
+         </widget>
+        </item>
         <item>
          <widget class="QStackedWidget" name="stackedWidgetProjets">
           <property name="styleSheet">
