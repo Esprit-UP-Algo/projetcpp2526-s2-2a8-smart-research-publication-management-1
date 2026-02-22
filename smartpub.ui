@@ -5170,7 +5170,7 @@ border: none;</string>
                     <string notr="true">color: #334155; font-weight: 600; font-size: 13px; background: transparent;</string>
                    </property>
                    <property name="text">
-                    <string>ID :</string>
+                    <string>code :</string>
                    </property>
                   </widget>
                  </item>
@@ -5459,7 +5459,7 @@ border: none;</string>
                 </property>
                 <column>
                  <property name="text">
-                  <string>ID</string>
+                  <string>code</string>
                  </property>
                 </column>
                 <column>
@@ -5651,7 +5651,7 @@ border: none;</string>
                 </property>
                 <column>
                  <property name="text">
-                  <string>ID</string>
+                  <string>code</string>
                  </property>
                 </column>
                 <column>

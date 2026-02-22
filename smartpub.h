@@ -122,11 +122,10 @@ struct TransactionData {
 
 // Structure pour le module Evenements
 struct EventData {
-    int id;
+    QString code;
     QString nom;
     QString lieu;
     QString date;
-    QString description;
 };
 
 // ============================================================================
@@ -533,7 +532,8 @@ private:
 
     // === VARIABLES MODULE EVENEMENTS ===
     int evEventSelectionne;
-    QMap<int, EventData> evEventsMap;
+    QMap<QString, EventData> evEventsMap;
+    QString evEditingCode;  // code en cours de modification (vide si ajout)
 
     // === VARIABLES MODULE PROJETS ===
     QVector<Projet> projets;

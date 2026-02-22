@@ -5709,86 +5709,94 @@ void SmartPub::evConnectSignals() {
 }
 
 void SmartPub::evAjouterDonneesTest() {
-    EventData e1;
-    e1.id = 1;
-    e1.nom = "Conférence Internationale sur l'IA";
-    e1.lieu = "Paris, France";
-    e1.date = "15/03/2024";
-    e1.description = "Conférence sur les avancées en intelligence artificielle";
-    evEventsMap[1] = e1;
-
-    EventData e2;
-    e2.id = 2;
-    e2.nom = "Workshop Quantum Computing";
-    e2.lieu = "Lyon, France";
-    e2.date = "22/04/2024";
-    e2.description = "Atelier pratique sur l'informatique quantique";
-    evEventsMap[2] = e2;
-
-    EventData e3;
-    e3.id = 3;
-    e3.nom = "Séminaire BioTech";
-    e3.lieu = "Marseille, France";
-    e3.date = "10/05/2024";
-    e3.description = "Séminaire sur les biotechnologies";
-    evEventsMap[3] = e3;
-
+    evEditingCode.clear();
     evAfficherListeEvents();
 }
 
 void SmartPub::evAfficherListeEvents() {
-    ui->evTableEvents->setRowCount(0);
-    for (auto it = evEventsMap.begin(); it != evEventsMap.end(); ++it) {
-        evAjouterEventTable(it.value());
+    QSqlDatabase db = Connection::instance()->getDatabase();
+    if (!db.isOpen()) {
+        return;
     }
 
+    evEventsMap.clear();
+    QSqlQuery query(db);
+    if (!query.exec("SELECT CODE, NOM, LIEU, DATE_EVENT FROM EVENEMENT ORDER BY DATE_EVENT")) {
+        QMessageBox::warning(this, "Erreur", "Impossible de charger les événements : " + query.lastError().text());
+        return;
+    }
+
+    ui->evTableEvents->setRowCount(0);
     ui->evTableSearchEvents->setRowCount(0);
-    for (auto it = evEventsMap.begin(); it != evEventsMap.end(); ++it) {
+
+    while (query.next()) {
+        EventData data;
+        data.code = query.value("CODE").toString();
+        data.nom = query.value("NOM").toString();
+        data.lieu = query.value("LIEU").toString();
+        QVariant dVal = query.value("DATE_EVENT");
+        if (dVal.canConvert<QDate>()) {
+            data.date = dVal.toDate().toString("dd/MM/yyyy");
+        } else {
+            QString dStr = dVal.toString();
+            if (dStr.contains("T")) dStr = dStr.left(10);
+            if (dStr.contains("-") && dStr.length() >= 10) {
+                QDate dt = QDate::fromString(dStr.left(10), "yyyy-MM-dd");
+                if (dt.isValid()) data.date = dt.toString("dd/MM/yyyy");
+                else data.date = dStr;
+            } else {
+                data.date = dStr;
+            }
+        }
+        evEventsMap[data.code] = data;
+        evAjouterEventTable(data);
         int row = ui->evTableSearchEvents->rowCount();
         ui->evTableSearchEvents->insertRow(row);
-        ui->evTableSearchEvents->setItem(
-            row, 0, new QTableWidgetItem(QString::number(it.value().id)));
-        ui->evTableSearchEvents->setItem(row, 1,
-                                         new QTableWidgetItem(it.value().nom));
-        ui->evTableSearchEvents->setItem(row, 2,
-                                         new QTableWidgetItem(it.value().lieu));
-        ui->evTableSearchEvents->setItem(row, 3,
-                                         new QTableWidgetItem(it.value().date));
+        ui->evTableSearchEvents->setItem(row, 0, new QTableWidgetItem(data.code));
+        ui->evTableSearchEvents->setItem(row, 1, new QTableWidgetItem(data.nom));
+        ui->evTableSearchEvents->setItem(row, 2, new QTableWidgetItem(data.lieu));
+        ui->evTableSearchEvents->setItem(row, 3, new QTableWidgetItem(data.date));
     }
 }
 
 void SmartPub::evAjouterEventTable(const EventData &data) {
     int row = ui->evTableEvents->rowCount();
     ui->evTableEvents->insertRow(row);
-
-    ui->evTableEvents->setItem(row, 0,
-                               new QTableWidgetItem(QString::number(data.id)));
+    ui->evTableEvents->setItem(row, 0, new QTableWidgetItem(data.code));
     ui->evTableEvents->setItem(row, 1, new QTableWidgetItem(data.nom));
     ui->evTableEvents->setItem(row, 2, new QTableWidgetItem(data.lieu));
     ui->evTableEvents->setItem(row, 3, new QTableWidgetItem(data.date));
 }
 
 void SmartPub::evRechercherParLieu() {
-    QString lieu = ui->evLineEditSearchLieu->text().toLower();
+    QString lieu = ui->evLineEditSearchLieu->text().trimmed();
     if (lieu.isEmpty()) {
         QMessageBox::warning(this, "Recherche", "Veuillez entrer un lieu");
         return;
     }
 
+    QSqlDatabase db = Connection::instance()->getDatabase();
+    if (!db.isOpen()) {
+        return;
+    }
+
     ui->evTableSearchEvents->setRowCount(0);
-    for (auto it = evEventsMap.begin(); it != evEventsMap.end(); ++it) {
-        if (it.value().lieu.toLower().contains(lieu)) {
-            int row = ui->evTableSearchEvents->rowCount();
-            ui->evTableSearchEvents->insertRow(row);
-            ui->evTableSearchEvents->setItem(
-                row, 0, new QTableWidgetItem(QString::number(it.value().id)));
-            ui->evTableSearchEvents->setItem(row, 1,
-                                             new QTableWidgetItem(it.value().nom));
-            ui->evTableSearchEvents->setItem(row, 2,
-                                             new QTableWidgetItem(it.value().lieu));
-            ui->evTableSearchEvents->setItem(row, 3,
-                                             new QTableWidgetItem(it.value().date));
-        }
+    QSqlQuery query(db);
+    query.prepare("SELECT CODE, NOM, LIEU, DATE_EVENT FROM EVENEMENT WHERE UPPER(LIEU) LIKE UPPER(:lieu) ORDER BY DATE_EVENT");
+    query.bindValue(":lieu", "%" + lieu + "%");
+    if (!query.exec()) {
+        QMessageBox::warning(this, "Erreur", "Recherche échouée : " + query.lastError().text());
+        return;
+    }
+    while (query.next()) {
+        int row = ui->evTableSearchEvents->rowCount();
+        ui->evTableSearchEvents->insertRow(row);
+        QString dateStr = query.value("DATE_EVENT").toString();
+        if (dateStr.contains("T")) dateStr = dateStr.left(10);
+        ui->evTableSearchEvents->setItem(row, 0, new QTableWidgetItem(query.value("CODE").toString()));
+        ui->evTableSearchEvents->setItem(row, 1, new QTableWidgetItem(query.value("NOM").toString()));
+        ui->evTableSearchEvents->setItem(row, 2, new QTableWidgetItem(query.value("LIEU").toString()));
+        ui->evTableSearchEvents->setItem(row, 3, new QTableWidgetItem(dateStr));
     }
 }
 
@@ -5799,40 +5807,54 @@ void SmartPub::on_evBtnAjouterEvent_clicked() {
         return;
     }
 
-    QString id = ui->evLineEditID->text();
-    QString nom = ui->evLineEditNom->text();
-    QString lieu = ui->evLineEditLieu->text();
-    QString date = ui->evLineEditDate->text();
+    QString code = ui->evLineEditID->text().trimmed();
+    QString nom = ui->evLineEditNom->text().trimmed();
+    QString lieu = ui->evLineEditLieu->text().trimmed();
+    QString date = ui->evLineEditDate->text().trimmed();
 
-    if (id.isEmpty() || nom.isEmpty() || lieu.isEmpty() || date.isEmpty()) {
+    if (code.isEmpty() || nom.isEmpty() || lieu.isEmpty() || date.isEmpty()) {
         QMessageBox::warning(this, "Erreur", "Veuillez remplir tous les champs");
         return;
     }
 
-    bool ok;
-    int idNum = id.toInt(&ok);
-    if (!ok) {
-        QMessageBox::warning(this, "Erreur", "ID invalide");
+    QSqlDatabase db = Connection::instance()->getDatabase();
+    if (!db.isOpen()) {
         return;
     }
 
-    EventData data;
-    data.id = idNum;
-    data.nom = nom;
-    data.lieu = lieu;
-    data.date = date;
-    data.description = "";
-
-    evEventsMap[idNum] = data;
-
-    QMessageBox::information(this, "Succès", "Événement ajouté avec succès !");
+    if (!evEditingCode.isEmpty()) {
+        QSqlQuery query(db);
+        query.prepare("UPDATE EVENEMENT SET NOM = :nom, LIEU = :lieu, DATE_EVENT = TO_DATE(:date_event, 'DD/MM/YYYY') WHERE CODE = :code");
+        query.bindValue(":nom", nom);
+        query.bindValue(":lieu", lieu);
+        query.bindValue(":date_event", date);
+        query.bindValue(":code", evEditingCode);
+        if (!query.exec()) {
+            QMessageBox::critical(this, "Erreur", "Échec de la modification : " + query.lastError().text());
+            return;
+        }
+        QMessageBox::information(this, "Succès", "Événement modifié avec succès !");
+        evEditingCode.clear();
+    } else {
+        QSqlQuery query(db);
+        query.prepare("INSERT INTO EVENEMENT (CODE, NOM, LIEU, DATE_EVENT) VALUES (:code, :nom, :lieu, TO_DATE(:date_event, 'DD/MM/YYYY'))");
+        query.bindValue(":code", code);
+        query.bindValue(":nom", nom);
+        query.bindValue(":lieu", lieu);
+        query.bindValue(":date_event", date);
+        if (!query.exec()) {
+            QMessageBox::critical(this, "Erreur", "Échec de l'ajout : " + query.lastError().text());
+            return;
+        }
+        QMessageBox::information(this, "Succès", "Événement ajouté avec succès !");
+    }
 
     evAfficherListeEvents();
-
     ui->evLineEditID->clear();
     ui->evLineEditNom->clear();
     ui->evLineEditLieu->clear();
     ui->evLineEditDate->clear();
+    ui->evLineEditID->setEnabled(true);
 }
 
 void SmartPub::on_evBtnModifierEvent_clicked() {
@@ -5848,8 +5870,14 @@ void SmartPub::on_evBtnModifierEvent_clicked() {
                              "Veuillez sélectionner un événement à modifier");
         return;
     }
-    QMessageBox::information(this, "Modifier",
-                             "Fonctionnalité de modification - À implémenter");
+
+    QString code = ui->evTableEvents->item(currentRow, 0)->text();
+    ui->evLineEditID->setText(code);
+    ui->evLineEditNom->setText(ui->evTableEvents->item(currentRow, 1)->text());
+    ui->evLineEditLieu->setText(ui->evTableEvents->item(currentRow, 2)->text());
+    ui->evLineEditDate->setText(ui->evTableEvents->item(currentRow, 3)->text());
+    ui->evLineEditID->setEnabled(false);
+    evEditingCode = code;
 }
 
 void SmartPub::on_evBtnSupprimerEvent_clicked() {
@@ -5868,10 +5896,29 @@ void SmartPub::on_evBtnSupprimerEvent_clicked() {
     }
 
     auto reply = QMessageBox::question(
-        this, "Supprimer", "Confirmer la suppression de cet événement ?");
+        this, "Supprimer", "Confirmer la suppression de cet événement ?",
+        QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
     if (reply == QMessageBox::Yes) {
-        int id = ui->evTableEvents->item(currentRow, 0)->text().toInt();
-        evEventsMap.remove(id);
+        QString code = ui->evTableEvents->item(currentRow, 0)->text();
+        QSqlDatabase db = Connection::instance()->getDatabase();
+        if (!db.isOpen()) {
+            return;
+        }
+        QSqlQuery query(db);
+        query.prepare("DELETE FROM EVENEMENT WHERE CODE = :code");
+        query.bindValue(":code", code);
+        if (!query.exec()) {
+            QMessageBox::critical(this, "Erreur", "Échec de la suppression : " + query.lastError().text());
+            return;
+        }
+        if (evEditingCode == code) {
+            evEditingCode.clear();
+            ui->evLineEditID->clear();
+            ui->evLineEditNom->clear();
+            ui->evLineEditLieu->clear();
+            ui->evLineEditDate->clear();
+            ui->evLineEditID->setEnabled(true);
+        }
         evAfficherListeEvents();
         QMessageBox::information(this, "Succès", "Événement supprimé");
     }
@@ -5903,8 +5950,87 @@ void SmartPub::on_evBtnCalculImpact_clicked() {
 }
 
 void SmartPub::on_evBtnStatsParticipation_clicked() {
-    QMessageBox::information(this, "Statistiques",
-                             "Statistiques de participation - À implémenter");
+    QDialog dialog(this);
+    dialog.setWindowTitle("Statistiques de participation");
+    dialog.setMinimumSize(600, 450);
+    dialog.resize(700, 500);
+
+    QVBoxLayout *layout = new QVBoxLayout(&dialog);
+
+    // Nombre total de participants (simulé : 50 + hash du code pour variété)
+    int totalParticipants = 0;
+    QMap<QString, int> participantsParDate;
+    for (auto it = evEventsMap.begin(); it != evEventsMap.end(); ++it) {
+        int nb = 50 + qHash(it.value().code) % 100;
+        if (nb < 20) nb = 50;
+        totalParticipants += nb;
+        participantsParDate[it.value().date] += nb;
+    }
+
+    QLabel *labelTotal = new QLabel(QString("Nombre total de participants : <b>%1</b>").arg(totalParticipants));
+    labelTotal->setStyleSheet("font-size: 16px; color: #334155; padding: 10px;");
+    layout->addWidget(labelTotal);
+
+    // Courbe : nombre de participants par date
+    QChartView *chartView = new QChartView(&dialog);
+    chartView->setRenderHint(QPainter::Antialiasing);
+
+    QLineSeries *series = new QLineSeries();
+    series->setName("Participants par date");
+    series->setColor(QColor("#3b82f6"));
+    series->setPen(QPen(QColor("#3b82f6"), 3));
+
+    QStringList datesTriees = participantsParDate.keys();
+    std::sort(datesTriees.begin(), datesTriees.end(), [](const QString &a, const QString &b) {
+        QDate da = QDate::fromString(a, "dd/MM/yyyy");
+        QDate db = QDate::fromString(b, "dd/MM/yyyy");
+        return da < db;
+    });
+
+    int idx = 0;
+    for (const QString &d : datesTriees) {
+        series->append(idx, participantsParDate[d]);
+        idx++;
+    }
+
+    QChart *chart = new QChart();
+    chart->addSeries(series);
+    chart->setTitle("Nombre de participants par date");
+    chart->setAnimationOptions(QChart::SeriesAnimations);
+    chart->setBackgroundBrush(QBrush(QColor("white")));
+
+    QBarCategoryAxis *axisX = new QBarCategoryAxis();
+    axisX->append(datesTriees);
+    chart->addAxis(axisX, Qt::AlignBottom);
+    series->attachAxis(axisX);
+
+    QValueAxis *axisY = new QValueAxis();
+    int maxPart = 0;
+    for (int v : participantsParDate)
+        if (v > maxPart) maxPart = v;
+    axisY->setRange(0, maxPart + 10);
+    axisY->setLabelFormat("%d");
+    chart->addAxis(axisY, Qt::AlignLeft);
+    series->attachAxis(axisY);
+
+    chart->legend()->setVisible(false);
+    chartView->setChart(chart);
+    layout->addWidget(chartView);
+
+    QPushButton *btnFermer = new QPushButton("Fermer");
+    btnFermer->setCursor(Qt::PointingHandCursor);
+    btnFermer->setStyleSheet(
+        "QPushButton { background-color: #3b82f6; color: white; border: none; "
+        "border-radius: 8px; padding: 10px 24px; font-weight: 600; }"
+        "QPushButton:hover { background-color: #2563eb; }");
+    connect(btnFermer, &QPushButton::clicked, &dialog, &QDialog::accept);
+    QHBoxLayout *btnLayout = new QHBoxLayout();
+    btnLayout->addStretch();
+    btnLayout->addWidget(btnFermer);
+    btnLayout->addStretch();
+    layout->addLayout(btnLayout);
+
+    dialog.exec();
 }
 // ==================== MAINWINDOW ====================
 
