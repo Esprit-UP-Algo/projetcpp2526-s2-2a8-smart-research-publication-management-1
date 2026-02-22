@@ -2,6 +2,13 @@
 #include "ui_smartpub.h"
 #include "connection.h"
 #include <QApplication>
+<<<<<<< HEAD
+=======
+#include <QFile>
+#include <QStringConverter>
+#include <QTextStream>
+#include <algorithm>
+>>>>>>> 50f599d (crud avec connexion base de donné gestion financiere)
 #include <QRegion>
 #include <QProcess>
 #include <QScreen>
@@ -1933,6 +1940,220 @@ void StatistiquesDialog::creerGraphiques()
     chartTemporelView->setChart(chartTimeline);
 }
 
+<<<<<<< HEAD
+=======
+// ==================== FIN STATISTIQUES DIALOG ====================
+
+FinStatistiquesDialog::FinStatistiquesDialog(const QMap<int, TransactionData> &transactions,
+                                             QWidget *parent)
+    : QDialog(parent), m_transactions(transactions)
+    , labelTotalRecettes(nullptr), labelTotalDepenses(nullptr)
+    , labelSolde(nullptr), labelNbTransactions(nullptr)
+    , chartTypeView(nullptr), chartProjetView(nullptr)
+{
+    setWindowTitle("Statistiques Financières");
+    setMinimumSize(900, 650);
+    resize(1000, 700);
+
+    setStyleSheet(
+        "QDialog { background-color: #f1f5f9; font-family: 'Segoe UI', sans-serif; }"
+        "QLabel { color: #334155; }"
+        "QGroupBox { font-weight: bold; border: 1px solid #e2e8f0; border-radius: 12px;"
+        " margin-top: 15px; padding-top: 15px; background-color: white; }"
+        "QGroupBox::title { subcontrol-origin: margin; left: 15px; padding: 0 10px;"
+        " color: #3b82f6; font-size: 14px; }"
+        "QPushButton { background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 #3b82f6, stop:1 #10b981);"
+        " color: white; border: none; border-radius: 10px; padding: 12px 24px; font-size: 14px; font-weight: 600; }"
+        "QPushButton:hover { background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 #2563eb, stop:1 #059669); }"
+        );
+
+    setupUI();
+    calculerStatistiques();
+    creerGraphiques();
+}
+
+void FinStatistiquesDialog::setupUI() {
+    QVBoxLayout *mainLayout = new QVBoxLayout(this);
+    mainLayout->setSpacing(0);
+    mainLayout->setContentsMargins(0, 0, 0, 0);
+
+    QFrame *headerFrame = new QFrame();
+    headerFrame->setStyleSheet(
+        "QFrame { background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 #3b82f6, stop:1 #10b981); border: none; }");
+    headerFrame->setFixedHeight(100);
+
+    QVBoxLayout *headerLayout = new QVBoxLayout(headerFrame);
+    headerLayout->setContentsMargins(30, 20, 30, 20);
+
+    QLabel *titleLabel = new QLabel("📊 Statistiques Financières");
+    titleLabel->setStyleSheet("color: white; font-size: 28px; font-weight: bold;");
+    QLabel *subtitleLabel = new QLabel("Tableau de bord des transactions");
+    subtitleLabel->setStyleSheet("color: rgba(255,255,255,0.9); font-size: 14px;");
+    headerLayout->addWidget(titleLabel);
+    headerLayout->addWidget(subtitleLabel);
+    mainLayout->addWidget(headerFrame);
+
+    QScrollArea *scrollArea = new QScrollArea();
+    scrollArea->setWidgetResizable(true);
+    scrollArea->setStyleSheet("background-color: #f1f5f9;");
+
+    QWidget *contentWidget = new QWidget();
+    QVBoxLayout *contentLayout = new QVBoxLayout(contentWidget);
+    contentLayout->setSpacing(25);
+    contentLayout->setContentsMargins(30, 30, 30, 30);
+
+    QHBoxLayout *kpiLayout = new QHBoxLayout();
+    kpiLayout->setSpacing(20);
+
+    auto createKPI = [](const QString &icon, const QString &value, const QString &label,
+                        const QString &color, QLabel **valueLabelPtr) -> QFrame* {
+        QFrame *kpi = new QFrame();
+        kpi->setStyleSheet("QFrame { background-color: white; border-radius: 12px; border: 1px solid #e2e8f0; }");
+        kpi->setFixedHeight(120);
+        QVBoxLayout *layout = new QVBoxLayout(kpi);
+        layout->setSpacing(5);
+        QLabel *iconLabel = new QLabel(icon);
+        iconLabel->setStyleSheet("font-size: 24px;");
+        iconLabel->setAlignment(Qt::AlignCenter);
+        QLabel *valueLabel = new QLabel(value);
+        valueLabel->setStyleSheet(QString("font-size: 28px; font-weight: bold; color: %1;").arg(color));
+        valueLabel->setAlignment(Qt::AlignCenter);
+        *valueLabelPtr = valueLabel;
+        QLabel *textLabel = new QLabel(label);
+        textLabel->setStyleSheet("font-size: 13px; color: #64748b;");
+        textLabel->setAlignment(Qt::AlignCenter);
+        layout->addWidget(iconLabel);
+        layout->addWidget(valueLabel);
+        layout->addWidget(textLabel);
+        return kpi;
+    };
+
+    kpiLayout->addWidget(createKPI("💰", "0 €", "Total Recettes", "#10b981", &labelTotalRecettes));
+    kpiLayout->addWidget(createKPI("📤", "0 €", "Total Dépenses", "#ef4444", &labelTotalDepenses));
+    kpiLayout->addWidget(createKPI("📊", "0 €", "Solde", "#3b82f6", &labelSolde));
+    kpiLayout->addWidget(createKPI("📋", "0", "Nb. Transactions", "#8b5cf6", &labelNbTransactions));
+    contentLayout->addLayout(kpiLayout);
+
+    QHBoxLayout *chartsLayout = new QHBoxLayout();
+    chartsLayout->setSpacing(20);
+
+    QGroupBox *chartTypeGroup = new QGroupBox("Répartition par Type (Recettes / Dépenses)");
+    QVBoxLayout *chartTypeLayout = new QVBoxLayout(chartTypeGroup);
+    chartTypeView = new QChartView();
+    chartTypeView->setMinimumHeight(300);
+    chartTypeView->setRenderHint(QPainter::Antialiasing);
+    chartTypeLayout->addWidget(chartTypeView);
+    chartsLayout->addWidget(chartTypeGroup, 1);
+
+    QGroupBox *chartProjetGroup = new QGroupBox("Répartition par Projet");
+    QVBoxLayout *chartProjetLayout = new QVBoxLayout(chartProjetGroup);
+    chartProjetView = new QChartView();
+    chartProjetView->setMinimumHeight(300);
+    chartProjetView->setRenderHint(QPainter::Antialiasing);
+    chartProjetLayout->addWidget(chartProjetView);
+    chartsLayout->addWidget(chartProjetGroup, 1);
+
+    contentLayout->addLayout(chartsLayout);
+
+    QFrame *footerFrame = new QFrame();
+    footerFrame->setStyleSheet("background-color: white; border-top: 1px solid #e2e8f0;");
+    footerFrame->setFixedHeight(70);
+
+    QHBoxLayout *footerLayout = new QHBoxLayout(footerFrame);
+    footerLayout->addStretch();
+    QPushButton *closeButton = new QPushButton("Fermer");
+    closeButton->setFixedSize(140, 45);
+    closeButton->setCursor(Qt::PointingHandCursor);
+    connect(closeButton, &QPushButton::clicked, this, &QDialog::accept);
+    footerLayout->addWidget(closeButton);
+    mainLayout->addWidget(footerFrame);
+
+    scrollArea->setWidget(contentWidget);
+    mainLayout->addWidget(scrollArea, 1);
+}
+
+void FinStatistiquesDialog::calculerStatistiques() {
+    double totalRecettes = 0, totalDepenses = 0;
+    for (const TransactionData &t : m_transactions) {
+        if (t.type == "Recette")
+            totalRecettes += t.montant;
+        else
+            totalDepenses += t.montant;
+    }
+    double solde = totalRecettes - totalDepenses;
+
+    if (labelTotalRecettes) labelTotalRecettes->setText(QString::number(totalRecettes, 'f', 2) + " €");
+    if (labelTotalDepenses) labelTotalDepenses->setText(QString::number(totalDepenses, 'f', 2) + " €");
+    if (labelSolde) {
+        labelSolde->setText(QString::number(solde, 'f', 2) + " €");
+        labelSolde->setStyleSheet(QString("font-size: 28px; font-weight: bold; color: %1;")
+            .arg(solde >= 0 ? "#10b981" : "#ef4444"));
+    }
+    if (labelNbTransactions) labelNbTransactions->setText(QString::number(m_transactions.size()));
+}
+
+void FinStatistiquesDialog::creerGraphiques() {
+    double totalRecettes = 0, totalDepenses = 0;
+    for (const TransactionData &t : m_transactions) {
+        if (t.type == "Recette") totalRecettes += t.montant;
+        else totalDepenses += t.montant;
+    }
+
+    QPieSeries *seriesType = new QPieSeries();
+    if (totalRecettes > 0) seriesType->append("Recettes", totalRecettes);
+    if (totalDepenses > 0) seriesType->append("Dépenses", totalDepenses);
+    if (seriesType->count() > 0) {
+        seriesType->slices().at(0)->setColor(QColor("#10b981"));
+        if (seriesType->count() > 1) seriesType->slices().at(1)->setColor(QColor("#ef4444"));
+        for (int i = 0; i < seriesType->count(); ++i) {
+            seriesType->slices().at(i)->setLabelVisible(true);
+            seriesType->slices().at(i)->setLabel(QString("%1%").arg(
+                seriesType->slices().at(i)->percentage() * 100, 0, 'f', 1));
+        }
+    }
+
+    QChart *chartType = new QChart();
+    chartType->addSeries(seriesType);
+    chartType->setAnimationOptions(QChart::SeriesAnimations);
+    chartType->setBackgroundBrush(QBrush(QColor("transparent")));
+    chartType->legend()->setVisible(true);
+    chartTypeView->setChart(chartType);
+
+    QMap<QString, double> montantsParProjet;
+    for (const TransactionData &t : m_transactions) {
+        double sgn = (t.type == "Recette") ? 1.0 : -1.0;
+        montantsParProjet[t.projet] += sgn * t.montant;
+    }
+
+    QBarSet *barSet = new QBarSet("Solde par projet");
+    QStringList categories;
+    for (auto it = montantsParProjet.constBegin(); it != montantsParProjet.constEnd(); ++it) {
+        barSet->append(qAbs(it.value()));
+        categories << it.key();
+    }
+    QBarSeries *barSeries = new QBarSeries();
+    barSeries->append(barSet);
+    barSet->setColor(QColor("#3b82f6"));
+
+    QChart *chartProjet = new QChart();
+    chartProjet->addSeries(barSeries);
+    chartProjet->setAnimationOptions(QChart::SeriesAnimations);
+    chartProjet->setBackgroundBrush(QBrush(QColor("transparent")));
+
+    QBarCategoryAxis *axisX = new QBarCategoryAxis();
+    axisX->append(categories);
+    chartProjet->addAxis(axisX, Qt::AlignBottom);
+    barSeries->attachAxis(axisX);
+
+    QValueAxis *axisY = new QValueAxis();
+    chartProjet->addAxis(axisY, Qt::AlignLeft);
+    barSeries->attachAxis(axisY);
+
+    chartProjet->legend()->setVisible(false);
+    chartProjetView->setChart(chartProjet);
+}
+
+>>>>>>> 50f599d (crud avec connexion base de donné gestion financiere)
 // ============================================================================
 // CLASSE SMARTPUB
 // ============================================================================
@@ -1941,9 +2162,16 @@ SmartPub::SmartPub(QWidget *parent)
     : QMainWindow(parent), ui(new Ui::SmartPub), sidebarExpanded(false),
     isUserLoggedIn(false), cherchVueListeActive(true),
     cherchVueIconesActive(true), cherchChercheurSelectionne(-1),
+<<<<<<< HEAD
     cherchIsLoggedIn(false), cherchOrderByClause("ID"),
     cherchWhereClause(), finVueListeActive(true),
     finTransactionSelectionnee(-1), evEventSelectionne(-1), nextProjetId(1),
+=======
+    cherchIsLoggedIn(false), cherchOrderByClause("ID_CHERCHEUR"),
+    cherchWhereClause(), finVueListeActive(true),
+    finTransactionSelectionnee(-1), finTriColonne(4),
+    finTriOrdre(Qt::DescendingOrder), evEventSelectionne(-1), nextProjetId(1),
+>>>>>>> 50f599d (crud avec connexion base de donné gestion financiere)
     currentProjetId(-1), isEditing(false), currentSortColumn(-1),
     currentSortOrder(Qt::AscendingOrder), filtresActifs(false),
     editingPublicationRow(-1),
@@ -3372,7 +3600,11 @@ void SmartPub::cherchAfficherListeChercheurs() {
         return;
     }
 
+<<<<<<< HEAD
     QString sql = "SELECT ID, NOM, PRENOM, EMAIL, GRADE, CIN, PHOTO_PROFIL FROM chercheur";
+=======
+    QString sql = "SELECT ID_CHERCHEUR, NOM, PRENOM, EMAIL, GRADE, CIN, PHOTO_PROFIL FROM chercheur";
+>>>>>>> 50f599d (crud avec connexion base de donné gestion financiere)
     if (!cherchWhereClause.isEmpty())
         sql += " WHERE " + cherchWhereClause;
     if (!cherchOrderByClause.isEmpty())
@@ -3385,7 +3617,11 @@ void SmartPub::cherchAfficherListeChercheurs() {
     }
 
     while (query.next()) {
+<<<<<<< HEAD
         int id = query.value("ID").toInt();
+=======
+        int id = query.value("ID_CHERCHEUR").toInt();
+>>>>>>> 50f599d (crud avec connexion base de donné gestion financiere)
         ChercheurData data;
         data.nom = query.value("NOM").toString();
         data.prenom = query.value("PRENOM").toString();
@@ -3393,8 +3629,12 @@ void SmartPub::cherchAfficherListeChercheurs() {
         data.grade = query.value("GRADE").toString();
         data.cin = query.value("CIN").toString();
         data.photoPath = query.value("PHOTO_PROFIL").toString();
+<<<<<<< HEAD
         if (data.photoPath.isEmpty())
             data.photoPath = ":/avatar.png";
+=======
+        if (data.photoPath.isEmpty()) data.photoPath = ":/avatar.png";
+>>>>>>> 50f599d (crud avec connexion base de donné gestion financiere)
         data.dateCreation = QDateTime();
         data.carriere = "";
         data.age = 0;
@@ -3917,7 +4157,11 @@ void SmartPub::cherchTrierParGrade() {
 }
 
 void SmartPub::cherchTrierParDateCreation(bool croissant) {
+<<<<<<< HEAD
     cherchOrderByClause = croissant ? "ID DESC" : "ID ASC";
+=======
+    cherchOrderByClause = croissant ? "ID_CHERCHEUR DESC" : "ID_CHERCHEUR ASC";
+>>>>>>> 50f599d (crud avec connexion base de donné gestion financiere)
     cherchAfficherListeChercheurs();
 }
 
@@ -4268,11 +4512,19 @@ void SmartPub::on_cherchBtnAjouterChercheur_clicked() {
     if (query.exec("SELECT TABLE1_SEQ.NEXTVAL FROM DUAL") && query.next()) {
         newId = query.value(0).toInt();
     } else {
+<<<<<<< HEAD
         if (query.exec("SELECT NVL(MAX(ID), 0) + 1 FROM CHERCHEUR") && query.next())
             newId = query.value(0).toInt();
     }
 
     query.prepare("INSERT INTO chercheur (ID, NOM, PRENOM, EMAIL, GRADE, CIN, PHOTO_PROFIL) "
+=======
+        if (query.exec("SELECT NVL(MAX(ID_CHERCHEUR), 0) + 1 FROM CHERCHEUR") && query.next())
+            newId = query.value(0).toInt();
+    }
+
+    query.prepare("INSERT INTO chercheur (ID_CHERCHEUR, NOM, PRENOM, EMAIL, GRADE, CIN, PHOTO_PROFIL) "
+>>>>>>> 50f599d (crud avec connexion base de donné gestion financiere)
                  "VALUES (:id, :nom, :prenom, :email, :grade, :cin, :photo_profil)");
     query.bindValue(":id", newId);
     query.bindValue(":nom", nom);
@@ -4280,7 +4532,11 @@ void SmartPub::on_cherchBtnAjouterChercheur_clicked() {
     query.bindValue(":email", email);
     query.bindValue(":grade", grade);
     query.bindValue(":cin", cin);
+<<<<<<< HEAD
     query.bindValue(":photo_profil", photoPath);
+=======
+    query.bindValue(":photo_profil", photoPath.isEmpty() ? QString() : photoPath);
+>>>>>>> 50f599d (crud avec connexion base de donné gestion financiere)
 
     if (!query.exec()) {
         QString err = query.lastError().text();
@@ -4336,7 +4592,11 @@ void SmartPub::on_cherchModifierChercheur(int id) {
         return;
     }
     QSqlQuery query(db);
+<<<<<<< HEAD
     query.prepare("SELECT ID, NOM, PRENOM, EMAIL, GRADE, CIN, PHOTO_PROFIL FROM chercheur WHERE ID = :id");
+=======
+    query.prepare("SELECT ID_CHERCHEUR, NOM, PRENOM, EMAIL, GRADE, CIN, PHOTO_PROFIL FROM chercheur WHERE ID_CHERCHEUR = :id");
+>>>>>>> 50f599d (crud avec connexion base de donné gestion financiere)
     query.bindValue(":id", id);
     if (!query.exec() || !query.next()) {
         QMessageBox::warning(this, "Erreur", "Chercheur introuvable.");
@@ -4477,12 +4737,20 @@ void SmartPub::on_cherchModifierChercheur(int id) {
             return;
         }
         QSqlQuery updateQuery(db);
+<<<<<<< HEAD
         updateQuery.prepare("UPDATE chercheur SET NOM = :nom, PRENOM = :prenom, EMAIL = :email, GRADE = :grade, PHOTO_PROFIL = :photo_profil WHERE ID = :id");
+=======
+        updateQuery.prepare("UPDATE chercheur SET NOM = :nom, PRENOM = :prenom, EMAIL = :email, GRADE = :grade, PHOTO_PROFIL = :photo_profil WHERE ID_CHERCHEUR = :id");
+>>>>>>> 50f599d (crud avec connexion base de donné gestion financiere)
         updateQuery.bindValue(":nom", newNom);
         updateQuery.bindValue(":prenom", newPrenom);
         updateQuery.bindValue(":email", newEmail);
         updateQuery.bindValue(":grade", newGrade);
+<<<<<<< HEAD
         updateQuery.bindValue(":photo_profil", newPhotoPath.isEmpty() ? QString(":/avatar.png") : newPhotoPath);
+=======
+        updateQuery.bindValue(":photo_profil", (newPhotoPath.isEmpty() || newPhotoPath == ":/avatar.png") ? QString() : newPhotoPath);
+>>>>>>> 50f599d (crud avec connexion base de donné gestion financiere)
         updateQuery.bindValue(":id", id);
         if (!updateQuery.exec()) {
             QString err = updateQuery.lastError().text();
@@ -4514,7 +4782,11 @@ void SmartPub::on_cherchSupprimerChercheur(int id) {
         return;
     }
     QSqlQuery query(db);
+<<<<<<< HEAD
     query.prepare("DELETE FROM chercheur WHERE ID = :id");
+=======
+    query.prepare("DELETE FROM chercheur WHERE ID_CHERCHEUR = :id");
+>>>>>>> 50f599d (crud avec connexion base de donné gestion financiere)
     query.bindValue(":id", id);
     if (!query.exec()) {
         QMessageBox::critical(this, "Erreur", "Échec de la suppression : " + query.lastError().text());
@@ -4530,7 +4802,11 @@ void SmartPub::on_cherchVoirDetailsChercheur(int id) {
         return;
     }
     QSqlQuery query(db);
+<<<<<<< HEAD
     query.prepare("SELECT ID, NOM, PRENOM, EMAIL, GRADE, CIN, PHOTO_PROFIL FROM chercheur WHERE ID = :id");
+=======
+    query.prepare("SELECT ID_CHERCHEUR, NOM, PRENOM, EMAIL, GRADE, CIN, PHOTO_PROFIL FROM chercheur WHERE ID_CHERCHEUR = :id");
+>>>>>>> 50f599d (crud avec connexion base de donné gestion financiere)
     query.bindValue(":id", id);
     if (!query.exec() || !query.next()) {
         QMessageBox::warning(this, "Erreur", "Chercheur introuvable.");
@@ -5366,6 +5642,11 @@ void SmartPub::finConnectSignals() {
             &SmartPub::on_finBtnModifierTransaction_clicked);
     connect(ui->finBtnSupprimerTable, &QPushButton::clicked, this,
             &SmartPub::on_finBtnSupprimerTransaction_clicked);
+<<<<<<< HEAD
+=======
+    connect(ui->finLineEditRecherche, &QLineEdit::textChanged, this,
+            &SmartPub::on_finLineEditRecherche_textChanged);
+>>>>>>> 50f599d (crud avec connexion base de donné gestion financiere)
 }
 // background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #3b9cff, stop:1
 // #2dd4bf); background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #2b8cef,
@@ -5455,12 +5736,62 @@ void SmartPub::finAjouterDonneesTest() {
 
 void SmartPub::finAfficherListeTransactions() {
     ui->finTableTransactions->setRowCount(0);
+<<<<<<< HEAD
     for (auto it = finTransactionsMap.begin(); it != finTransactionsMap.end();
          ++it) {
         finAjouterTransactionTable(it.value());
     }
 }
 
+=======
+    QList<TransactionData> liste = finGetTransactionsFiltreesEtTriees();
+    for (const TransactionData &data : liste) {
+        finAjouterTransactionTable(data);
+    }
+}
+
+QList<TransactionData> SmartPub::finGetTransactionsFiltreesEtTriees() const {
+    QList<TransactionData> liste;
+    QString search = ui->finLineEditRecherche->text().trimmed().toLower();
+
+    for (auto it = finTransactionsMap.constBegin(); it != finTransactionsMap.constEnd(); ++it) {
+        const TransactionData &t = it.value();
+        if (!search.isEmpty()) {
+            if (!t.projet.toLower().contains(search) &&
+                !t.type.toLower().contains(search) &&
+                !t.categorie.toLower().contains(search) &&
+                !t.statut.toLower().contains(search) &&
+                !t.description.toLower().contains(search) &&
+                !QString::number(t.montant, 'f', 2).contains(search))
+                continue;
+        }
+        liste.append(t);
+    }
+
+    std::sort(liste.begin(), liste.end(), [this](const TransactionData &a, const TransactionData &b) {
+        bool less = false;
+        switch (finTriColonne) {
+        case 0: less = a.id < b.id; break;
+        case 1: less = a.projet.compare(b.projet, Qt::CaseInsensitive) < 0; break;
+        case 2: less = a.type.compare(b.type, Qt::CaseInsensitive) < 0; break;
+        case 3: less = a.montant < b.montant; break;
+        case 4: {
+            QDate da = QDate::fromString(a.date, "dd/MM/yyyy");
+            QDate db = QDate::fromString(b.date, "dd/MM/yyyy");
+            less = da < db;
+            break;
+        }
+        case 5: less = a.categorie.compare(b.categorie, Qt::CaseInsensitive) < 0; break;
+        case 6: less = a.statut.compare(b.statut, Qt::CaseInsensitive) < 0; break;
+        default: less = a.id < b.id;
+        }
+        return finTriOrdre == Qt::AscendingOrder ? less : !less;
+    });
+
+    return liste;
+}
+
+>>>>>>> 50f599d (crud avec connexion base de donné gestion financiere)
 void SmartPub::finAjouterTransactionTable(const TransactionData &data) {
     int row = ui->finTableTransactions->rowCount();
     ui->finTableTransactions->insertRow(row);
@@ -5476,8 +5807,47 @@ void SmartPub::finAjouterTransactionTable(const TransactionData &data) {
     ui->finTableTransactions->setItem(row, 5,
                                       new QTableWidgetItem(data.categorie));
     ui->finTableTransactions->setItem(row, 6, new QTableWidgetItem(data.statut));
+<<<<<<< HEAD
     ui->finTableTransactions->setItem(
         row, 7, new QTableWidgetItem("Modifier | Supprimer"));
+=======
+}
+
+void SmartPub::finViderFormulaire() {
+    ui->finComboBoxProjet->setCurrentIndex(0);
+    ui->finComboBoxType->setCurrentIndex(0);
+    ui->finLineEditMontant->clear();
+    ui->finDateEdit->setDate(QDate::currentDate());
+    ui->finComboBoxCategorie->setCurrentIndex(0);
+    ui->finComboBoxStatut->setCurrentIndex(0);
+    ui->finTextEditDescription->clear();
+}
+
+void SmartPub::finRemplirFormulaire(const TransactionData &data) {
+    int idxProjet = ui->finComboBoxProjet->findText(data.projet);
+    if (idxProjet >= 0) ui->finComboBoxProjet->setCurrentIndex(idxProjet);
+    else ui->finComboBoxProjet->setCurrentText(data.projet);
+
+    int idxType = ui->finComboBoxType->findText(data.type);
+    if (idxType >= 0) ui->finComboBoxType->setCurrentIndex(idxType);
+    else ui->finComboBoxType->setCurrentText(data.type);
+
+    ui->finLineEditMontant->setText(QString::number(data.montant, 'f', 2));
+
+    QDate d = QDate::fromString(data.date, "dd/MM/yyyy");
+    if (d.isValid()) ui->finDateEdit->setDate(d);
+    else ui->finDateEdit->setDate(QDate::currentDate());
+
+    int idxCat = ui->finComboBoxCategorie->findText(data.categorie);
+    if (idxCat >= 0) ui->finComboBoxCategorie->setCurrentIndex(idxCat);
+    else ui->finComboBoxCategorie->setCurrentText(data.categorie);
+
+    int idxStatut = ui->finComboBoxStatut->findText(data.statut);
+    if (idxStatut >= 0) ui->finComboBoxStatut->setCurrentIndex(idxStatut);
+    else ui->finComboBoxStatut->setCurrentText(data.statut);
+
+    ui->finTextEditDescription->setPlainText(data.description);
+>>>>>>> 50f599d (crud avec connexion base de donné gestion financiere)
 }
 
 void SmartPub::on_finBtnVueListe_clicked() {
@@ -5492,11 +5862,20 @@ void SmartPub::on_finBtnAjouter_clicked() {
                              "Les invités ne peuvent pas ajouter de transactions.");
         return;
     }
+<<<<<<< HEAD
+=======
+    finTransactionSelectionnee = 0;  // Mode ajout
+    finViderFormulaire();
+    ui->finFormTitle->setText("Nouvelle transaction");
+    ui->finFormSubtitle->setText("Remplissez les informations pour ajouter une nouvelle transaction");
+    ui->finBtnAjouterTransaction->setText("➕ Ajouter");
+>>>>>>> 50f599d (crud avec connexion base de donné gestion financiere)
     ui->finStackedWidget->setCurrentIndex(1);
     finUpdateButtonStyles();
 }
 
 void SmartPub::on_finBtnRecherche_clicked() {
+<<<<<<< HEAD
     QString searchText = ui->finLineEditRecherche->text();
     if (searchText.isEmpty()) {
         QMessageBox::information(this, "Recherche",
@@ -5505,6 +5884,13 @@ void SmartPub::on_finBtnRecherche_clicked() {
         QMessageBox::information(this, "Recherche",
                                  "Recherche de transaction: " + searchText);
     }
+=======
+    finAfficherListeTransactions();
+}
+
+void SmartPub::on_finLineEditRecherche_textChanged(const QString &) {
+    finAfficherListeTransactions();
+>>>>>>> 50f599d (crud avec connexion base de donné gestion financiere)
 }
 
 void SmartPub::on_finBtnTri_clicked() {
@@ -5530,6 +5916,7 @@ void SmartPub::on_finBtnTri_clicked() {
         }
     )");
 
+<<<<<<< HEAD
     menu->addAction("Trier par Date", this, [this]() {
         QMessageBox::information(this, "Tri", "Tri par date effectué");
     });
@@ -5538,6 +5925,31 @@ void SmartPub::on_finBtnTri_clicked() {
     });
     menu->addAction("Trier par Projet", this, [this]() {
         QMessageBox::information(this, "Tri", "Tri par projet effectué");
+=======
+    auto appliquerTri = [this](int col, Qt::SortOrder ordre) {
+        finTriColonne = col;
+        finTriOrdre = ordre;
+        finAfficherListeTransactions();
+    };
+
+    menu->addAction("Trier par Date (récent → ancien)", this, [appliquerTri]() {
+        appliquerTri(4, Qt::DescendingOrder);
+    });
+    menu->addAction("Trier par Date (ancien → récent)", this, [appliquerTri]() {
+        appliquerTri(4, Qt::AscendingOrder);
+    });
+    menu->addAction("Trier par Montant (croissant)", this, [appliquerTri]() {
+        appliquerTri(3, Qt::AscendingOrder);
+    });
+    menu->addAction("Trier par Montant (décroissant)", this, [appliquerTri]() {
+        appliquerTri(3, Qt::DescendingOrder);
+    });
+    menu->addAction("Trier par Projet (A-Z)", this, [appliquerTri]() {
+        appliquerTri(1, Qt::AscendingOrder);
+    });
+    menu->addAction("Trier par Type", this, [appliquerTri]() {
+        appliquerTri(2, Qt::AscendingOrder);
+>>>>>>> 50f599d (crud avec connexion base de donné gestion financiere)
     });
 
     menu->exec(QCursor::pos());
@@ -5546,6 +5958,7 @@ void SmartPub::on_finBtnTri_clicked() {
 void SmartPub::on_finBtnExport_clicked() {
     QString fileName = QFileDialog::getSaveFileName(
         this, "Exporter les transactions", QDir::homePath(), "CSV (*.csv)");
+<<<<<<< HEAD
     if (!fileName.isEmpty()) {
         QMessageBox::information(this, "Export",
                                  "Transactions exportées avec succès !");
@@ -5555,6 +5968,36 @@ void SmartPub::on_finBtnExport_clicked() {
 void SmartPub::on_finBtnStatistiques_clicked() {
     QMessageBox::information(this, "Statistiques",
                              "Module statistiques finances - À implémenter");
+=======
+    if (fileName.isEmpty()) return;
+
+    QFile file(fileName);
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        QMessageBox::critical(this, "Erreur", "Impossible de créer le fichier.");
+        return;
+    }
+
+    QTextStream out(&file);
+    out.setEncoding(QStringConverter::Utf8);
+    out << "ID;Projet;Type;Montant;Date;Catégorie;Statut;Description\n";
+
+    QList<TransactionData> liste = finGetTransactionsFiltreesEtTriees();
+    for (const TransactionData &t : liste) {
+        QString desc = t.description;
+        desc.replace("\"", "\"\"");
+        out << t.id << ";\"" << t.projet << "\";\"" << t.type << "\";"
+            << QString::number(t.montant, 'f', 2) << ";\"" << t.date << "\";\""
+            << t.categorie << "\";\"" << t.statut << "\";\"" << desc << "\"\n";
+    }
+    file.close();
+    QMessageBox::information(this, "Export", "Transactions exportées avec succès !");
+}
+
+void SmartPub::on_finBtnStatistiques_clicked() {
+    FinStatistiquesDialog *dialog = new FinStatistiquesDialog(finTransactionsMap, this);
+    dialog->setAttribute(Qt::WA_DeleteOnClose);
+    dialog->exec();
+>>>>>>> 50f599d (crud avec connexion base de donné gestion financiere)
 }
 
 void SmartPub::on_finBtnAjouterTransaction_clicked() {
@@ -5585,11 +6028,15 @@ void SmartPub::on_finBtnAjouterTransaction_clicked() {
         return;
     }
 
+<<<<<<< HEAD
     int newId =
         finTransactionsMap.isEmpty() ? 1 : finTransactionsMap.keys().last() + 1;
 
     TransactionData data;
     data.id = newId;
+=======
+    TransactionData data;
+>>>>>>> 50f599d (crud avec connexion base de donné gestion financiere)
     data.projet = projet;
     data.type = type;
     data.montant = montant;
@@ -5598,6 +6045,7 @@ void SmartPub::on_finBtnAjouterTransaction_clicked() {
     data.statut = statut;
     data.description = description;
 
+<<<<<<< HEAD
     finTransactionsMap[newId] = data;
 
     QMessageBox::information(this, "Succès", "Transaction ajoutée avec succès !");
@@ -5611,6 +6059,33 @@ void SmartPub::on_finBtnAjouterTransaction_clicked() {
 }
 
 void SmartPub::on_finBtnAnnulerAjout_clicked() {
+=======
+    if (finTransactionSelectionnee > 0) {
+        // Mode modification
+        data.id = finTransactionSelectionnee;
+        finTransactionsMap[finTransactionSelectionnee] = data;
+        QMessageBox::information(this, "Succès",
+                                 "Transaction modifiée avec succès !");
+    } else {
+        // Mode ajout
+        int newId =
+            finTransactionsMap.isEmpty() ? 1 : finTransactionsMap.keys().last() + 1;
+        data.id = newId;
+        finTransactionsMap[newId] = data;
+        QMessageBox::information(this, "Succès", "Transaction ajoutée avec succès !");
+    }
+
+    finTransactionSelectionnee = 0;
+    finViderFormulaire();
+    ui->finStackedWidget->setCurrentIndex(0);
+    finUpdateButtonStyles();
+    finAfficherListeTransactions();
+}
+
+void SmartPub::on_finBtnAnnulerAjout_clicked() {
+    finTransactionSelectionnee = 0;
+    finViderFormulaire();
+>>>>>>> 50f599d (crud avec connexion base de donné gestion financiere)
     ui->finStackedWidget->setCurrentIndex(0);
     finUpdateButtonStyles();
 }
@@ -5629,8 +6104,25 @@ void SmartPub::on_finBtnModifierTransaction_clicked() {
                              "Veuillez sélectionner une transaction à modifier");
         return;
     }
+<<<<<<< HEAD
     QMessageBox::information(this, "Modifier",
                              "Fonctionnalité de modification - À implémenter");
+=======
+
+    QTableWidgetItem *idItem = ui->finTableTransactions->item(currentRow, 0);
+    if (!idItem) return;
+
+    int transactionId = idItem->text().toInt();
+    if (!finTransactionsMap.contains(transactionId)) return;
+
+    finTransactionSelectionnee = transactionId;
+    finRemplirFormulaire(finTransactionsMap[transactionId]);
+    ui->finFormTitle->setText("Modifier la transaction");
+    ui->finFormSubtitle->setText("Modifiez les informations de la transaction");
+    ui->finBtnAjouterTransaction->setText("💾 Enregistrer");
+    ui->finStackedWidget->setCurrentIndex(1);
+    finUpdateButtonStyles();
+>>>>>>> 50f599d (crud avec connexion base de donné gestion financiere)
 }
 
 void SmartPub::on_finBtnSupprimerTransaction_clicked() {
@@ -5648,11 +6140,26 @@ void SmartPub::on_finBtnSupprimerTransaction_clicked() {
         return;
     }
 
+<<<<<<< HEAD
     auto reply = QMessageBox::question(
         this, "Supprimer", "Confirmer la suppression de cette transaction ?");
     if (reply == QMessageBox::Yes) {
         QMessageBox::information(this, "Succès", "Transaction supprimée");
         ui->finTableTransactions->removeRow(currentRow);
+=======
+    QTableWidgetItem *idItem = ui->finTableTransactions->item(currentRow, 0);
+    if (!idItem) return;
+
+    int transactionId = idItem->text().toInt();
+
+    auto reply = QMessageBox::question(
+        this, "Supprimer", "Confirmer la suppression de cette transaction ?",
+        QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+    if (reply == QMessageBox::Yes) {
+        finTransactionsMap.remove(transactionId);
+        finAfficherListeTransactions();
+        QMessageBox::information(this, "Succès", "Transaction supprimée");
+>>>>>>> 50f599d (crud avec connexion base de donné gestion financiere)
     }
 }
 

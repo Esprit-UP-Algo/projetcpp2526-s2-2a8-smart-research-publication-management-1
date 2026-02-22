@@ -266,6 +266,28 @@ private:
     QChartView *chartTemporelView;
 };
 
+<<<<<<< HEAD
+=======
+class FinStatistiquesDialog : public QDialog {
+    Q_OBJECT
+public:
+    explicit FinStatistiquesDialog(const QMap<int, TransactionData> &transactions,
+                                   QWidget *parent = nullptr);
+
+private:
+    void setupUI();
+    void calculerStatistiques();
+    void creerGraphiques();
+    QMap<int, TransactionData> m_transactions;
+    QLabel *labelTotalRecettes;
+    QLabel *labelTotalDepenses;
+    QLabel *labelSolde;
+    QLabel *labelNbTransactions;
+    QChartView *chartTypeView;
+    QChartView *chartProjetView;
+};
+
+>>>>>>> 50f599d (crud avec connexion base de donné gestion financiere)
 // ============================================================================
 // CLASSE PRINCIPALE
 // ============================================================================
@@ -340,6 +362,10 @@ private slots:
     void on_finBtnAnnulerAjout_clicked();
     void on_finBtnModifierTransaction_clicked();
     void on_finBtnSupprimerTransaction_clicked();
+<<<<<<< HEAD
+=======
+    void on_finLineEditRecherche_textChanged(const QString &text);
+>>>>>>> 50f599d (crud avec connexion base de donné gestion financiere)
 
     // === MODULE EVENEMENTS ===
     void on_evBtnAjouterEvent_clicked();
@@ -446,6 +472,12 @@ private:
     void finAjouterDonneesTest();
     void finAfficherListeTransactions();
     void finAjouterTransactionTable(const TransactionData &data);
+<<<<<<< HEAD
+=======
+    void finViderFormulaire();
+    void finRemplirFormulaire(const TransactionData &data);
+    QList<TransactionData> finGetTransactionsFiltreesEtTriees() const;
+>>>>>>> 50f599d (crud avec connexion base de donné gestion financiere)
 
     // === MODULE EVENEMENTS ===
     void evSetupUI();
@@ -529,6 +561,11 @@ private:
     bool finVueListeActive;
     int finTransactionSelectionnee;
     QMap<int, TransactionData> finTransactionsMap;
+<<<<<<< HEAD
+=======
+    int finTriColonne;  // 0=ID, 1=Projet, 2=Type, 3=Montant, 4=Date, 5=Catégorie, 6=Statut
+    Qt::SortOrder finTriOrdre;
+>>>>>>> 50f599d (crud avec connexion base de donné gestion financiere)
 
     // === VARIABLES MODULE EVENEMENTS ===
     int evEventSelectionne;

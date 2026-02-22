@@ -4255,7 +4255,11 @@ QPushButton:hover {
                     <bool>false</bool>
                    </property>
                    <property name="columnCount">
+<<<<<<< HEAD
                     <number>8</number>
+=======
+                    <number>7</number>
+>>>>>>> 50f599d (crud avec connexion base de donné gestion financiere)
                    </property>
                    <attribute name="horizontalHeaderDefaultSectionSize">
                     <number>150</number>
@@ -4268,7 +4272,11 @@ QPushButton:hover {
                    </attribute>
                    <column>
                     <property name="text">
+<<<<<<< HEAD
                      <string>ID</string>
+=======
+                     <string>Num de transaction</string>
+>>>>>>> 50f599d (crud avec connexion base de donné gestion financiere)
                     </property>
                    </column>
                    <column>
@@ -4301,11 +4309,14 @@ QPushButton:hover {
                      <string>Statut</string>
                     </property>
                    </column>
+<<<<<<< HEAD
                    <column>
                     <property name="text">
                      <string>Actions</string>
                     </property>
                    </column>
+=======
+>>>>>>> 50f599d (crud avec connexion base de donné gestion financiere)
                   </widget>
                  </item>
                  <item>
