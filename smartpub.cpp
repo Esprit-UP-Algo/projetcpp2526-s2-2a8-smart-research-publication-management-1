@@ -1946,7 +1946,9 @@ SmartPub::SmartPub(QWidget *parent)
     finTransactionSelectionnee(-1), evEventSelectionne(-1), nextProjetId(1),
     currentProjetId(-1), isEditing(false), currentSortColumn(-1),
     currentSortOrder(Qt::AscendingOrder), filtresActifs(false),
-    editingPublicationRow(-1) {
+    editingPublicationRow(-1),
+    SR_filterFrame(nullptr), SR_filterTitre(nullptr), SR_filterAuteur(nullptr),
+    SR_filterStatut(nullptr), SR_btnReinitFilter(nullptr) {
     ui->setupUi(this);
     // Configurer les dimensions de la fenêtre
     this->setMinimumSize(1280, 720);
@@ -4759,7 +4761,47 @@ void SmartPub::on_cherchLineEditRecherche_textChanged(const QString &text) {
 // MODULE PUBLICATIONS
 // ============================================================================
 
-void SmartPub::SR_setupUI() { ui->SR_stackedWidget->setCurrentIndex(0); }
+void SmartPub::SR_setupUI() {
+    ui->SR_stackedWidget->setCurrentIndex(0);
+
+    SR_filterFrame = new QFrame(ui->SR_tableFrame);
+    SR_filterFrame->setStyleSheet("background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 4px;");
+    SR_filterFrame->setFrameShape(QFrame::NoFrame);
+    QHBoxLayout *filterLayout = new QHBoxLayout(SR_filterFrame);
+    filterLayout->setSpacing(12);
+
+    QLabel *lblTitre = new QLabel("Titre", SR_filterFrame);
+    SR_filterTitre = new QLineEdit(SR_filterFrame);
+    SR_filterTitre->setPlaceholderText("Filtrer par titre...");
+    SR_filterTitre->setMinimumWidth(140);
+    QLabel *lblAuteur = new QLabel("Auteur", SR_filterFrame);
+    SR_filterAuteur = new QLineEdit(SR_filterFrame);
+    SR_filterAuteur->setPlaceholderText("Filtrer par auteur...");
+    SR_filterAuteur->setMinimumWidth(140);
+    QLabel *lblStatut = new QLabel("Statut", SR_filterFrame);
+    SR_filterStatut = new QComboBox(SR_filterFrame);
+    SR_filterStatut->setMinimumWidth(120);
+    SR_filterStatut->addItem("Tous");
+    SR_filterStatut->addItem("Publié");
+    SR_filterStatut->addItem("Soumis");
+    SR_filterStatut->addItem("En révision");
+    SR_filterStatut->addItem("Accepté");
+    SR_filterStatut->addItem("Rejeté");
+    SR_btnReinitFilter = new QPushButton("Réinitialiser", SR_filterFrame);
+
+    filterLayout->addWidget(lblTitre);
+    filterLayout->addWidget(SR_filterTitre);
+    filterLayout->addWidget(lblAuteur);
+    filterLayout->addWidget(SR_filterAuteur);
+    filterLayout->addWidget(lblStatut);
+    filterLayout->addWidget(SR_filterStatut);
+    filterLayout->addWidget(SR_btnReinitFilter);
+    filterLayout->addStretch();
+
+    QVBoxLayout *tableLayout = qobject_cast<QVBoxLayout *>(ui->SR_tableFrame->layout());
+    if (tableLayout)
+        tableLayout->insertWidget(1, SR_filterFrame);
+}
 
 void SmartPub::SR_connectSignals() {
     connect(ui->SR_btnVueListe, &QPushButton::clicked, this,
@@ -4804,6 +4846,10 @@ void SmartPub::SR_connectSignals() {
             &SmartPub::on_SR_btnAjouterPublication_clicked);
     connect(ui->SR_btnAnnulerAjout, &QPushButton::clicked, this,
             &SmartPub::on_SR_btnAnnulerAjout_clicked);
+    connect(SR_filterTitre, &QLineEdit::textChanged, this, [this]() { SR_applyFilterListe(); });
+    connect(SR_filterAuteur, &QLineEdit::textChanged, this, [this]() { SR_applyFilterListe(); });
+    connect(SR_filterStatut, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this]() { SR_applyFilterListe(); });
+    connect(SR_btnReinitFilter, &QPushButton::clicked, this, &SmartPub::SR_reinitFilterListe);
 }
 
 void SmartPub::SR_updateButtonStyles() {
@@ -4868,6 +4914,68 @@ void SmartPub::SR_updateButtonStyles() {
 }
 
 void SmartPub::SR_loadSampleData() {
+    QSqlDatabase db = Connection::instance()->getDatabase();
+    ui->SR_tablePublications->setColumnWidth(5, 135);
+
+    if (db.isOpen()) {
+        QSqlQuery query(db);
+        if (query.exec("SELECT DOI, TITRE, AUTEUR, DATES, REVUE, STATUT FROM PUBLICATIONS ORDER BY DOI")) {
+            ui->SR_tablePublications->setRowCount(0);
+            int row = 0;
+            while (query.next()) {
+                QVariant doiVar = query.value("DOI");
+                int id = doiVar.toInt();
+                if (id == 0 && !doiVar.toString().isEmpty()) id = -1; // keep non-numeric DOI in UserRole as string
+                QString titre = query.value("TITRE").toString();
+                QString auteur = query.value("AUTEUR").toString();
+                QVariant dateVar = query.value("DATES");
+                QDate d = dateVar.toDate();
+                if (!d.isValid() && dateVar.toDateTime().isValid())
+                    d = dateVar.toDateTime().date();
+                QString dateStr = d.isValid() ? d.toString("yyyy-MM-dd") : dateVar.toString();
+                if (dateStr.length() > 10) dateStr = dateStr.left(10);
+                QString revue = query.value("REVUE").toString();
+                QString statut = query.value("STATUT").toString();
+
+                ui->SR_tablePublications->insertRow(row);
+                QTableWidgetItem *titItem = new QTableWidgetItem(titre);
+                titItem->setData(Qt::UserRole, id != -1 ? QVariant(id) : doiVar);
+                ui->SR_tablePublications->setItem(row, 0, titItem);
+                ui->SR_tablePublications->setItem(row, 1, new QTableWidgetItem(auteur));
+                ui->SR_tablePublications->setItem(row, 2, new QTableWidgetItem(dateStr));
+                ui->SR_tablePublications->setItem(row, 3, new QTableWidgetItem(revue));
+                ui->SR_tablePublications->setItem(row, 4, new QTableWidgetItem(statut));
+                SR_addButtonsToRow(row);
+                row++;
+            }
+            ui->SR_tablePublications->resizeRowsToContents();
+            ui->SR_lblTotalNumber->setText(QString::number(row));
+            int thisYear = QDate::currentDate().year();
+            int countThisYear = 0;
+            for (int r = 0; r < row; r++) {
+                QString d = ui->SR_tablePublications->item(r, 2) ? ui->SR_tablePublications->item(r, 2)->text() : QString();
+                if (d.length() >= 4 && d.left(4).toInt() == thisYear) countThisYear++;
+            }
+            ui->SR_lblThisYearNumber->setText(QString::number(countThisYear));
+            ui->SR_lblPlanSNumber->setText("0");
+            int publie = 0, soumis = 0, revision = 0, accepte = 0;
+            for (int r = 0; r < row; r++) {
+                QString s = ui->SR_tablePublications->item(r, 4) ? ui->SR_tablePublications->item(r, 4)->text() : QString();
+                if (s.contains("Publié", Qt::CaseInsensitive)) publie++;
+                else if (s.contains("Soumis", Qt::CaseInsensitive)) soumis++;
+                else if (s.contains("révision", Qt::CaseInsensitive)) revision++;
+                else if (s.contains("Accepté", Qt::CaseInsensitive)) accepte++;
+            }
+            int total = row > 0 ? row : 1;
+            ui->SR_lblStatPublie->setText(QString("● Publié (%1%)").arg((publie * 100) / total));
+            ui->SR_lblStatSoumis->setText(QString("● Soumis (%1%)").arg((soumis * 100) / total));
+            ui->SR_lblStatRevision->setText(QString("● En révision (%1%)").arg((revision * 100) / total));
+            ui->SR_lblStatAccepte->setText(QString("● Accepté (%1%)").arg((accepte * 100) / total));
+            return;
+        }
+    }
+
+    // Fallback: sample data when DB not available or table missing
     QStringList titres = {"Machine Learning pour la détection de fraudes",
                           "Analyse des données génomiques",
                           "Quantum Computing: état de l'art",
@@ -4896,11 +5004,11 @@ void SmartPub::SR_loadSampleData() {
                            "Accepté", "Publié", "Soumis", "En révision"};
 
     ui->SR_tablePublications->setRowCount(titres.size());
-    ui->SR_tablePublications->setColumnWidth(
-        5, 135); // Adjusted column width for buttons to fit exactly
 
     for (int i = 0; i < titres.size(); ++i) {
-        ui->SR_tablePublications->setItem(i, 0, new QTableWidgetItem(titres[i]));
+        QTableWidgetItem *titItem = new QTableWidgetItem(titres[i]);
+        titItem->setData(Qt::UserRole, i + 1);
+        ui->SR_tablePublications->setItem(i, 0, titItem);
         ui->SR_tablePublications->setItem(i, 1, new QTableWidgetItem(auteurs[i]));
         ui->SR_tablePublications->setItem(i, 2, new QTableWidgetItem(dates[i]));
         ui->SR_tablePublications->setItem(i, 3, new QTableWidgetItem(revues[i]));
@@ -4945,6 +5053,7 @@ void SmartPub::on_SR_btnAjouter_clicked() {
     ui->SR_lineEditTitre->clear();
     ui->SR_lineEditAuteurs->clear();
     ui->SR_lineEditRevue->clear();
+    ui->SR_dateEditPublication->setDate(QDate::currentDate());
     ui->SR_btnAjouterPublication->setText("Ajouter");
 
     ui->SR_stackedWidget->setCurrentIndex(1);
@@ -5022,10 +5131,12 @@ void SmartPub::on_SR_btnAjouterPublication_clicked() {
         return;
     }
 
-    QString titre = ui->SR_lineEditTitre->text();
-    QString auteurs = ui->SR_lineEditAuteurs->text();
-    QString revue = ui->SR_lineEditRevue->text();
+    QString titre = ui->SR_lineEditTitre->text().trimmed();
+    QString auteurs = ui->SR_lineEditAuteurs->text().trimmed();
+    QString revue = ui->SR_lineEditRevue->text().trimmed();
     QString statut = ui->SR_comboBoxStatut->currentText();
+    QDate datePub = ui->SR_dateEditPublication->date();
+    QString dateStr = datePub.toString("yyyy-MM-dd");
 
     if (titre.isEmpty() || auteurs.isEmpty() || revue.isEmpty()) {
         QMessageBox::warning(this, "Erreur",
@@ -5033,55 +5144,192 @@ void SmartPub::on_SR_btnAjouterPublication_clicked() {
         return;
     }
 
+    QSqlDatabase db = Connection::instance()->getDatabase();
+    if (!db.isOpen()) {
+        QMessageBox::critical(this, "Erreur", "Connexion à la base de données impossible.");
+        return;
+    }
+
     if (editingPublicationRow != -1) {
-        // Edit mode
+        // Edit mode: UPDATE in DB
+        QSqlQuery query(db);
+        query.prepare("UPDATE PUBLICATIONS SET TITRE = :titre, AUTEUR = :auteur, "
+                     "DATES = TO_DATE(:date_pub, 'YYYY-MM-DD'), REVUE = :revue, STATUT = :statut WHERE DOI = :doi");
+        query.bindValue(":titre", titre);
+        query.bindValue(":auteur", auteurs);
+        query.bindValue(":date_pub", dateStr);
+        query.bindValue(":revue", revue);
+        query.bindValue(":statut", statut);
+        query.bindValue(":doi", ui->SR_tablePublications->item(editingPublicationRow, 0)->data(Qt::UserRole));
+        if (!query.exec()) {
+            QMessageBox::critical(this, "Erreur", "Échec de la modification : " + query.lastError().text());
+            return;
+        }
         ui->SR_tablePublications->item(editingPublicationRow, 0)->setText(titre);
         ui->SR_tablePublications->item(editingPublicationRow, 1)->setText(auteurs);
+        ui->SR_tablePublications->item(editingPublicationRow, 2)->setText(dateStr);
         ui->SR_tablePublications->item(editingPublicationRow, 3)->setText(revue);
         ui->SR_tablePublications->item(editingPublicationRow, 4)->setText(statut);
-
-        QMessageBox::information(this, "Succès",
-                                 "Publication modifiée avec succès");
+        QMessageBox::information(this, "Succès", "Publication modifiée avec succès");
         editingPublicationRow = -1;
         ui->SR_btnAjouterPublication->setText("Ajouter");
     } else {
-        // Add mode
-        QMessageBox::information(this, "Succès",
-                                 "Publication ajoutée avec succès (simulation)");
-        // In a real app we would append to the table here, but SR_loadSampleData
-        // populates it. For consistency with the requested task "add/modify
-        // buttons", we should probably insert it into the table or reload. For now,
-        // let's just clear the form as per original code, but finding where to
-        // insert to the table to make it visible would be better. However, the
-        // original code just showed a message and cleared. Let's at least add it to
-        // the table visually to be complete.
-
+        // Add mode: INSERT into DB
+        int newId = 1;
+        QSqlQuery seqQuery(db);
+        if (seqQuery.exec("SELECT NVL(MAX(DOI), 0) + 1 FROM PUBLICATIONS") && seqQuery.next()) {
+            newId = seqQuery.value(0).toInt();
+        }
+        QSqlQuery query(db);
+        query.prepare("INSERT INTO PUBLICATIONS (DOI, TITRE, AUTEUR, DATES, REVUE, STATUT) "
+                      "VALUES (:doi, :titre, :auteur, TO_DATE(:date_pub, 'YYYY-MM-DD'), :revue, :statut)");
+        query.bindValue(":doi", newId);
+        query.bindValue(":titre", titre);
+        query.bindValue(":auteur", auteurs);
+        query.bindValue(":date_pub", dateStr);
+        query.bindValue(":revue", revue);
+        query.bindValue(":statut", statut);
+        if (!query.exec()) {
+            QMessageBox::critical(this, "Erreur", "Échec de l'ajout : " + query.lastError().text());
+            return;
+        }
         int row = ui->SR_tablePublications->rowCount();
         ui->SR_tablePublications->insertRow(row);
-        ui->SR_tablePublications->setItem(row, 0, new QTableWidgetItem(titre));
+        QTableWidgetItem *titItem = new QTableWidgetItem(titre);
+        titItem->setData(Qt::UserRole, newId);
+        ui->SR_tablePublications->setItem(row, 0, titItem);
         ui->SR_tablePublications->setItem(row, 1, new QTableWidgetItem(auteurs));
-        ui->SR_tablePublications->setItem(
-            row, 2,
-            new QTableWidgetItem(QDate::currentDate().toString("yyyy-MM-dd")));
+        ui->SR_tablePublications->setItem(row, 2, new QTableWidgetItem(dateStr));
         ui->SR_tablePublications->setItem(row, 3, new QTableWidgetItem(revue));
         ui->SR_tablePublications->setItem(row, 4, new QTableWidgetItem(statut));
-
-        // Add buttons to new row
         SR_addButtonsToRow(row);
         ui->SR_tablePublications->resizeRowsToContents();
+        QMessageBox::information(this, "Succès", "Publication ajoutée avec succès");
     }
 
     ui->SR_stackedWidget->setCurrentIndex(0);
     SR_updateButtonStyles();
-
     ui->SR_lineEditTitre->clear();
     ui->SR_lineEditAuteurs->clear();
     ui->SR_lineEditRevue->clear();
+    ui->SR_dateEditPublication->setDate(QDate::currentDate());
 }
 
 void SmartPub::on_SR_btnAnnulerAjout_clicked() {
+    editingPublicationRow = -1;
+    ui->SR_btnAjouterPublication->setText("Ajouter");
     ui->SR_stackedWidget->setCurrentIndex(0);
     SR_updateButtonStyles();
+}
+
+void SmartPub::SR_applyFilterListe() {
+    QString titreFilter = SR_filterTitre->text().trimmed();
+    QString auteurFilter = SR_filterAuteur->text().trimmed();
+    QString statutFilter = SR_filterStatut->currentIndex() <= 0 ? QString() : SR_filterStatut->currentText();
+
+    for (int r = 0; r < ui->SR_tablePublications->rowCount(); r++) {
+        bool show = true;
+        if (show && !titreFilter.isEmpty()) {
+            QTableWidgetItem *it = ui->SR_tablePublications->item(r, 0);
+            show = it && it->text().contains(titreFilter, Qt::CaseInsensitive);
+        }
+        if (show && !auteurFilter.isEmpty()) {
+            QTableWidgetItem *it = ui->SR_tablePublications->item(r, 1);
+            show = it && it->text().contains(auteurFilter, Qt::CaseInsensitive);
+        }
+        if (show && !statutFilter.isEmpty()) {
+            QTableWidgetItem *it = ui->SR_tablePublications->item(r, 4);
+            show = it && it->text().trimmed().compare(statutFilter, Qt::CaseInsensitive) == 0;
+        }
+        ui->SR_tablePublications->setRowHidden(r, !show);
+    }
+}
+
+void SmartPub::SR_reinitFilterListe() {
+    SR_filterTitre->clear();
+    SR_filterAuteur->clear();
+    SR_filterStatut->setCurrentIndex(0);
+    for (int r = 0; r < ui->SR_tablePublications->rowCount(); r++)
+        ui->SR_tablePublications->setRowHidden(r, false);
+}
+
+static int SR_rowFromActionButton(QTableWidget *table, QObject *sender) {
+    QPushButton *btn = qobject_cast<QPushButton *>(sender);
+    if (!btn) return -1;
+    QWidget *cellWidget = btn->parentWidget();
+    if (!cellWidget) return -1;
+    for (int r = 0; r < table->rowCount(); r++) {
+        if (table->cellWidget(r, 5) == cellWidget)
+            return r;
+    }
+    return -1;
+}
+
+void SmartPub::on_SR_modifierPublication_clicked() {
+    if (currentUser.role == UserRole::Guest) {
+        QMessageBox::warning(this, "Accès refusé",
+                             "Les invités ne peuvent pas modifier les publications.");
+        return;
+    }
+    int row = SR_rowFromActionButton(ui->SR_tablePublications, sender());
+    if (row < 0) return;
+    QTableWidgetItem *titItem = ui->SR_tablePublications->item(row, 0);
+    if (!titItem) return;
+    int id = titItem->data(Qt::UserRole).toInt();
+    QString titre = titItem->text();
+    QString auteurs = ui->SR_tablePublications->item(row, 1) ? ui->SR_tablePublications->item(row, 1)->text() : QString();
+    QString dateStr = ui->SR_tablePublications->item(row, 2) ? ui->SR_tablePublications->item(row, 2)->text() : QDate::currentDate().toString("yyyy-MM-dd");
+    QString revue = ui->SR_tablePublications->item(row, 3) ? ui->SR_tablePublications->item(row, 3)->text() : QString();
+    QString statut = ui->SR_tablePublications->item(row, 4) ? ui->SR_tablePublications->item(row, 4)->text() : QString();
+    QDate datePub = QDate::fromString(dateStr.left(10), "yyyy-MM-dd");
+    if (!datePub.isValid()) datePub = QDate::currentDate();
+
+    editingPublicationRow = row;
+    ui->SR_lineEditTitre->setText(titre);
+    ui->SR_lineEditAuteurs->setText(auteurs);
+    ui->SR_lineEditRevue->setText(revue);
+    ui->SR_dateEditPublication->setDate(datePub);
+    int idx = ui->SR_comboBoxStatut->findText(statut);
+    if (idx >= 0) ui->SR_comboBoxStatut->setCurrentIndex(idx);
+    else ui->SR_comboBoxStatut->setCurrentText(statut);
+    ui->SR_btnAjouterPublication->setText("Enregistrer modification");
+    ui->SR_stackedWidget->setCurrentIndex(1);
+    SR_updateButtonStyles();
+}
+
+void SmartPub::on_SR_supprimerPublication_clicked() {
+    if (currentUser.role == UserRole::Guest) {
+        QMessageBox::warning(this, "Accès refusé",
+                             "Les invités ne peuvent pas supprimer les publications.");
+        return;
+    }
+    int row = SR_rowFromActionButton(ui->SR_tablePublications, sender());
+    if (row < 0) return;
+    QTableWidgetItem *titItem = ui->SR_tablePublications->item(row, 0);
+    if (!titItem) return;
+    int id = titItem->data(Qt::UserRole).toInt();
+    QString titre = titItem->text();
+
+    QMessageBox::StandardButton reply = QMessageBox::question(this, "Confirmer la suppression",
+        "Êtes-vous sûr de vouloir supprimer la publication \"" + titre + "\" ?",
+        QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+    if (reply != QMessageBox::Yes) return;
+
+    QSqlDatabase db = Connection::instance()->getDatabase();
+    if (db.isOpen()) {
+        QSqlQuery query(db);
+        query.prepare("DELETE FROM PUBLICATIONS WHERE DOI = :doi");
+        query.bindValue(":doi", titItem->data(Qt::UserRole));
+        if (!query.exec()) {
+            QMessageBox::critical(this, "Erreur", "Échec de la suppression : " + query.lastError().text());
+            return;
+        }
+    }
+    ui->SR_tablePublications->removeRow(row);
+    if (editingPublicationRow == row) editingPublicationRow = -1;
+    else if (editingPublicationRow > row) editingPublicationRow--;
+    ui->SR_btnAjouterPublication->setText("Ajouter");
+    QMessageBox::information(this, "Succès", "Publication supprimée.");
 }
 
 // ============================================================================
@@ -6861,6 +7109,9 @@ void SmartPub::SR_addButtonsToRow(int row)
         "    background-color: #dc2626;"
         "}"
     );
+
+    connect(btnEdit, &QPushButton::clicked, this, &SmartPub::on_SR_modifierPublication_clicked);
+    connect(btnDelete, &QPushButton::clicked, this, &SmartPub::on_SR_supprimerPublication_clicked);
 
     layout->addWidget(btnEdit);
     layout->addWidget(btnDelete);

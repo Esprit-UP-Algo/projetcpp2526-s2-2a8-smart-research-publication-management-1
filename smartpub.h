@@ -325,6 +325,10 @@ private slots:
     void on_SR_btnStatistiques_clicked();
     void on_SR_btnAjouterPublication_clicked();
     void on_SR_btnAnnulerAjout_clicked();
+    void on_SR_modifierPublication_clicked();
+    void on_SR_supprimerPublication_clicked();
+    void SR_applyFilterListe();
+    void SR_reinitFilterListe();
 
     // === MODULE FINANCES ===
     void on_finBtnVueListe_clicked();
@@ -547,6 +551,11 @@ private:
 
     // === VARIABLES MODULE PUBLICATIONS ===
     int editingPublicationRow;
+    QFrame *SR_filterFrame;
+    QLineEdit *SR_filterTitre;
+    QLineEdit *SR_filterAuteur;
+    QComboBox *SR_filterStatut;
+    QPushButton *SR_btnReinitFilter;
 };
 
 #endif // SMARTPUB_H
