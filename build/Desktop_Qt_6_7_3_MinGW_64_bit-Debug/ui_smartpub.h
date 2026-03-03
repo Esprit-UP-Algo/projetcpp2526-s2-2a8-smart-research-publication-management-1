@@ -392,21 +392,24 @@ public:
     QWidget *pageListeProjets;
     QVBoxLayout *verticalLayoutListeProjets;
     QFrame *toolbarFrameProjets;
-    QHBoxLayout *horizontalLayoutToolbarProjets;
+    QVBoxLayout *verticalLayoutToolbarProjets;
+    QHBoxLayout *horizontalLayoutToolbarRow1;
     QPushButton *btnListeProjets;
     QPushButton *btnAjouterProjet;
     QPushButton *btnModifierProjet;
     QPushButton *btnSupprimerProjet;
     QFrame *line_1;
+    QPushButton *btnStatistiques;
+    QSpacerItem *horizontalSpacerToolbarMid;
     QLineEdit *lineEditRechercheProjets;
+    QPushButton *btnFiltresProjets;
+    QPushButton *btnExporterProjets;
+    QHBoxLayout *horizontalLayoutToolbarRow2;
+    QLabel *labelTrierPar;
     QPushButton *btnTriDateDebut;
     QPushButton *btnTriDateFin;
     QPushButton *btnTriEtat;
     QPushButton *btnTriProgression;
-    QFrame *line_2;
-    QPushButton *btnStatistiques;
-    QPushButton *btnFiltresProjets;
-    QPushButton *btnExporterProjets;
     QSpacerItem *horizontalSpacerToolbar;
     QFrame *tableFrameProjets;
     QVBoxLayout *verticalLayoutTableProjets;
@@ -2649,8 +2652,8 @@ public:
         finTableLayout->addWidget(finLblListeTitre);
 
         finTableTransactions = new QTableWidget(finTableFrame);
-        if (finTableTransactions->columnCount() < 7)
-            finTableTransactions->setColumnCount(7);
+        if (finTableTransactions->columnCount() < 8)
+            finTableTransactions->setColumnCount(8);
         QTableWidgetItem *__qtablewidgetitem6 = new QTableWidgetItem();
         finTableTransactions->setHorizontalHeaderItem(0, __qtablewidgetitem6);
         QTableWidgetItem *__qtablewidgetitem7 = new QTableWidgetItem();
@@ -2665,6 +2668,8 @@ public:
         finTableTransactions->setHorizontalHeaderItem(5, __qtablewidgetitem11);
         QTableWidgetItem *__qtablewidgetitem12 = new QTableWidgetItem();
         finTableTransactions->setHorizontalHeaderItem(6, __qtablewidgetitem12);
+        QTableWidgetItem *__qtablewidgetitem13 = new QTableWidgetItem();
+        finTableTransactions->setHorizontalHeaderItem(7, __qtablewidgetitem13);
         finTableTransactions->setObjectName("finTableTransactions");
         finTableTransactions->setStyleSheet(QString::fromUtf8("QTableWidget {\n"
 "             background-color: white;\n"
@@ -2699,7 +2704,7 @@ public:
         finTableTransactions->setAlternatingRowColors(false);
         finTableTransactions->setSelectionBehavior(QAbstractItemView::SelectionBehavior::SelectRows);
         finTableTransactions->setShowGrid(false);
-        finTableTransactions->setColumnCount(7);
+        finTableTransactions->setColumnCount(8);
         finTableTransactions->horizontalHeader()->setDefaultSectionSize(150);
         finTableTransactions->horizontalHeader()->setStretchLastSection(true);
         finTableTransactions->verticalHeader()->setVisible(false);
@@ -3407,14 +3412,14 @@ public:
         evTableEvents = new QTableWidget(evTabListe);
         if (evTableEvents->columnCount() < 4)
             evTableEvents->setColumnCount(4);
-        QTableWidgetItem *__qtablewidgetitem13 = new QTableWidgetItem();
-        evTableEvents->setHorizontalHeaderItem(0, __qtablewidgetitem13);
         QTableWidgetItem *__qtablewidgetitem14 = new QTableWidgetItem();
-        evTableEvents->setHorizontalHeaderItem(1, __qtablewidgetitem14);
+        evTableEvents->setHorizontalHeaderItem(0, __qtablewidgetitem14);
         QTableWidgetItem *__qtablewidgetitem15 = new QTableWidgetItem();
-        evTableEvents->setHorizontalHeaderItem(2, __qtablewidgetitem15);
+        evTableEvents->setHorizontalHeaderItem(1, __qtablewidgetitem15);
         QTableWidgetItem *__qtablewidgetitem16 = new QTableWidgetItem();
-        evTableEvents->setHorizontalHeaderItem(3, __qtablewidgetitem16);
+        evTableEvents->setHorizontalHeaderItem(2, __qtablewidgetitem16);
+        QTableWidgetItem *__qtablewidgetitem17 = new QTableWidgetItem();
+        evTableEvents->setHorizontalHeaderItem(3, __qtablewidgetitem17);
         evTableEvents->setObjectName("evTableEvents");
         evTableEvents->setStyleSheet(QString::fromUtf8("QTableWidget {\n"
 "              background-color: white;\n"
@@ -3534,14 +3539,14 @@ public:
         evTableSearchEvents = new QTableWidget(evTabOutils);
         if (evTableSearchEvents->columnCount() < 4)
             evTableSearchEvents->setColumnCount(4);
-        QTableWidgetItem *__qtablewidgetitem17 = new QTableWidgetItem();
-        evTableSearchEvents->setHorizontalHeaderItem(0, __qtablewidgetitem17);
         QTableWidgetItem *__qtablewidgetitem18 = new QTableWidgetItem();
-        evTableSearchEvents->setHorizontalHeaderItem(1, __qtablewidgetitem18);
+        evTableSearchEvents->setHorizontalHeaderItem(0, __qtablewidgetitem18);
         QTableWidgetItem *__qtablewidgetitem19 = new QTableWidgetItem();
-        evTableSearchEvents->setHorizontalHeaderItem(2, __qtablewidgetitem19);
+        evTableSearchEvents->setHorizontalHeaderItem(1, __qtablewidgetitem19);
         QTableWidgetItem *__qtablewidgetitem20 = new QTableWidgetItem();
-        evTableSearchEvents->setHorizontalHeaderItem(3, __qtablewidgetitem20);
+        evTableSearchEvents->setHorizontalHeaderItem(2, __qtablewidgetitem20);
+        QTableWidgetItem *__qtablewidgetitem21 = new QTableWidgetItem();
+        evTableSearchEvents->setHorizontalHeaderItem(3, __qtablewidgetitem21);
         evTableSearchEvents->setObjectName("evTableSearchEvents");
         evTableSearchEvents->setStyleSheet(QString::fromUtf8("QTableWidget {\n"
 "              background-color: white;\n"
@@ -3757,92 +3762,108 @@ public:
 "    background-color: white;\n"
 "    border-radius: 12px;\n"
 "    border: 1px solid #e2e8f0;\n"
-"    padding: 15px;\n"
+"    padding: 12px 16px;\n"
 "}"));
-        horizontalLayoutToolbarProjets = new QHBoxLayout(toolbarFrameProjets);
-        horizontalLayoutToolbarProjets->setSpacing(10);
-        horizontalLayoutToolbarProjets->setObjectName("horizontalLayoutToolbarProjets");
+        verticalLayoutToolbarProjets = new QVBoxLayout(toolbarFrameProjets);
+        verticalLayoutToolbarProjets->setSpacing(10);
+        verticalLayoutToolbarProjets->setObjectName("verticalLayoutToolbarProjets");
+        verticalLayoutToolbarProjets->setContentsMargins(0, 0, 0, 0);
+        horizontalLayoutToolbarRow1 = new QHBoxLayout();
+        horizontalLayoutToolbarRow1->setSpacing(8);
+        horizontalLayoutToolbarRow1->setObjectName("horizontalLayoutToolbarRow1");
         btnListeProjets = new QPushButton(toolbarFrameProjets);
         btnListeProjets->setObjectName("btnListeProjets");
 
-        horizontalLayoutToolbarProjets->addWidget(btnListeProjets);
+        horizontalLayoutToolbarRow1->addWidget(btnListeProjets);
 
         btnAjouterProjet = new QPushButton(toolbarFrameProjets);
         btnAjouterProjet->setObjectName("btnAjouterProjet");
 
-        horizontalLayoutToolbarProjets->addWidget(btnAjouterProjet);
+        horizontalLayoutToolbarRow1->addWidget(btnAjouterProjet);
 
         btnModifierProjet = new QPushButton(toolbarFrameProjets);
         btnModifierProjet->setObjectName("btnModifierProjet");
 
-        horizontalLayoutToolbarProjets->addWidget(btnModifierProjet);
+        horizontalLayoutToolbarRow1->addWidget(btnModifierProjet);
 
         btnSupprimerProjet = new QPushButton(toolbarFrameProjets);
         btnSupprimerProjet->setObjectName("btnSupprimerProjet");
 
-        horizontalLayoutToolbarProjets->addWidget(btnSupprimerProjet);
+        horizontalLayoutToolbarRow1->addWidget(btnSupprimerProjet);
 
         line_1 = new QFrame(toolbarFrameProjets);
         line_1->setObjectName("line_1");
         line_1->setFrameShape(QFrame::Shape::VLine);
         line_1->setFrameShadow(QFrame::Shadow::Sunken);
 
-        horizontalLayoutToolbarProjets->addWidget(line_1);
+        horizontalLayoutToolbarRow1->addWidget(line_1);
+
+        btnStatistiques = new QPushButton(toolbarFrameProjets);
+        btnStatistiques->setObjectName("btnStatistiques");
+
+        horizontalLayoutToolbarRow1->addWidget(btnStatistiques);
+
+        horizontalSpacerToolbarMid = new QSpacerItem(40, 20, QSizePolicy::Policy::Expanding, QSizePolicy::Policy::Minimum);
+
+        horizontalLayoutToolbarRow1->addItem(horizontalSpacerToolbarMid);
 
         lineEditRechercheProjets = new QLineEdit(toolbarFrameProjets);
         lineEditRechercheProjets->setObjectName("lineEditRechercheProjets");
 
-        horizontalLayoutToolbarProjets->addWidget(lineEditRechercheProjets);
+        horizontalLayoutToolbarRow1->addWidget(lineEditRechercheProjets);
+
+        btnFiltresProjets = new QPushButton(toolbarFrameProjets);
+        btnFiltresProjets->setObjectName("btnFiltresProjets");
+
+        horizontalLayoutToolbarRow1->addWidget(btnFiltresProjets);
+
+        btnExporterProjets = new QPushButton(toolbarFrameProjets);
+        btnExporterProjets->setObjectName("btnExporterProjets");
+
+        horizontalLayoutToolbarRow1->addWidget(btnExporterProjets);
+
+
+        verticalLayoutToolbarProjets->addLayout(horizontalLayoutToolbarRow1);
+
+        horizontalLayoutToolbarRow2 = new QHBoxLayout();
+        horizontalLayoutToolbarRow2->setSpacing(8);
+        horizontalLayoutToolbarRow2->setObjectName("horizontalLayoutToolbarRow2");
+        labelTrierPar = new QLabel(toolbarFrameProjets);
+        labelTrierPar->setObjectName("labelTrierPar");
+        labelTrierPar->setStyleSheet(QString::fromUtf8("color: #64748b; font-size: 13px; font-weight: 500; background: transparent; border: none;"));
+
+        horizontalLayoutToolbarRow2->addWidget(labelTrierPar);
 
         btnTriDateDebut = new QPushButton(toolbarFrameProjets);
         btnTriDateDebut->setObjectName("btnTriDateDebut");
         btnTriDateDebut->setCheckable(true);
 
-        horizontalLayoutToolbarProjets->addWidget(btnTriDateDebut);
+        horizontalLayoutToolbarRow2->addWidget(btnTriDateDebut);
 
         btnTriDateFin = new QPushButton(toolbarFrameProjets);
         btnTriDateFin->setObjectName("btnTriDateFin");
         btnTriDateFin->setCheckable(true);
 
-        horizontalLayoutToolbarProjets->addWidget(btnTriDateFin);
+        horizontalLayoutToolbarRow2->addWidget(btnTriDateFin);
 
         btnTriEtat = new QPushButton(toolbarFrameProjets);
         btnTriEtat->setObjectName("btnTriEtat");
         btnTriEtat->setCheckable(true);
 
-        horizontalLayoutToolbarProjets->addWidget(btnTriEtat);
+        horizontalLayoutToolbarRow2->addWidget(btnTriEtat);
 
         btnTriProgression = new QPushButton(toolbarFrameProjets);
         btnTriProgression->setObjectName("btnTriProgression");
         btnTriProgression->setCheckable(true);
 
-        horizontalLayoutToolbarProjets->addWidget(btnTriProgression);
-
-        line_2 = new QFrame(toolbarFrameProjets);
-        line_2->setObjectName("line_2");
-        line_2->setFrameShape(QFrame::Shape::VLine);
-        line_2->setFrameShadow(QFrame::Shadow::Sunken);
-
-        horizontalLayoutToolbarProjets->addWidget(line_2);
-
-        btnStatistiques = new QPushButton(toolbarFrameProjets);
-        btnStatistiques->setObjectName("btnStatistiques");
-
-        horizontalLayoutToolbarProjets->addWidget(btnStatistiques);
-
-        btnFiltresProjets = new QPushButton(toolbarFrameProjets);
-        btnFiltresProjets->setObjectName("btnFiltresProjets");
-
-        horizontalLayoutToolbarProjets->addWidget(btnFiltresProjets);
-
-        btnExporterProjets = new QPushButton(toolbarFrameProjets);
-        btnExporterProjets->setObjectName("btnExporterProjets");
-
-        horizontalLayoutToolbarProjets->addWidget(btnExporterProjets);
+        horizontalLayoutToolbarRow2->addWidget(btnTriProgression);
 
         horizontalSpacerToolbar = new QSpacerItem(40, 20, QSizePolicy::Policy::Expanding, QSizePolicy::Policy::Minimum);
 
-        horizontalLayoutToolbarProjets->addItem(horizontalSpacerToolbar);
+        horizontalLayoutToolbarRow2->addItem(horizontalSpacerToolbar);
+
+
+        verticalLayoutToolbarProjets->addLayout(horizontalLayoutToolbarRow2);
 
 
         verticalLayoutListeProjets->addWidget(toolbarFrameProjets);
@@ -3861,22 +3882,22 @@ public:
         tableWidgetProjets = new QTableWidget(tableFrameProjets);
         if (tableWidgetProjets->columnCount() < 8)
             tableWidgetProjets->setColumnCount(8);
-        QTableWidgetItem *__qtablewidgetitem21 = new QTableWidgetItem();
-        tableWidgetProjets->setHorizontalHeaderItem(0, __qtablewidgetitem21);
         QTableWidgetItem *__qtablewidgetitem22 = new QTableWidgetItem();
-        tableWidgetProjets->setHorizontalHeaderItem(1, __qtablewidgetitem22);
+        tableWidgetProjets->setHorizontalHeaderItem(0, __qtablewidgetitem22);
         QTableWidgetItem *__qtablewidgetitem23 = new QTableWidgetItem();
-        tableWidgetProjets->setHorizontalHeaderItem(2, __qtablewidgetitem23);
+        tableWidgetProjets->setHorizontalHeaderItem(1, __qtablewidgetitem23);
         QTableWidgetItem *__qtablewidgetitem24 = new QTableWidgetItem();
-        tableWidgetProjets->setHorizontalHeaderItem(3, __qtablewidgetitem24);
+        tableWidgetProjets->setHorizontalHeaderItem(2, __qtablewidgetitem24);
         QTableWidgetItem *__qtablewidgetitem25 = new QTableWidgetItem();
-        tableWidgetProjets->setHorizontalHeaderItem(4, __qtablewidgetitem25);
+        tableWidgetProjets->setHorizontalHeaderItem(3, __qtablewidgetitem25);
         QTableWidgetItem *__qtablewidgetitem26 = new QTableWidgetItem();
-        tableWidgetProjets->setHorizontalHeaderItem(5, __qtablewidgetitem26);
+        tableWidgetProjets->setHorizontalHeaderItem(4, __qtablewidgetitem26);
         QTableWidgetItem *__qtablewidgetitem27 = new QTableWidgetItem();
-        tableWidgetProjets->setHorizontalHeaderItem(6, __qtablewidgetitem27);
+        tableWidgetProjets->setHorizontalHeaderItem(5, __qtablewidgetitem27);
         QTableWidgetItem *__qtablewidgetitem28 = new QTableWidgetItem();
-        tableWidgetProjets->setHorizontalHeaderItem(7, __qtablewidgetitem28);
+        tableWidgetProjets->setHorizontalHeaderItem(6, __qtablewidgetitem28);
+        QTableWidgetItem *__qtablewidgetitem29 = new QTableWidgetItem();
+        tableWidgetProjets->setHorizontalHeaderItem(7, __qtablewidgetitem29);
         tableWidgetProjets->setObjectName("tableWidgetProjets");
         tableWidgetProjets->setStyleSheet(QString::fromUtf8("QTableWidget {\n"
 "    background-color: white;\n"
@@ -4425,7 +4446,7 @@ public:
         finBtnStatistiques->setText(QCoreApplication::translate("SmartPub", "\360\237\223\212 Stats", nullptr));
         finLblListeTitre->setText(QCoreApplication::translate("SmartPub", "\360\237\223\213 Liste des Transactions", nullptr));
         QTableWidgetItem *___qtablewidgetitem6 = finTableTransactions->horizontalHeaderItem(0);
-        ___qtablewidgetitem6->setText(QCoreApplication::translate("SmartPub", "Num de transaction", nullptr));
+        ___qtablewidgetitem6->setText(QCoreApplication::translate("SmartPub", "ID", nullptr));
         QTableWidgetItem *___qtablewidgetitem7 = finTableTransactions->horizontalHeaderItem(1);
         ___qtablewidgetitem7->setText(QCoreApplication::translate("SmartPub", "Projet", nullptr));
         QTableWidgetItem *___qtablewidgetitem8 = finTableTransactions->horizontalHeaderItem(2);
@@ -4438,6 +4459,8 @@ public:
         ___qtablewidgetitem11->setText(QCoreApplication::translate("SmartPub", "Cat\303\251gorie", nullptr));
         QTableWidgetItem *___qtablewidgetitem12 = finTableTransactions->horizontalHeaderItem(6);
         ___qtablewidgetitem12->setText(QCoreApplication::translate("SmartPub", "Statut", nullptr));
+        QTableWidgetItem *___qtablewidgetitem13 = finTableTransactions->horizontalHeaderItem(7);
+        ___qtablewidgetitem13->setText(QCoreApplication::translate("SmartPub", "Actions", nullptr));
         finBtnModifierTable->setText(QCoreApplication::translate("SmartPub", "\342\234\217\357\270\217 Modifier", nullptr));
         finBtnSupprimerTable->setText(QCoreApplication::translate("SmartPub", "\360\237\227\221\357\270\217 Supprimer", nullptr));
         finFormTitle->setText(QCoreApplication::translate("SmartPub", "Ajouter une Transaction", nullptr));
@@ -4482,27 +4505,27 @@ public:
         evBtnAjouterEvent->setText(QCoreApplication::translate("SmartPub", "\342\236\225 Ajouter", nullptr));
         evBtnModifierEvent->setText(QCoreApplication::translate("SmartPub", "\342\234\217\357\270\217 Modifier", nullptr));
         evBtnSupprimerEvent->setText(QCoreApplication::translate("SmartPub", "\360\237\227\221\357\270\217 Supprimer", nullptr));
-        QTableWidgetItem *___qtablewidgetitem13 = evTableEvents->horizontalHeaderItem(0);
-        ___qtablewidgetitem13->setText(QCoreApplication::translate("SmartPub", "code", nullptr));
-        QTableWidgetItem *___qtablewidgetitem14 = evTableEvents->horizontalHeaderItem(1);
-        ___qtablewidgetitem14->setText(QCoreApplication::translate("SmartPub", "Nom", nullptr));
-        QTableWidgetItem *___qtablewidgetitem15 = evTableEvents->horizontalHeaderItem(2);
-        ___qtablewidgetitem15->setText(QCoreApplication::translate("SmartPub", "Lieu", nullptr));
-        QTableWidgetItem *___qtablewidgetitem16 = evTableEvents->horizontalHeaderItem(3);
-        ___qtablewidgetitem16->setText(QCoreApplication::translate("SmartPub", "Date", nullptr));
+        QTableWidgetItem *___qtablewidgetitem14 = evTableEvents->horizontalHeaderItem(0);
+        ___qtablewidgetitem14->setText(QCoreApplication::translate("SmartPub", "code", nullptr));
+        QTableWidgetItem *___qtablewidgetitem15 = evTableEvents->horizontalHeaderItem(1);
+        ___qtablewidgetitem15->setText(QCoreApplication::translate("SmartPub", "Nom", nullptr));
+        QTableWidgetItem *___qtablewidgetitem16 = evTableEvents->horizontalHeaderItem(2);
+        ___qtablewidgetitem16->setText(QCoreApplication::translate("SmartPub", "Lieu", nullptr));
+        QTableWidgetItem *___qtablewidgetitem17 = evTableEvents->horizontalHeaderItem(3);
+        ___qtablewidgetitem17->setText(QCoreApplication::translate("SmartPub", "Date", nullptr));
         evTabWidget->setTabText(evTabWidget->indexOf(evTabListe), QCoreApplication::translate("SmartPub", "\360\237\223\213 Liste des \303\211v\303\251nements", nullptr));
         evGroupBoxFiltres->setTitle(QCoreApplication::translate("SmartPub", "Filtres et Recherche", nullptr));
         evBtnTrierDate->setText(QCoreApplication::translate("SmartPub", "\360\237\224\274 Trier par Date", nullptr));
         evLineEditSearchLieu->setPlaceholderText(QCoreApplication::translate("SmartPub", "Entrez un lieu...", nullptr));
         evBtnRechercheLieu->setText(QCoreApplication::translate("SmartPub", "\360\237\224\215 Rechercher", nullptr));
-        QTableWidgetItem *___qtablewidgetitem17 = evTableSearchEvents->horizontalHeaderItem(0);
-        ___qtablewidgetitem17->setText(QCoreApplication::translate("SmartPub", "code", nullptr));
-        QTableWidgetItem *___qtablewidgetitem18 = evTableSearchEvents->horizontalHeaderItem(1);
-        ___qtablewidgetitem18->setText(QCoreApplication::translate("SmartPub", "Nom", nullptr));
-        QTableWidgetItem *___qtablewidgetitem19 = evTableSearchEvents->horizontalHeaderItem(2);
-        ___qtablewidgetitem19->setText(QCoreApplication::translate("SmartPub", "Lieu", nullptr));
-        QTableWidgetItem *___qtablewidgetitem20 = evTableSearchEvents->horizontalHeaderItem(3);
-        ___qtablewidgetitem20->setText(QCoreApplication::translate("SmartPub", "Date", nullptr));
+        QTableWidgetItem *___qtablewidgetitem18 = evTableSearchEvents->horizontalHeaderItem(0);
+        ___qtablewidgetitem18->setText(QCoreApplication::translate("SmartPub", "code", nullptr));
+        QTableWidgetItem *___qtablewidgetitem19 = evTableSearchEvents->horizontalHeaderItem(1);
+        ___qtablewidgetitem19->setText(QCoreApplication::translate("SmartPub", "Nom", nullptr));
+        QTableWidgetItem *___qtablewidgetitem20 = evTableSearchEvents->horizontalHeaderItem(2);
+        ___qtablewidgetitem20->setText(QCoreApplication::translate("SmartPub", "Lieu", nullptr));
+        QTableWidgetItem *___qtablewidgetitem21 = evTableSearchEvents->horizontalHeaderItem(3);
+        ___qtablewidgetitem21->setText(QCoreApplication::translate("SmartPub", "Date", nullptr));
         evTabWidget->setTabText(evTabWidget->indexOf(evTabOutils), QCoreApplication::translate("SmartPub", "\360\237\224\247 Outils & Recherche", nullptr));
         evGroupBoxOutils->setTitle(QCoreApplication::translate("SmartPub", "Outils Sp\303\251cialis\303\251s", nullptr));
         evBtnExportCalendrier->setText(QCoreApplication::translate("SmartPub", "\360\237\223\206 Export Calendrier", nullptr));
@@ -4515,43 +4538,44 @@ public:
 #if QT_CONFIG(tooltip)
         btnListeProjets->setToolTip(QCoreApplication::translate("SmartPub", "Liste des projets", nullptr));
 #endif // QT_CONFIG(tooltip)
-        btnListeProjets->setText(QCoreApplication::translate("SmartPub", "\360\237\223\213 Liste", nullptr));
+        btnListeProjets->setText(QCoreApplication::translate("SmartPub", "\360\237\223\213", nullptr));
 #if QT_CONFIG(tooltip)
         btnAjouterProjet->setToolTip(QCoreApplication::translate("SmartPub", "Ajouter un projet", nullptr));
 #endif // QT_CONFIG(tooltip)
-        btnAjouterProjet->setText(QCoreApplication::translate("SmartPub", "\342\236\225 Ajouter", nullptr));
+        btnAjouterProjet->setText(QCoreApplication::translate("SmartPub", "+", nullptr));
 #if QT_CONFIG(tooltip)
         btnModifierProjet->setToolTip(QCoreApplication::translate("SmartPub", "Modifier le projet s\303\251lectionn\303\251", nullptr));
 #endif // QT_CONFIG(tooltip)
-        btnModifierProjet->setText(QCoreApplication::translate("SmartPub", "\342\234\217\357\270\217 Modifier", nullptr));
+        btnModifierProjet->setText(QCoreApplication::translate("SmartPub", "\342\234\217\357\270\217", nullptr));
 #if QT_CONFIG(tooltip)
         btnSupprimerProjet->setToolTip(QCoreApplication::translate("SmartPub", "Supprimer le projet s\303\251lectionn\303\251", nullptr));
 #endif // QT_CONFIG(tooltip)
-        btnSupprimerProjet->setText(QCoreApplication::translate("SmartPub", "\360\237\227\221\357\270\217 Supprimer", nullptr));
-        lineEditRechercheProjets->setPlaceholderText(QCoreApplication::translate("SmartPub", "\360\237\224\215 Rechercher...", nullptr));
+        btnSupprimerProjet->setText(QCoreApplication::translate("SmartPub", "\360\237\227\221\357\270\217", nullptr));
+        btnStatistiques->setText(QCoreApplication::translate("SmartPub", "\360\237\223\212 Statistiques", nullptr));
+        lineEditRechercheProjets->setPlaceholderText(QCoreApplication::translate("SmartPub", "\360\237\224\215 Rechercher un projet...", nullptr));
+        btnFiltresProjets->setText(QCoreApplication::translate("SmartPub", "\360\237\216\233\357\270\217 Filtres", nullptr));
+        btnExporterProjets->setText(QCoreApplication::translate("SmartPub", "\360\237\223\244 Exporter", nullptr));
+        labelTrierPar->setText(QCoreApplication::translate("SmartPub", "Trier par:", nullptr));
         btnTriDateDebut->setText(QCoreApplication::translate("SmartPub", "\360\237\223\205 Date D\303\251but", nullptr));
         btnTriDateFin->setText(QCoreApplication::translate("SmartPub", "\360\237\223\205 Date Fin", nullptr));
         btnTriEtat->setText(QCoreApplication::translate("SmartPub", "\360\237\223\212 \303\211tat", nullptr));
         btnTriProgression->setText(QCoreApplication::translate("SmartPub", "\360\237\223\210 Progression", nullptr));
-        btnStatistiques->setText(QCoreApplication::translate("SmartPub", "\360\237\223\212 Stats", nullptr));
-        btnFiltresProjets->setText(QCoreApplication::translate("SmartPub", "\360\237\216\233\357\270\217 Filtres", nullptr));
-        btnExporterProjets->setText(QCoreApplication::translate("SmartPub", "\360\237\223\244 Exporter", nullptr));
-        QTableWidgetItem *___qtablewidgetitem21 = tableWidgetProjets->horizontalHeaderItem(0);
-        ___qtablewidgetitem21->setText(QCoreApplication::translate("SmartPub", "ID", nullptr));
-        QTableWidgetItem *___qtablewidgetitem22 = tableWidgetProjets->horizontalHeaderItem(1);
-        ___qtablewidgetitem22->setText(QCoreApplication::translate("SmartPub", "Code", nullptr));
-        QTableWidgetItem *___qtablewidgetitem23 = tableWidgetProjets->horizontalHeaderItem(2);
-        ___qtablewidgetitem23->setText(QCoreApplication::translate("SmartPub", "Titre", nullptr));
-        QTableWidgetItem *___qtablewidgetitem24 = tableWidgetProjets->horizontalHeaderItem(3);
-        ___qtablewidgetitem24->setText(QCoreApplication::translate("SmartPub", "Date D\303\251but", nullptr));
-        QTableWidgetItem *___qtablewidgetitem25 = tableWidgetProjets->horizontalHeaderItem(4);
-        ___qtablewidgetitem25->setText(QCoreApplication::translate("SmartPub", "Date Fin", nullptr));
-        QTableWidgetItem *___qtablewidgetitem26 = tableWidgetProjets->horizontalHeaderItem(5);
-        ___qtablewidgetitem26->setText(QCoreApplication::translate("SmartPub", "Responsable", nullptr));
-        QTableWidgetItem *___qtablewidgetitem27 = tableWidgetProjets->horizontalHeaderItem(6);
-        ___qtablewidgetitem27->setText(QCoreApplication::translate("SmartPub", "\303\211tat", nullptr));
-        QTableWidgetItem *___qtablewidgetitem28 = tableWidgetProjets->horizontalHeaderItem(7);
-        ___qtablewidgetitem28->setText(QCoreApplication::translate("SmartPub", "Progression", nullptr));
+        QTableWidgetItem *___qtablewidgetitem22 = tableWidgetProjets->horizontalHeaderItem(0);
+        ___qtablewidgetitem22->setText(QCoreApplication::translate("SmartPub", "ID", nullptr));
+        QTableWidgetItem *___qtablewidgetitem23 = tableWidgetProjets->horizontalHeaderItem(1);
+        ___qtablewidgetitem23->setText(QCoreApplication::translate("SmartPub", "Code", nullptr));
+        QTableWidgetItem *___qtablewidgetitem24 = tableWidgetProjets->horizontalHeaderItem(2);
+        ___qtablewidgetitem24->setText(QCoreApplication::translate("SmartPub", "Titre", nullptr));
+        QTableWidgetItem *___qtablewidgetitem25 = tableWidgetProjets->horizontalHeaderItem(3);
+        ___qtablewidgetitem25->setText(QCoreApplication::translate("SmartPub", "Date D\303\251but", nullptr));
+        QTableWidgetItem *___qtablewidgetitem26 = tableWidgetProjets->horizontalHeaderItem(4);
+        ___qtablewidgetitem26->setText(QCoreApplication::translate("SmartPub", "Date Fin", nullptr));
+        QTableWidgetItem *___qtablewidgetitem27 = tableWidgetProjets->horizontalHeaderItem(5);
+        ___qtablewidgetitem27->setText(QCoreApplication::translate("SmartPub", "Responsable", nullptr));
+        QTableWidgetItem *___qtablewidgetitem28 = tableWidgetProjets->horizontalHeaderItem(6);
+        ___qtablewidgetitem28->setText(QCoreApplication::translate("SmartPub", "\303\211tat", nullptr));
+        QTableWidgetItem *___qtablewidgetitem29 = tableWidgetProjets->horizontalHeaderItem(7);
+        ___qtablewidgetitem29->setText(QCoreApplication::translate("SmartPub", "Progression", nullptr));
         labelFormTitle->setText(QCoreApplication::translate("SmartPub", "Nouveau Projet", nullptr));
         labelFormSubtitle->setText(QCoreApplication::translate("SmartPub", "Remplissez les informations du projet", nullptr));
         labelCodeForm->setText(QCoreApplication::translate("SmartPub", "Code du Projet *", nullptr));
