@@ -61,6 +61,11 @@
 #include <QSqlQuery>
 #include <QSqlError>
 #include <QSqlRecord>
+// PDF Export
+#include <QPrinter>
+#include <QPainter>
+#include <QPageSize>
+#include <QPageLayout>
 
 QT_BEGIN_NAMESPACE
 class QPieSeries;
@@ -75,59 +80,15 @@ QT_END_NAMESPACE
 // STRUCTURES DE DONNEES
 // ============================================================================
 
-// Structure pour le module Projets (ton travail)
-struct Projet {
-    int id;
-    QString code;
-    QString titre;
-    QDate dateDebut;
-    QDate dateFin;
-    QString responsable;
-    QString etat;
-    QString progression;
-    QString description;
-
-    Projet() : id(0) {}
-    Projet(int id, QString code, QString titre, QDate debut, QDate fin,
-           QString resp, QString etat, QString prog, QString desc)
-        : id(id), code(code), titre(titre), dateDebut(debut), dateFin(fin),
-        responsable(resp), etat(etat), progression(prog), description(desc) {}
-};
-
-// Structure pour le module Chercheurs
-struct ChercheurData {
-    QString nom;
-    QString prenom;
-    QString grade;
-    QString email;
-    QString cin;
-    QDateTime dateCreation;
-    QString carriere;
-    QList<int> projetsIds;
-    int age;
-    QString photoPath;
-};
-
-// Structure pour le module Finances
-struct TransactionData {
-    int id;
-    QString projet;
-    QString type;
-    double montant;
-    QString date;
-    QString categorie;
-    QString statut;
-    QString description;
-};
-
-// Structure pour le module Evenements
-struct EventData {
-    int id;
-    QString nom;
-    QString lieu;
-    QString date;
-    QString description;
-};
+// ============================================================================
+// HEADERS DES MODULES
+// ============================================================================
+#include "projet.h"
+#include "chercheur.h"
+#include "finance.h"
+#include "evenement.h"
+#include "laboratoire.h"
+#include "publication.h"
 
 // ============================================================================
 // DIALOG LOGIN
@@ -192,80 +153,9 @@ private:
     QSpinBox *intervalSpin;
 };
 
-class FiltresDialog : public QDialog {
-    Q_OBJECT
-public:
-    explicit FiltresDialog(QWidget *parent = nullptr);
-    QString getEtatFiltre() const;
-    QString getResponsableFiltre() const;
-    QDate getDateDebutMin() const;
-    QDate getDateDebutMax() const;
-    bool isFiltreActif() const;
 
-private:
-    void setupUI();
-    QComboBox *comboBoxEtat;
-    QComboBox *comboBoxResponsable;
-    QDateEdit *dateEditDebutMin;
-    QDateEdit *dateEditMax;
-    QPushButton *btnAppliquer;
-    QPushButton *btnReinitialiser;
-    QPushButton *btnAnnuler;
-    bool filtreActif;
-};
 
-class IARecommandationsDialog : public QDialog {
-    Q_OBJECT
-public:
-    explicit IARecommandationsDialog(const QList<Projet> &projets,
-                                     QWidget *parent = nullptr);
 
-private:
-    void setupUI();
-    void genererRecommandations();
-    QList<Projet> m_projets;
-    struct Recommandation {
-        QString titre;
-        QString description;
-        double scoreSimilarite;
-        QStringList collaborateursSuggeres;
-        QString raison;
-        QString domaine;
-    };
-    QVector<Recommandation> m_recommandations;
-};
-
-class ProjetDetailsDialog : public QDialog {
-    Q_OBJECT
-public:
-    explicit ProjetDetailsDialog(const Projet &projet, QWidget *parent = nullptr);
-
-private:
-    Projet m_projet;
-};
-
-class StatistiquesDialog : public QDialog {
-    Q_OBJECT
-public:
-    explicit StatistiquesDialog(const QList<Projet> &projets,
-                                QWidget *parent = nullptr);
-
-private:
-    void setupUI();
-    void calculerStatistiques();
-    void creerGraphiques();
-    QList<Projet> m_projets;
-    QLabel *labelTotalProjets;
-    QLabel *labelProjetsActifs;
-    QLabel *labelProjetsTermines;
-    QLabel *labelProgressionMoyenne;
-    QLabel *labelProjetsRetard;
-    QLabel *labelProjetsPlanifies;
-    QLabel *labelProjetsPause;
-    QChartView *chartEtatView;
-    QChartView *chartProgressionView;
-    QChartView *chartTemporelView;
-};
 
 // ============================================================================
 // CLASSE PRINCIPALE
@@ -313,7 +203,7 @@ private slots:
     void on_cherchBtnRetourLogin_clicked();
     void on_cherchBtnForgotOk_clicked();
     void on_cherchBtnToggleVue_clicked();
-    void on_cherchBtnExportDetails_clicked();
+    // on_cherchBtnExportDetails_clicked → remplacée par lambda dans on_cherchVoirDetailsChercheur
 
     // === MODULE PUBLICATIONS ===
     void on_SR_btnVueListe_clicked();
@@ -325,6 +215,10 @@ private slots:
     void on_SR_btnStatistiques_clicked();
     void on_SR_btnAjouterPublication_clicked();
     void on_SR_btnAnnulerAjout_clicked();
+    void on_SR_modifierPublication_clicked();
+    void on_SR_supprimerPublication_clicked();
+    void SR_applyFilterListe();
+    void SR_reinitFilterListe();
 
     // === MODULE FINANCES ===
     void on_finBtnVueListe_clicked();
@@ -337,6 +231,7 @@ private slots:
     void on_finBtnAnnulerAjout_clicked();
     void on_finBtnModifierTransaction_clicked();
     void on_finBtnSupprimerTransaction_clicked();
+    void on_finLineEditRecherche_textChanged(const QString &text);
 
     // === MODULE EVENEMENTS ===
     void on_evBtnAjouterEvent_clicked();
@@ -348,6 +243,20 @@ private slots:
     void on_evBtnLivreResumes_clicked();
     void on_evBtnCalculImpact_clicked();
     void on_evBtnStatsParticipation_clicked();
+
+    // === MODULE LABORATOIRES ===
+    void on_labBtnAjouter_clicked();
+    void on_labBtnModifier_clicked();
+    void on_labBtnSupprimer_clicked();
+    void on_labBtnConfirmerForm_clicked();
+    void on_labBtnAnnulerForm_clicked();
+    void on_labBtnStatistiques_clicked();
+    void on_labBtnOptimiseur_clicked();
+    void on_labBtnPredicteur_clicked();
+    void on_labBtnExporter_clicked();
+    void on_labBtnTrier_clicked();
+    void on_labTableSelectionChanged();
+    void on_labSearchChanged(const QString &text);
 
     // === MODULE PROJETS (Ton travail) ===
     void on_btnListeProjets_clicked();
@@ -425,6 +334,7 @@ private:
     void cherchTrierParNom(bool croissant = true);
     void cherchTrierParGrade();
     void cherchTrierParDateCreation(bool croissant = true);
+    void cherchEnrichirDonneesDepuisOracle();
     void cherchAfficherStatistiques();
     void cherchAjouterDonneesTest();
     QString cherchDeterminerCarriere(int projetsCount, const QString &grade);
@@ -441,8 +351,13 @@ private:
     void finConnectSignals();
     void finUpdateButtonStyles();
     void finAjouterDonneesTest();
+    void finRemplirComboProjets();
+    void finChargerTransactionsDepuisOracle();
     void finAfficherListeTransactions();
     void finAjouterTransactionTable(const TransactionData &data);
+    void finViderFormulaire();
+    void finRemplirFormulaire(const TransactionData &data);
+    QList<TransactionData> finGetTransactionsFiltreesEtTriees() const;
 
     // === MODULE EVENEMENTS ===
     void evSetupUI();
@@ -451,6 +366,25 @@ private:
     void evAfficherListeEvents();
     void evAjouterEventTable(const EventData &data);
     void evRechercherParLieu();
+
+    // === MODULE LABORATOIRES ===
+    void labSetupUI();
+    void labConnectSignals();
+    void labChargerDonnees();
+    void labAfficherListe();
+    void labAfficherListe(const QList<LaboratoryData> &labs);
+    void labViderFormulaire();
+    void labRemplirFormulaire(const LaboratoryData &lab);
+    LaboratoryData labGetFormData() const;
+    bool labValiderFormulaire() const;
+    void labMontrerFormulaire(bool isEdit = false);
+    void labCacherFormulaire();
+    void labMontrerStatistiques();
+    void labOptimiseurCollab();
+    void labPredicteurBesoins();
+    void labExporter();
+    void labTrier();
+    void labSetTableRowBackground(QTableWidget *table, int row, const QColor &color);
 
     // === MODULE PROJETS (Ton travail) ===
     void projSetupUI();
@@ -526,10 +460,13 @@ private:
     bool finVueListeActive;
     int finTransactionSelectionnee;
     QMap<int, TransactionData> finTransactionsMap;
+    int finTriColonne;
+    Qt::SortOrder finTriOrdre;
 
     // === VARIABLES MODULE EVENEMENTS ===
     int evEventSelectionne;
-    QMap<int, EventData> evEventsMap;
+    QMap<QString, EventData> evEventsMap;
+    QString evEditingCode;  // code en cours de modification (vide si ajout)
 
     // === VARIABLES MODULE PROJETS ===
     QVector<Projet> projets;
@@ -547,6 +484,31 @@ private:
 
     // === VARIABLES MODULE PUBLICATIONS ===
     int editingPublicationRow;
+    QFrame *SR_filterFrame;
+    QLineEdit *SR_filterTitre;
+    QLineEdit *SR_filterAuteur;
+    QComboBox *SR_filterStatut;
+    QPushButton *SR_btnReinitFilter;
+
+    // === VARIABLES MODULE LABORATOIRES ===
+    QWidget        *labPage;
+    QTableWidget   *labTable;
+    QLineEdit      *labSearchEdit;
+    QLabel         *labTotalLabel;
+    QPushButton    *labBtnAjouter;
+    QPushButton    *labBtnModifier;
+    QPushButton    *labBtnSupprimer;
+    QFrame         *labFormFrame;
+    QLineEdit      *labFormNom;
+    QComboBox      *labFormThematique;
+    QLineEdit      *labFormBudget;
+    QSpinBox       *labFormCapacite;
+    QComboBox      *labFormStatut;
+    QLineEdit      *labFormEquipements;
+    QLineEdit      *labFormDirecteur;
+    QMap<int, LaboratoryData> labDataMap;
+    int            labNextId;
+    int            labEditingId; // -1 = ajout, sinon id en cours d'édition
 };
 
 #endif // SMARTPUB_H

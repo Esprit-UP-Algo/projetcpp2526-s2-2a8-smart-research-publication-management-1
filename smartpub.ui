@@ -433,7 +433,7 @@
     <item>
      <widget class="QStackedWidget" name="stackedWidgetModules">
       <property name="currentIndex">
-       <number>1</number>
+       <number>0</number>
       </property>
       <widget class="QWidget" name="pageChercheurs">
        <layout class="QVBoxLayout" name="verticalLayoutChercheursMain">
@@ -1327,7 +1327,7 @@ border: none;</string>
               <item>
                <widget class="QStackedWidget" name="cherchStackedWidget">
                 <property name="currentIndex">
-                 <number>0</number>
+                 <number>1</number>
                 </property>
                 <widget class="QWidget" name="cherchPageListe">
                  <layout class="QVBoxLayout" name="verticalLayoutListe">
@@ -1632,7 +1632,7 @@ border: none;</string>
                               </size>
                              </property>
                              <property name="placeholderText">
-                              <string>AB123456</string>
+                              <string>********</string>
                              </property>
                             </widget>
                            </item>
@@ -1666,7 +1666,7 @@ border: none;</string>
                               </size>
                              </property>
                              <property name="placeholderText">
-                              <string>email@universite.fr</string>
+                              <string/>
                              </property>
                             </widget>
                            </item>
@@ -5170,7 +5170,7 @@ border: none;</string>
                     <string notr="true">color: #334155; font-weight: 600; font-size: 13px; background: transparent;</string>
                    </property>
                    <property name="text">
-                    <string>ID :</string>
+                    <string>code :</string>
                    </property>
                   </widget>
                  </item>
@@ -5459,7 +5459,7 @@ border: none;</string>
                 </property>
                 <column>
                  <property name="text">
-                  <string>ID</string>
+                  <string>code</string>
                  </property>
                 </column>
                 <column>
@@ -5651,7 +5651,7 @@ border: none;</string>
                 </property>
                 <column>
                  <property name="text">
-                  <string>ID</string>
+                  <string>code</string>
                  </property>
                 </column>
                 <column>
@@ -5995,147 +5995,189 @@ border: none;</string>
     background-color: white;
     border-radius: 12px;
     border: 1px solid #e2e8f0;
-    padding: 15px;
+    padding: 12px 16px;
 }</string>
               </property>
-              <layout class="QHBoxLayout" name="horizontalLayoutToolbarProjets">
+              <layout class="QVBoxLayout" name="verticalLayoutToolbarProjets">
                <property name="spacing">
                 <number>10</number>
                </property>
+               <property name="leftMargin">
+                <number>0</number>
+               </property>
+               <property name="topMargin">
+                <number>0</number>
+               </property>
+               <property name="rightMargin">
+                <number>0</number>
+               </property>
+               <property name="bottomMargin">
+                <number>0</number>
+               </property>
                <item>
-                <widget class="QPushButton" name="btnListeProjets">
-                 <property name="toolTip">
-                  <string>Liste des projets</string>
+                <layout class="QHBoxLayout" name="horizontalLayoutToolbarRow1">
+                 <property name="spacing">
+                  <number>8</number>
                  </property>
-                 <property name="text">
-                  <string>📋 Liste</string>
-                 </property>
-                </widget>
+                 <item>
+                  <widget class="QPushButton" name="btnListeProjets">
+                   <property name="toolTip">
+                    <string>Liste des projets</string>
+                   </property>
+                   <property name="text">
+                    <string>📋</string>
+                   </property>
+                  </widget>
+                 </item>
+                 <item>
+                  <widget class="QPushButton" name="btnAjouterProjet">
+                   <property name="toolTip">
+                    <string>Ajouter un projet</string>
+                   </property>
+                   <property name="text">
+                    <string>+</string>
+                   </property>
+                  </widget>
+                 </item>
+                 <item>
+                  <widget class="QPushButton" name="btnModifierProjet">
+                   <property name="toolTip">
+                    <string>Modifier le projet sélectionné</string>
+                   </property>
+                   <property name="text">
+                    <string>✏️</string>
+                   </property>
+                  </widget>
+                 </item>
+                 <item>
+                  <widget class="QPushButton" name="btnSupprimerProjet">
+                   <property name="toolTip">
+                    <string>Supprimer le projet sélectionné</string>
+                   </property>
+                   <property name="text">
+                    <string>🗑️</string>
+                   </property>
+                  </widget>
+                 </item>
+                 <item>
+                  <widget class="Line" name="line_1">
+                   <property name="orientation">
+                    <enum>Qt::Orientation::Vertical</enum>
+                   </property>
+                  </widget>
+                 </item>
+                 <item>
+                  <widget class="QPushButton" name="btnStatistiques">
+                   <property name="text">
+                    <string>📊 Statistiques</string>
+                   </property>
+                  </widget>
+                 </item>
+                 <item>
+                  <spacer name="horizontalSpacerToolbarMid">
+                   <property name="orientation">
+                    <enum>Qt::Orientation::Horizontal</enum>
+                   </property>
+                   <property name="sizeHint" stdset="0">
+                    <size>
+                     <width>40</width>
+                     <height>20</height>
+                    </size>
+                   </property>
+                  </spacer>
+                 </item>
+                 <item>
+                  <widget class="QLineEdit" name="lineEditRechercheProjets">
+                   <property name="placeholderText">
+                    <string>🔍 Rechercher un projet...</string>
+                   </property>
+                  </widget>
+                 </item>
+                 <item>
+                  <widget class="QPushButton" name="btnFiltresProjets">
+                   <property name="text">
+                    <string>🎛️ Filtres</string>
+                   </property>
+                  </widget>
+                 </item>
+                 <item>
+                  <widget class="QPushButton" name="btnExporterProjets">
+                   <property name="text">
+                    <string>📤 Exporter</string>
+                   </property>
+                  </widget>
+                 </item>
+                </layout>
                </item>
                <item>
-                <widget class="QPushButton" name="btnAjouterProjet">
-                 <property name="toolTip">
-                  <string>Ajouter un projet</string>
+                <layout class="QHBoxLayout" name="horizontalLayoutToolbarRow2">
+                 <property name="spacing">
+                  <number>8</number>
                  </property>
-                 <property name="text">
-                  <string>➕ Ajouter</string>
-                 </property>
-                </widget>
-               </item>
-               <item>
-                <widget class="QPushButton" name="btnModifierProjet">
-                 <property name="toolTip">
-                  <string>Modifier le projet sélectionné</string>
-                 </property>
-                 <property name="text">
-                  <string>✏️ Modifier</string>
-                 </property>
-                </widget>
-               </item>
-               <item>
-                <widget class="QPushButton" name="btnSupprimerProjet">
-                 <property name="toolTip">
-                  <string>Supprimer le projet sélectionné</string>
-                 </property>
-                 <property name="text">
-                  <string>🗑️ Supprimer</string>
-                 </property>
-                </widget>
-               </item>
-               <item>
-                <widget class="Line" name="line_1">
-                 <property name="orientation">
-                  <enum>Qt::Orientation::Vertical</enum>
-                 </property>
-                </widget>
-               </item>
-               <item>
-                <widget class="QLineEdit" name="lineEditRechercheProjets">
-                 <property name="placeholderText">
-                  <string>🔍 Rechercher...</string>
-                 </property>
-                </widget>
-               </item>
-               <item>
-                <widget class="QPushButton" name="btnTriDateDebut">
-                 <property name="text">
-                  <string>📅 Date Début</string>
-                 </property>
-                 <property name="checkable">
-                  <bool>true</bool>
-                 </property>
-                </widget>
-               </item>
-               <item>
-                <widget class="QPushButton" name="btnTriDateFin">
-                 <property name="text">
-                  <string>📅 Date Fin</string>
-                 </property>
-                 <property name="checkable">
-                  <bool>true</bool>
-                 </property>
-                </widget>
-               </item>
-               <item>
-                <widget class="QPushButton" name="btnTriEtat">
-                 <property name="text">
-                  <string>📊 État</string>
-                 </property>
-                 <property name="checkable">
-                  <bool>true</bool>
-                 </property>
-                </widget>
-               </item>
-               <item>
-                <widget class="QPushButton" name="btnTriProgression">
-                 <property name="text">
-                  <string>📈 Progression</string>
-                 </property>
-                 <property name="checkable">
-                  <bool>true</bool>
-                 </property>
-                </widget>
-               </item>
-               <item>
-                <widget class="Line" name="line_2">
-                 <property name="orientation">
-                  <enum>Qt::Orientation::Vertical</enum>
-                 </property>
-                </widget>
-               </item>
-               <item>
-                <widget class="QPushButton" name="btnStatistiques">
-                 <property name="text">
-                  <string>📊 Stats</string>
-                 </property>
-                </widget>
-               </item>
-               <item>
-                <widget class="QPushButton" name="btnFiltresProjets">
-                 <property name="text">
-                  <string>🎛️ Filtres</string>
-                 </property>
-                </widget>
-               </item>
-               <item>
-                <widget class="QPushButton" name="btnExporterProjets">
-                 <property name="text">
-                  <string>📤 Exporter</string>
-                 </property>
-                </widget>
-               </item>
-               <item>
-                <spacer name="horizontalSpacerToolbar">
-                 <property name="orientation">
-                  <enum>Qt::Orientation::Horizontal</enum>
-                 </property>
-                 <property name="sizeHint" stdset="0">
-                  <size>
-                   <width>40</width>
-                   <height>20</height>
-                  </size>
-                 </property>
-                </spacer>
+                 <item>
+                  <widget class="QLabel" name="labelTrierPar">
+                   <property name="styleSheet">
+                    <string notr="true">color: #64748b; font-size: 13px; font-weight: 500; background: transparent; border: none;</string>
+                   </property>
+                   <property name="text">
+                    <string>Trier par:</string>
+                   </property>
+                  </widget>
+                 </item>
+                 <item>
+                  <widget class="QPushButton" name="btnTriDateDebut">
+                   <property name="text">
+                    <string>📅 Date Début</string>
+                   </property>
+                   <property name="checkable">
+                    <bool>true</bool>
+                   </property>
+                  </widget>
+                 </item>
+                 <item>
+                  <widget class="QPushButton" name="btnTriDateFin">
+                   <property name="text">
+                    <string>📅 Date Fin</string>
+                   </property>
+                   <property name="checkable">
+                    <bool>true</bool>
+                   </property>
+                  </widget>
+                 </item>
+                 <item>
+                  <widget class="QPushButton" name="btnTriEtat">
+                   <property name="text">
+                    <string>📊 État</string>
+                   </property>
+                   <property name="checkable">
+                    <bool>true</bool>
+                   </property>
+                  </widget>
+                 </item>
+                 <item>
+                  <widget class="QPushButton" name="btnTriProgression">
+                   <property name="text">
+                    <string>📈 Progression</string>
+                   </property>
+                   <property name="checkable">
+                    <bool>true</bool>
+                   </property>
+                  </widget>
+                 </item>
+                 <item>
+                  <spacer name="horizontalSpacerToolbar">
+                   <property name="orientation">
+                    <enum>Qt::Orientation::Horizontal</enum>
+                   </property>
+                   <property name="sizeHint" stdset="0">
+                    <size>
+                     <width>40</width>
+                     <height>20</height>
+                    </size>
+                   </property>
+                  </spacer>
+                 </item>
+                </layout>
                </item>
               </layout>
              </widget>
