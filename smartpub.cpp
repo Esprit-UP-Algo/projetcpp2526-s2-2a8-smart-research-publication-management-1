@@ -64,6 +64,12 @@ static QString finTypeDbToUi(const QString &db) {
         return QStringLiteral("Remboursement");
     if (d == QLatin1String("autre"))
         return QStringLiteral("Autre");
+    // Capitaliser la premiere lettre si valeur inconnue
+    if (!db.isEmpty()) {
+        QString s = db.trimmed();
+        s[0] = s[0].toUpper();
+        return s;
+    }
     return db;
 }
 
@@ -6139,6 +6145,11 @@ void SmartPub::finSetupUI() {
     ui->finStackedWidget->setCurrentIndex(0);
     finVueListeActive = true;
 
+    // === Noms des colonnes du tableau ===
+    ui->finTableTransactions->setHorizontalHeaderLabels(
+        {"ID", "Projet", "Type de transaction", "Montant", "Date", "Categorie", "Statut", ""});
+
+    // === Types de transactions ===
     ui->finComboBoxType->clear();
     ui->finComboBoxType->addItem(QStringLiteral("Subvention"), QStringLiteral("subvention"));
     ui->finComboBoxType->addItem(QStringLiteral("Achat"), QStringLiteral("achat"));
@@ -6161,9 +6172,9 @@ void SmartPub::finRemplirComboProjets()
     QSqlQuery q(db);
     if (q.exec(QStringLiteral("SELECT CODE_PROJET, TITRE FROM PROJET ORDER BY CODE_PROJET"))) {
         while (q.next()) {
-            const int code = q.value(0).toInt();
+            const QString code = q.value(0).toString();   // CODE_PROJET est une QString
             const QString titre = q.value(1).toString();
-            ui->finComboBoxProjet->addItem(QStringLiteral("%1 — %2").arg(code).arg(titre), code);
+            ui->finComboBoxProjet->addItem(QStringLiteral("%1 — %2").arg(code, titre), code);
         }
     }
 }
@@ -6205,9 +6216,9 @@ void SmartPub::finChargerTransactionsDepuisOracle()
         t.statut = q.value(5).toString();
         t.description = q.value(6).toString();
         QVariant pv = q.value(7);
-        t.idProjet = pv.isNull() ? 0 : pv.toInt();
+        t.idProjet = pv.isNull() ? QString() : pv.toString();
         const QString titre = q.value(8).toString();
-        t.projet = titre.isEmpty() && t.idProjet > 0 ? QStringLiteral("Projet #%1").arg(t.idProjet) : titre;
+        t.projet = titre.isEmpty() && !t.idProjet.isEmpty() ? QStringLiteral("Projet #%1").arg(t.idProjet) : titre;
         finTransactionsMap.insert(t.id, t);
     }
     finAfficherListeTransactions();
@@ -6353,7 +6364,74 @@ void SmartPub::finAjouterTransactionTable(const TransactionData &data) {
     ui->finTableTransactions->setItem(row, 4, new QTableWidgetItem(data.date));
     ui->finTableTransactions->setItem(row, 5,
                                       new QTableWidgetItem(data.categorie));
-    ui->finTableTransactions->setItem(row, 6, new QTableWidgetItem(data.statut));
+    // Colonne Statut avec couleur selon valeur
+    QTableWidgetItem *statutItem = new QTableWidgetItem(data.statut);
+    if (data.statut == "Validée" || data.statut == "validée")
+        statutItem->setForeground(QColor("#16a34a"));
+    else if (data.statut == "En attente")
+        statutItem->setForeground(QColor("#d97706"));
+    else if (data.statut == "Rejetée" || data.statut == "rejetée")
+        statutItem->setForeground(QColor("#dc2626"));
+    statutItem->setFont(QFont("", -1, QFont::Bold));
+    ui->finTableTransactions->setItem(row, 6, statutItem);
+
+    // Boutons d'action inline dans la colonne ACTIONS
+    QWidget *actionsWidget = new QWidget();
+    QHBoxLayout *actionsLayout = new QHBoxLayout(actionsWidget);
+    actionsLayout->setContentsMargins(6, 4, 6, 4);
+    actionsLayout->setSpacing(8);
+
+    QPushButton *btnModifier = new QPushButton("✏ Modifier");
+    btnModifier->setCursor(Qt::PointingHandCursor);
+    btnModifier->setStyleSheet(
+        "QPushButton { background-color: #3b82f6; color: white; border-radius: 5px;"
+        " padding: 4px 10px; font-size: 11px; font-weight: bold; border: none; }"
+        "QPushButton:hover { background-color: #2563eb; }"
+        "QPushButton:pressed { background-color: #1d4ed8; }");
+
+    int transId = data.id;
+    connect(btnModifier, &QPushButton::clicked, this, [this, transId]() {
+        finTransactionSelectionnee = transId;
+        if (finTransactionsMap.contains(transId)) {
+            finRemplirComboProjets();
+            finRemplirFormulaire(finTransactionsMap[transId]);
+            ui->finFormTitle->setText("Modifier la transaction");
+            ui->finFormSubtitle->setText("Modifiez les informations de la transaction");
+            ui->finStackedWidget->setCurrentIndex(1);
+            ui->finBtnAjouterTransaction->setText("💾 Enregistrer");
+            finUpdateButtonStyles();
+        }
+    });
+
+    QPushButton *btnSupprimer = new QPushButton("✕ Supprimer");
+    btnSupprimer->setCursor(Qt::PointingHandCursor);
+    btnSupprimer->setStyleSheet(
+        "QPushButton { background-color: #ef4444; color: white; border-radius: 5px;"
+        " padding: 4px 10px; font-size: 11px; font-weight: bold; border: none; }"
+        "QPushButton:hover { background-color: #dc2626; }"
+        "QPushButton:pressed { background-color: #b91c1c; }");
+    connect(btnSupprimer, &QPushButton::clicked, this, [this, transId]() {
+        int rep = QMessageBox::question(this, "Confirmer la suppression",
+            QString("Etes-vous sur de vouloir supprimer la transaction #%1 ?\nCette action est irreversible.").arg(transId),
+            QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+        if (rep != QMessageBox::Yes) return;
+        QSqlDatabase db = Connection::instance()->getDatabase();
+        if (!db.isOpen()) return;
+        QSqlQuery q(db);
+        q.prepare(QStringLiteral("DELETE FROM FINANCE WHERE ID_TRANSACTION = :id"));
+        q.bindValue(":id", transId);
+        if (q.exec()) {
+            QMessageBox::information(this, "Succès", "Transaction supprimée avec succès !");
+            finChargerTransactionsDepuisOracle();
+        } else {
+            QMessageBox::critical(this, "Erreur", "Échec de la suppression : " + q.lastError().text());
+        }
+    });
+
+    actionsLayout->addWidget(btnModifier);
+    actionsLayout->addWidget(btnSupprimer);
+    actionsLayout->addStretch();
+    ui->finTableTransactions->setCellWidget(row, 7, actionsWidget);
 }
 
 void SmartPub::finViderFormulaire() {
@@ -6409,6 +6487,7 @@ void SmartPub::on_finBtnAjouter_clicked() {
         return;
     }
     finTransactionSelectionnee = 0;  // Mode ajout
+    finRemplirComboProjets();  // Recharger les projets depuis la BD
     finViderFormulaire();
     ui->finFormTitle->setText("Nouvelle transaction");
     ui->finFormSubtitle->setText("Remplissez les informations pour ajouter une nouvelle transaction");
@@ -6516,7 +6595,7 @@ void SmartPub::on_finBtnAjouterTransaction_clicked() {
         return;
     }
 
-    const int idProjet = ui->finComboBoxProjet->currentData().toInt();
+    const QString idProjet = ui->finComboBoxProjet->currentData().toString();
     QString typeDb = ui->finComboBoxType->currentData().toString();
     if (typeDb.isEmpty())
         typeDb = finTypeUiToDb(ui->finComboBoxType->currentText());
@@ -6526,6 +6605,25 @@ void SmartPub::on_finBtnAjouterTransaction_clicked() {
     const QString statut = ui->finComboBoxStatut->currentText();
     const QString description = ui->finTextEditDescription->toPlainText();
 
+    // Verification projet obligatoire (NOT NULL base)
+    if (idProjet.isEmpty() || idProjet == QStringLiteral("0")) {
+        QMessageBox::warning(this, QStringLiteral("Champ obligatoire"),
+                             QStringLiteral("Veuillez selectionner un projet existant."));
+        return;
+    }
+    // Verification type obligatoire (NOT NULL base)
+    if (typeDb.isEmpty()) {
+        QMessageBox::warning(this, QStringLiteral("Champ obligatoire"),
+                             QStringLiteral("Veuillez selectionner un type de transaction."));
+        return;
+    }
+    // Verification date valide (NOT NULL base)
+    if (!ui->finDateEdit->date().isValid()) {
+        QMessageBox::warning(this, QStringLiteral("Champ obligatoire"),
+                             QStringLiteral("Veuillez saisir une date valide."));
+        return;
+    }
+    // Verification montant
     if (montantStr.isEmpty()) {
         QMessageBox::warning(this, QStringLiteral("Erreur"),
                              QStringLiteral("Veuillez remplir tous les champs obligatoires (*)"));
@@ -6535,7 +6633,11 @@ void SmartPub::on_finBtnAjouterTransaction_clicked() {
     bool ok = false;
     const double montant = montantStr.toDouble(&ok);
     if (!ok) {
-        QMessageBox::warning(this, QStringLiteral("Erreur"), QStringLiteral("Montant invalide"));
+        QMessageBox::warning(this, QStringLiteral("Erreur"), QStringLiteral("Le montant doit etre un nombre valide (ex: 150.50)."));
+        return;
+    }
+    if (montant <= 0.0) {
+        QMessageBox::warning(this, QStringLiteral("Erreur"), QStringLiteral("Le montant doit etre superieur a 0."));
         return;
     }
 
@@ -6559,7 +6661,7 @@ void SmartPub::on_finBtnAjouterTransaction_clicked() {
         query.bindValue(QStringLiteral(":d"), date);
         query.bindValue(QStringLiteral(":statut"), statut);
         query.bindValue(QStringLiteral(":desc"), description);
-        if (idProjet > 0)
+        if (!idProjet.isEmpty() && idProjet != QStringLiteral("0"))
             query.bindValue(QStringLiteral(":idp"), idProjet);
         else
             query.bindValue(QStringLiteral(":idp"), QVariant());
@@ -6581,7 +6683,7 @@ void SmartPub::on_finBtnAjouterTransaction_clicked() {
         query.bindValue(QStringLiteral(":d"), date);
         query.bindValue(QStringLiteral(":statut"), statut);
         query.bindValue(QStringLiteral(":desc"), description);
-        if (idProjet > 0)
+        if (!idProjet.isEmpty() && idProjet != QStringLiteral("0"))
             query.bindValue(QStringLiteral(":idp"), idProjet);
         else
             query.bindValue(QStringLiteral(":idp"), QVariant());

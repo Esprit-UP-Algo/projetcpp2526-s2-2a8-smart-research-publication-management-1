@@ -18,7 +18,7 @@ QT_END_NAMESPACE
 
 struct TransactionData {
     int id;
-    int idProjet; // CODE_PROJET (FK FINANCE.ID_PROJET), 0 si aucun
+    QString idProjet; // CODE_PROJET (FK FINANCE.ID_PROJET), vide si aucun
     QString projet;
     QString type;
     double montant;
@@ -27,7 +27,7 @@ struct TransactionData {
     QString statut;
     QString description;
 
-    TransactionData() : id(0), idProjet(0), montant(0.0) {}
+    TransactionData() : id(0) {}
 };
 
 class FinStatistiquesDialog : public QDialog {
