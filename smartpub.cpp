@@ -1,6 +1,7 @@
 #include "smartpub.h"
 #include "ui_smartpub.h"
 #include "connection.h"
+#include "publicationauth.h"
 #include "promotionengine.h"
 #include "matchmakingengine.h"
 #include <algorithm>
@@ -10,6 +11,8 @@
 #include <QRegion>
 #include <QProcess>
 #include <QScreen>
+#include <QFile>
+#include <QTextStream>
 
 // ============================================================================
 // FONCTIONS HELPER GLOBALES (pour module Projets)
@@ -165,6 +168,241 @@ static QString SR_statutDbToUi(const QString &db) {
         return QStringLiteral("Rejeté");
     return db;
 }
+
+struct PublicationStatData {
+    QString titre;
+    QString auteur;
+    QString date;
+    QString revue;
+    QString statut;
+};
+
+class PubStatistiquesDialog : public QDialog {
+public:
+    explicit PubStatistiquesDialog(const QList<PublicationStatData> &publications, QWidget *parent = nullptr)
+        : QDialog(parent), m_publications(publications), labelTotal(nullptr), labelCetteAnnee(nullptr),
+          labelNbRevues(nullptr), labelNbPublications(nullptr), chartStatutView(nullptr), chartRevueView(nullptr) {
+        setWindowTitle("Statistiques Publications");
+        setMinimumSize(900, 650);
+        resize(1000, 700);
+        setStyleSheet(
+            "QDialog { background-color: #f1f5f9; font-family: 'Segoe UI', sans-serif; }"
+            "QLabel { color: #334155; }"
+            "QGroupBox { font-weight: bold; border: 1px solid #e2e8f0; border-radius: 12px;"
+            " margin-top: 15px; padding-top: 15px; background-color: white; }"
+            "QGroupBox::title { subcontrol-origin: margin; left: 15px; padding: 0 10px;"
+            " color: #3b82f6; font-size: 14px; }"
+            "QPushButton { background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 #3b82f6, stop:1 #10b981);"
+            " color: white; border: none; border-radius: 10px; padding: 12px 24px; font-size: 14px; font-weight: 600; }"
+            "QPushButton:hover { background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 #2563eb, stop:1 #059669); }");
+        setupUI();
+        calculerStatistiques();
+        creerGraphiques();
+    }
+
+private:
+    void setupUI() {
+        QVBoxLayout *mainLayout = new QVBoxLayout(this);
+        mainLayout->setSpacing(0);
+        mainLayout->setContentsMargins(0, 0, 0, 0);
+
+        QFrame *headerFrame = new QFrame();
+        headerFrame->setStyleSheet(
+            "QFrame { background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 #3b82f6, stop:1 #10b981); border: none; }");
+        headerFrame->setFixedHeight(100);
+        QVBoxLayout *headerLayout = new QVBoxLayout(headerFrame);
+        headerLayout->setContentsMargins(30, 20, 30, 20);
+        QLabel *titleLabel = new QLabel("📊 Statistiques Publications");
+        titleLabel->setStyleSheet("color: white; font-size: 28px; font-weight: bold;");
+        QLabel *subtitleLabel = new QLabel("Tableau de bord des publications");
+        subtitleLabel->setStyleSheet("color: rgba(255,255,255,0.9); font-size: 14px;");
+        headerLayout->addWidget(titleLabel);
+        headerLayout->addWidget(subtitleLabel);
+        mainLayout->addWidget(headerFrame);
+
+        QScrollArea *scrollArea = new QScrollArea();
+        scrollArea->setWidgetResizable(true);
+        scrollArea->setStyleSheet("background-color: #f1f5f9;");
+
+        QWidget *contentWidget = new QWidget();
+        QVBoxLayout *contentLayout = new QVBoxLayout(contentWidget);
+        contentLayout->setSpacing(25);
+        contentLayout->setContentsMargins(30, 30, 30, 30);
+
+        QHBoxLayout *kpiLayout = new QHBoxLayout();
+        kpiLayout->setSpacing(20);
+        auto createKPI = [](const QString &icon, const QString &value, const QString &label,
+                            const QString &color, QLabel **valueLabelPtr) -> QFrame * {
+            QFrame *kpi = new QFrame();
+            kpi->setStyleSheet("QFrame { background-color: white; border-radius: 12px; border: 1px solid #e2e8f0; }");
+            kpi->setFixedHeight(120);
+            QVBoxLayout *layout = new QVBoxLayout(kpi);
+            layout->setSpacing(5);
+            QLabel *iconLabel = new QLabel(icon);
+            iconLabel->setStyleSheet("font-size: 24px;");
+            iconLabel->setAlignment(Qt::AlignCenter);
+            QLabel *valueLabel = new QLabel(value);
+            valueLabel->setStyleSheet(QString("font-size: 28px; font-weight: bold; color: %1;").arg(color));
+            valueLabel->setAlignment(Qt::AlignCenter);
+            *valueLabelPtr = valueLabel;
+            QLabel *textLabel = new QLabel(label);
+            textLabel->setStyleSheet("font-size: 13px; color: #64748b;");
+            textLabel->setAlignment(Qt::AlignCenter);
+            layout->addWidget(iconLabel);
+            layout->addWidget(valueLabel);
+            layout->addWidget(textLabel);
+            return kpi;
+        };
+
+        kpiLayout->addWidget(createKPI("📚", "0", "Total publications", "#3b82f6", &labelTotal));
+        kpiLayout->addWidget(createKPI("🗓️", "0", "Cette année", "#10b981", &labelCetteAnnee));
+        kpiLayout->addWidget(createKPI("🧾", "0", "Revues distinctes", "#8b5cf6", &labelNbRevues));
+        kpiLayout->addWidget(createKPI("👤", "0", "Nb. Publications", "#f59e0b", &labelNbPublications));
+        contentLayout->addLayout(kpiLayout);
+
+        QHBoxLayout *chartsLayout = new QHBoxLayout();
+        chartsLayout->setSpacing(20);
+
+        QGroupBox *chartStatutGroup = new QGroupBox("Répartition par Statut");
+        QVBoxLayout *chartStatutLayout = new QVBoxLayout(chartStatutGroup);
+        chartStatutView = new QChartView();
+        chartStatutView->setMinimumHeight(300);
+        chartStatutView->setRenderHint(QPainter::Antialiasing);
+        chartStatutLayout->addWidget(chartStatutView);
+        chartsLayout->addWidget(chartStatutGroup, 1);
+
+        QGroupBox *chartRevueGroup = new QGroupBox("Publications par Revue");
+        QVBoxLayout *chartRevueLayout = new QVBoxLayout(chartRevueGroup);
+        chartRevueView = new QChartView();
+        chartRevueView->setMinimumHeight(300);
+        chartRevueView->setRenderHint(QPainter::Antialiasing);
+        chartRevueLayout->addWidget(chartRevueView);
+        chartsLayout->addWidget(chartRevueGroup, 1);
+
+        contentLayout->addLayout(chartsLayout);
+
+        QFrame *footerFrame = new QFrame();
+        footerFrame->setStyleSheet("background-color: white; border-top: 1px solid #e2e8f0;");
+        footerFrame->setFixedHeight(70);
+        QHBoxLayout *footerLayout = new QHBoxLayout(footerFrame);
+        footerLayout->addStretch();
+        QPushButton *closeButton = new QPushButton("Fermer");
+        closeButton->setFixedSize(140, 45);
+        closeButton->setCursor(Qt::PointingHandCursor);
+        connect(closeButton, &QPushButton::clicked, this, &QDialog::accept);
+        footerLayout->addWidget(closeButton);
+        mainLayout->addWidget(footerFrame);
+
+        scrollArea->setWidget(contentWidget);
+        mainLayout->addWidget(scrollArea, 1);
+    }
+
+    void calculerStatistiques() {
+        const int total = m_publications.size();
+        const int currentYear = QDate::currentDate().year();
+        int thisYear = 0;
+        QSet<QString> revues;
+        for (const PublicationStatData &p : m_publications) {
+            if (p.date.left(4).toInt() == currentYear)
+                thisYear++;
+            if (!p.revue.trimmed().isEmpty())
+                revues.insert(p.revue.trimmed());
+        }
+
+        if (labelTotal)
+            labelTotal->setText(QString::number(total));
+        if (labelCetteAnnee)
+            labelCetteAnnee->setText(QString::number(thisYear));
+        if (labelNbRevues)
+            labelNbRevues->setText(QString::number(revues.size()));
+        if (labelNbPublications)
+            labelNbPublications->setText(QString::number(total));
+    }
+
+    void creerGraphiques() {
+        QMap<QString, int> statutCounts;
+        for (const PublicationStatData &p : m_publications)
+            statutCounts[p.statut.trimmed().isEmpty() ? QStringLiteral("Inconnu") : p.statut.trimmed()]++;
+
+        QPieSeries *seriesStatut = new QPieSeries();
+        if (statutCounts.isEmpty())
+            statutCounts.insert(QStringLiteral("Aucune donnée"), 1);
+        for (auto it = statutCounts.constBegin(); it != statutCounts.constEnd(); ++it)
+            seriesStatut->append(it.key(), it.value());
+        for (int i = 0; i < seriesStatut->count(); ++i) {
+            seriesStatut->slices().at(i)->setLabelVisible(true);
+            const QString name = seriesStatut->slices().at(i)->label();
+            seriesStatut->slices().at(i)->setLabel(
+                QString("%1 (%2%)").arg(name).arg(seriesStatut->slices().at(i)->percentage() * 100, 0, 'f', 1));
+        }
+        QChart *chartStatut = new QChart();
+        chartStatut->addSeries(seriesStatut);
+        chartStatut->setAnimationOptions(QChart::SeriesAnimations);
+        chartStatut->setBackgroundBrush(QBrush(QColor("transparent")));
+        chartStatut->legend()->setVisible(true);
+        chartStatutView->setChart(chartStatut);
+
+        QMap<QString, int> byRevue;
+        for (const PublicationStatData &p : m_publications) {
+            const QString revue = p.revue.trimmed().isEmpty() ? QStringLiteral("Sans revue") : p.revue.trimmed();
+            byRevue[revue]++;
+        }
+        if (byRevue.isEmpty())
+            byRevue.insert(QStringLiteral("Aucune donnée"), 0);
+
+        QVector<QPair<QString, int>> revueData;
+        revueData.reserve(byRevue.size());
+        for (auto it = byRevue.constBegin(); it != byRevue.constEnd(); ++it)
+            revueData.push_back(qMakePair(it.key(), it.value()));
+        std::sort(revueData.begin(), revueData.end(),
+                  [](const QPair<QString, int> &a, const QPair<QString, int> &b) {
+                      return a.second > b.second;
+                  });
+
+        const int maxBars = 8;
+        QBarSet *barSet = new QBarSet("Publications");
+        QStringList categories;
+        int maxValue = 0;
+        for (int i = 0; i < revueData.size() && i < maxBars; ++i) {
+            barSet->append(revueData[i].second);
+            categories << revueData[i].first;
+            maxValue = qMax(maxValue, revueData[i].second);
+        }
+        barSet->setColor(QColor("#3b82f6"));
+        barSet->setLabelColor(QColor("#1e293b"));
+        QBarSeries *barSeries = new QBarSeries();
+        barSeries->append(barSet);
+        barSeries->setLabelsVisible(true);
+        barSeries->setLabelsFormat("@value");
+        barSeries->setLabelsPosition(QAbstractBarSeries::LabelsOutsideEnd);
+
+        QChart *chartRevue = new QChart();
+        chartRevue->addSeries(barSeries);
+        chartRevue->setTitle(QStringLiteral("Top revues (%1)").arg(categories.size()));
+        chartRevue->setAnimationOptions(QChart::SeriesAnimations);
+        chartRevue->setBackgroundBrush(QBrush(QColor("transparent")));
+        QBarCategoryAxis *axisX = new QBarCategoryAxis();
+        axisX->append(categories);
+        chartRevue->addAxis(axisX, Qt::AlignBottom);
+        barSeries->attachAxis(axisX);
+        QValueAxis *axisY = new QValueAxis();
+        axisY->setRange(0, qMax(1, maxValue + 1));
+        axisY->setLabelFormat("%d");
+        axisY->setTickCount(qMin(10, qMax(2, maxValue + 2)));
+        chartRevue->addAxis(axisY, Qt::AlignLeft);
+        barSeries->attachAxis(axisY);
+        chartRevue->legend()->setVisible(false);
+        chartRevueView->setChart(chartRevue);
+    }
+
+    QList<PublicationStatData> m_publications;
+    QLabel *labelTotal;
+    QLabel *labelCetteAnnee;
+    QLabel *labelNbRevues;
+    QLabel *labelNbPublications;
+    QChartView *chartStatutView;
+    QChartView *chartRevueView;
+};
 
 
 // ============================================================================
@@ -2292,7 +2530,8 @@ SmartPub::SmartPub(QWidget *parent)
     currentSortOrder(Qt::AscendingOrder), filtresActifs(false),
     editingPublicationRow(-1),
     SR_filterFrame(nullptr), SR_filterTitre(nullptr), SR_filterAuteur(nullptr),
-    SR_filterStatut(nullptr), SR_btnReinitFilter(nullptr) {
+    SR_filterStatut(nullptr), SR_btnReinitFilter(nullptr),
+    SR_sortColumn(2), SR_sortOrder(Qt::DescendingOrder) {
     ui->setupUi(this);
     // Configurer les dimensions de la fenêtre
     this->setMinimumSize(1280, 720);
@@ -2995,6 +3234,12 @@ void SmartPub::on_btnChercheurs_clicked() {
 }
 
 void SmartPub::on_btnPublications_clicked() {
+    PublicationLoginDialog authDialog(this);
+    if (authDialog.exec() != QDialog::Accepted) {
+        QMessageBox::warning(this, "Accès refusé",
+                             "Authentification requise pour accéder au module Publications.");
+        return;
+    }
     ui->stackedWidgetModules->setCurrentIndex(1);
     setActiveNavigationButton(1);
     updateProfileName(1);
@@ -5657,6 +5902,8 @@ void SmartPub::SR_connectSignals() {
             &SmartPub::on_SR_btnAjouter_clicked);
     connect(ui->SR_btnRecherche, &QPushButton::clicked, this,
             &SmartPub::on_SR_btnRecherche_clicked);
+    connect(ui->SR_lineEditRecherche, &QLineEdit::textChanged, this,
+            [this](const QString &) { SR_applyFilterListe(); });
     connect(ui->SR_btnTri, &QPushButton::clicked, this,
             &SmartPub::on_SR_btnTri_clicked);
     // Masquer les champs email/password et le bouton guest (User Request)
@@ -5697,6 +5944,231 @@ void SmartPub::SR_connectSignals() {
     connect(SR_filterAuteur, &QLineEdit::textChanged, this, [this]() { SR_applyFilterListe(); });
     connect(SR_filterStatut, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this]() { SR_applyFilterListe(); });
     connect(SR_btnReinitFilter, &QPushButton::clicked, this, &SmartPub::SR_reinitFilterListe);
+    connect(ui->SR_tablePublications, &QTableWidget::cellDoubleClicked, this, [this](int row, int) {
+        if (row < 0)
+            return;
+        const QString titre = ui->SR_tablePublications->item(row, 0) ? ui->SR_tablePublications->item(row, 0)->text() : QString();
+        const QString auteur = ui->SR_tablePublications->item(row, 1) ? ui->SR_tablePublications->item(row, 1)->text() : QString();
+        const QString date = ui->SR_tablePublications->item(row, 2) ? ui->SR_tablePublications->item(row, 2)->text() : QString();
+        const QString revue = ui->SR_tablePublications->item(row, 3) ? ui->SR_tablePublications->item(row, 3)->text() : QString();
+        const QString statut = ui->SR_tablePublications->item(row, 4) ? ui->SR_tablePublications->item(row, 4)->text() : QString();
+        const QString doi = ui->SR_tablePublications->item(row, 0) ? ui->SR_tablePublications->item(row, 0)->toolTip() : QString();
+
+        QDialog *dialog = new QDialog(this);
+        dialog->setAttribute(Qt::WA_DeleteOnClose);
+        dialog->setWindowTitle(QString("Publication — %1").arg(titre.isEmpty() ? "Détails" : titre));
+        dialog->setMinimumSize(720, 620);
+        dialog->setMaximumSize(920, 840);
+        dialog->setStyleSheet("background-color: #f8fafc;");
+
+        QVBoxLayout *mainLayout = new QVBoxLayout(dialog);
+        mainLayout->setSpacing(0);
+        mainLayout->setContentsMargins(0, 0, 0, 0);
+
+        QFrame *headerFrame = new QFrame();
+        headerFrame->setStyleSheet(R"(
+            QFrame {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                    stop:0 #3b82f6, stop:1 #10b981);
+            }
+        )");
+        headerFrame->setFixedHeight(200);
+        QVBoxLayout *headerLayout = new QVBoxLayout(headerFrame);
+        headerLayout->setAlignment(Qt::AlignCenter);
+        headerLayout->setSpacing(10);
+        headerLayout->setContentsMargins(20, 20, 20, 16);
+
+        QLabel *iconLbl = new QLabel("📄");
+        iconLbl->setAlignment(Qt::AlignCenter);
+        iconLbl->setFixedSize(110, 110);
+        iconLbl->setStyleSheet(
+            "color: white; font-size: 56px; border: 4px solid white; border-radius: 55px;");
+        headerLayout->addWidget(iconLbl, 0, Qt::AlignCenter);
+
+        QLabel *titleHeaderLbl = new QLabel(titre.isEmpty() ? "Publication" : titre);
+        titleHeaderLbl->setStyleSheet(
+            "color: white; font-size: 22px; font-weight: 700; "
+            "background: transparent; border: none;");
+        titleHeaderLbl->setAlignment(Qt::AlignCenter);
+        titleHeaderLbl->setWordWrap(true);
+        headerLayout->addWidget(titleHeaderLbl, 0, Qt::AlignCenter);
+
+        QLabel *statusBadge = new QLabel(statut.isEmpty() ? "—" : statut);
+        statusBadge->setStyleSheet(
+            "background: rgba(255,255,255,0.22); color: white; "
+            "border-radius: 10px; padding: 5px 16px; font-size: 12px; "
+            "font-weight: 600; border: none;");
+        statusBadge->setAlignment(Qt::AlignCenter);
+        headerLayout->addWidget(statusBadge, 0, Qt::AlignCenter);
+
+        mainLayout->addWidget(headerFrame);
+
+        QScrollArea *scrollArea = new QScrollArea();
+        scrollArea->setWidgetResizable(true);
+        scrollArea->setFrameShape(QFrame::NoFrame);
+        scrollArea->setStyleSheet("background-color: white; border: none;");
+
+        QWidget *contentWidget = new QWidget();
+        contentWidget->setStyleSheet("background-color: white;");
+        QVBoxLayout *contentLayout = new QVBoxLayout(contentWidget);
+        contentLayout->setSpacing(10);
+        contentLayout->setContentsMargins(28, 24, 28, 24);
+
+        auto createInfoRow = [](const QString &label, const QString &value,
+                                const QString &icon = "") -> QFrame * {
+            QFrame *row = new QFrame();
+            row->setStyleSheet(
+                "QFrame { background-color: #f8fafc; border-radius: 10px; border: none; }");
+            row->setMaximumHeight(68);
+            QHBoxLayout *rowLayout = new QHBoxLayout(row);
+            rowLayout->setContentsMargins(16, 10, 16, 10);
+
+            QLabel *iconLbl = new QLabel(icon.isEmpty() ? "•" : icon);
+            iconLbl->setStyleSheet("font-size: 16px; background: transparent; border: none;");
+            iconLbl->setFixedWidth(26);
+            rowLayout->addWidget(iconLbl);
+
+            QLabel *labelLbl = new QLabel(label + " :");
+            labelLbl->setStyleSheet(
+                "color: #64748b; font-size: 13px; font-weight: 600; "
+                "min-width: 130px; background: transparent; border: none;");
+            rowLayout->addWidget(labelLbl);
+
+            QLabel *valueLbl = new QLabel(value.isEmpty() ? "—" : value);
+            valueLbl->setStyleSheet(
+                "color: #1e293b; font-size: 14px; font-weight: 500; "
+                "background: transparent; border: none;");
+            valueLbl->setWordWrap(true);
+            rowLayout->addWidget(valueLbl, 1);
+            return row;
+        };
+
+        contentLayout->addWidget(createInfoRow("Titre", titre, "📝"));
+        contentLayout->addWidget(createInfoRow("Auteur(s)", auteur, "👤"));
+        contentLayout->addWidget(createInfoRow("Date publication", date, "📅"));
+        contentLayout->addWidget(createInfoRow("Revue", revue, "📚"));
+        contentLayout->addWidget(createInfoRow("Statut", statut, "🏷️"));
+        contentLayout->addWidget(createInfoRow("DOI", doi, "🔗"));
+        contentLayout->addStretch();
+
+        scrollArea->setWidget(contentWidget);
+        mainLayout->addWidget(scrollArea, 1);
+
+        QFrame *footerFrame = new QFrame();
+        footerFrame->setStyleSheet("background-color: white; border-top: 1px solid #e2e8f0;");
+        footerFrame->setFixedHeight(70);
+        QHBoxLayout *footerLayout = new QHBoxLayout(footerFrame);
+        footerLayout->setContentsMargins(24, 0, 24, 0);
+        footerLayout->setSpacing(12);
+
+        QPushButton *btnExport = new QPushButton(QStringLiteral("📄 Exporter en PDF"));
+        btnExport->setCursor(Qt::PointingHandCursor);
+        btnExport->setStyleSheet(R"(
+            QPushButton {
+                background-color: white;
+                color: #334155;
+                border: 2px solid #e2e8f0;
+                border-radius: 10px;
+                padding: 0 22px;
+                font-size: 13px;
+                font-weight: 600;
+                min-height: 42px;
+            }
+            QPushButton:hover {
+                background-color: #eff6ff;
+                border-color: #3b82f6;
+                color: #1d4ed8;
+            }
+        )");
+        connect(btnExport, &QPushButton::clicked, dialog, [this, titre, auteur, date, revue, statut, doi]() {
+            QString safeTitle = titre.trimmed();
+            if (safeTitle.isEmpty())
+                safeTitle = QStringLiteral("publication");
+            safeTitle.replace(QRegularExpression("[\\\\/:*?\"<>|]"), "_");
+            const QString fileName = QFileDialog::getSaveFileName(
+                this,
+                QStringLiteral("Exporter la publication en PDF"),
+                QDir::homePath() + "/" + safeTitle + ".pdf",
+                QStringLiteral("PDF (*.pdf)"));
+            if (fileName.isEmpty())
+                return;
+
+            QPrinter printer(QPrinter::HighResolution);
+            printer.setOutputFormat(QPrinter::PdfFormat);
+            printer.setOutputFileName(fileName);
+            printer.setPageSize(QPageSize(QPageSize::A4));
+            printer.setPageOrientation(QPageLayout::Portrait);
+            printer.setPageMargins(QMarginsF(15, 15, 15, 15), QPageLayout::Millimeter);
+
+            QPainter painter;
+            if (!painter.begin(&printer)) {
+                QMessageBox::critical(this, QStringLiteral("Erreur"),
+                                      QStringLiteral("Impossible de créer le fichier PDF."));
+                return;
+            }
+
+            painter.setRenderHint(QPainter::Antialiasing);
+            int y = 120;
+            painter.setPen(Qt::NoPen);
+            painter.setBrush(QColor("#3b82f6"));
+            painter.drawRoundedRect(60, 60, 2200, 180, 14, 14);
+            painter.setPen(Qt::white);
+            painter.setFont(QFont("Segoe UI", 18, QFont::Bold));
+            painter.drawText(100, 175, QStringLiteral("Détails Publication"));
+
+            painter.setPen(QColor("#1e293b"));
+            painter.setFont(QFont("Segoe UI", 12, QFont::Bold));
+            auto drawField = [&](const QString &label, const QString &value) {
+                painter.drawText(80, y, label);
+                painter.setFont(QFont("Segoe UI", 12));
+                painter.drawText(420, y, value.isEmpty() ? QStringLiteral("—") : value);
+                painter.setFont(QFont("Segoe UI", 12, QFont::Bold));
+                y += 90;
+            };
+
+            y = 330;
+            drawField(QStringLiteral("Titre :"), titre);
+            drawField(QStringLiteral("Auteur(s) :"), auteur);
+            drawField(QStringLiteral("Date publication :"), date);
+            drawField(QStringLiteral("Revue :"), revue);
+            drawField(QStringLiteral("Statut :"), statut);
+            drawField(QStringLiteral("DOI :"), doi);
+
+            painter.setPen(QColor("#94a3b8"));
+            painter.setFont(QFont("Segoe UI", 9));
+            painter.drawText(80, 3300, QStringLiteral("Exporté depuis SmartPub"));
+            painter.end();
+
+            QMessageBox::information(this, QStringLiteral("Export"), QStringLiteral("Export PDF réussi !"));
+        });
+
+        footerLayout->addWidget(btnExport);
+        footerLayout->addStretch();
+
+        QPushButton *btnClose = new QPushButton(QStringLiteral("Fermer"));
+        btnClose->setCursor(Qt::PointingHandCursor);
+        btnClose->setStyleSheet(R"(
+            QPushButton {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                    stop:0 #3b82f6, stop:1 #10b981);
+                color: white;
+                border: none;
+                border-radius: 10px;
+                padding: 0 30px;
+                font-size: 14px;
+                font-weight: 600;
+                min-height: 42px;
+            }
+            QPushButton:hover {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                    stop:0 #2563eb, stop:1 #059669);
+            }
+        )");
+        connect(btnClose, &QPushButton::clicked, dialog, &QDialog::accept);
+        footerLayout->addWidget(btnClose);
+        mainLayout->addWidget(footerFrame);
+        dialog->exec();
+    });
 }
 
 void SmartPub::SR_updateButtonStyles() {
@@ -5764,6 +6236,11 @@ void SmartPub::SR_loadSampleData() {
     QSqlDatabase db = Connection::instance()->getDatabase();
     ui->SR_tablePublications->setColumnWidth(5, 135);
     ui->SR_tablePublications->setRowCount(0);
+    ui->SR_comboBoxStatut->setItemData(0, QStringLiteral("publie"));
+    ui->SR_comboBoxStatut->setItemData(1, QStringLiteral("soumis"));
+    ui->SR_comboBoxStatut->setItemData(2, QStringLiteral("en_revision"));
+    ui->SR_comboBoxStatut->setItemData(3, QStringLiteral("accepte"));
+    ui->SR_comboBoxStatut->setItemData(4, QStringLiteral("rejete"));
 
     auto clearStats = [this]() {
         ui->SR_lblTotalNumber->setText(QStringLiteral("0"));
@@ -5819,33 +6296,8 @@ void SmartPub::SR_loadSampleData() {
         row++;
     }
     ui->SR_tablePublications->resizeRowsToContents();
-    ui->SR_lblTotalNumber->setText(QString::number(row));
-    int thisYear = QDate::currentDate().year();
-    int countThisYear = 0;
-    for (int r = 0; r < row; r++) {
-        QString ds = ui->SR_tablePublications->item(r, 2) ? ui->SR_tablePublications->item(r, 2)->text() : QString();
-        if (ds.length() >= 4 && ds.left(4).toInt() == thisYear)
-            countThisYear++;
-    }
-    ui->SR_lblThisYearNumber->setText(QString::number(countThisYear));
-    ui->SR_lblPlanSNumber->setText(QStringLiteral("0"));
-    int publie = 0, soumis = 0, revision = 0, accepte = 0;
-    for (int r = 0; r < row; r++) {
-        QString s = ui->SR_tablePublications->item(r, 4) ? ui->SR_tablePublications->item(r, 4)->text() : QString();
-        if (s.contains(QStringLiteral("Publié"), Qt::CaseInsensitive))
-            publie++;
-        else if (s.contains(QStringLiteral("Soumis"), Qt::CaseInsensitive))
-            soumis++;
-        else if (s.contains(QStringLiteral("révision"), Qt::CaseInsensitive))
-            revision++;
-        else if (s.contains(QStringLiteral("Accepté"), Qt::CaseInsensitive))
-            accepte++;
-    }
-    int total = row > 0 ? row : 1;
-    ui->SR_lblStatPublie->setText(QStringLiteral("● Publié (%1%)").arg((publie * 100) / total));
-    ui->SR_lblStatSoumis->setText(QStringLiteral("● Soumis (%1%)").arg((soumis * 100) / total));
-    ui->SR_lblStatRevision->setText(QStringLiteral("● En révision (%1%)").arg((revision * 100) / total));
-    ui->SR_lblStatAccepte->setText(QStringLiteral("● Accepté (%1%)").arg((accepte * 100) / total));
+    SR_applyFilterListe();
+    SR_refreshStatsForCurrentView();
 }
 
 void SmartPub::on_SR_btnVueListe_clicked() {
@@ -5873,13 +6325,7 @@ void SmartPub::on_SR_btnAjouter_clicked() {
 }
 
 void SmartPub::on_SR_btnRecherche_clicked() {
-    QString searchText = ui->SR_lineEditRecherche->text();
-    if (searchText.isEmpty()) {
-        QMessageBox::information(this, "Recherche",
-                                 "Veuillez entrer un terme de recherche");
-    } else {
-        QMessageBox::information(this, "Recherche", "Recherche de: " + searchText);
-    }
+    SR_applyFilterListe();
 }
 
 void SmartPub::on_SR_btnTri_clicked() {
@@ -5910,30 +6356,72 @@ void SmartPub::on_SR_btnTri_clicked() {
         }
     )");
 
-    menu->addAction("Trier par Nom (A-Z)", this,
-                    [this]() { cherchTrierParNom(true); });
-    menu->addAction("Trier par Nom (Z-A)", this,
-                    [this]() { cherchTrierParNom(false); });
-    menu->addAction("Trier par Date (Plus récent)", this,
-                    [this]() { cherchTrierParDateCreation(true); });
-    menu->addAction("Trier par Date (Plus ancien)", this,
-                    [this]() { cherchTrierParDateCreation(false); });
+    menu->addAction("Trier par Titre", this, [this]() {
+        const int targetColumn = 0; // Titre
+        SR_sortOrder = (SR_sortColumn == targetColumn && SR_sortOrder == Qt::AscendingOrder)
+                           ? Qt::DescendingOrder
+                           : Qt::AscendingOrder;
+        SR_sortColumn = targetColumn;
+        ui->SR_tablePublications->sortItems(SR_sortColumn, SR_sortOrder);
+        SR_applyFilterListe();
+    });
+    menu->addAction("Trier par Date de publication", this, [this]() {
+        const int targetColumn = 2; // Date
+        SR_sortOrder = (SR_sortColumn == targetColumn && SR_sortOrder == Qt::AscendingOrder)
+                           ? Qt::DescendingOrder
+                           : Qt::AscendingOrder;
+        SR_sortColumn = targetColumn;
+        ui->SR_tablePublications->sortItems(SR_sortColumn, SR_sortOrder);
+        SR_applyFilterListe();
+    });
 
     menu->exec(QCursor::pos());
 }
 
 void SmartPub::on_SR_btnExport_clicked() {
     QString fileName = QFileDialog::getSaveFileName(
-        this, "Exporter les transactions", QDir::homePath(), "CSV (*.csv)");
+        this, "Exporter", QDir::homePath(), "CSV (*.csv)");
     if (!fileName.isEmpty()) {
-        QMessageBox::information(this, "Export",
-                                 "Transactions exportées avec succès !");
+        QFile file(fileName);
+        if (file.open(QIODevice::WriteOnly | QIODevice::Text)) {
+            QTextStream stream(&file);
+            stream << "ID,Titre,Auteurs,Date Publication,Revue,Statut,DOI\n";
+            for (int r = 0; r < ui->SR_tablePublications->rowCount(); ++r) {
+                const QTableWidgetItem *titleItem = ui->SR_tablePublications->item(r, 0);
+                const int id = titleItem ? titleItem->data(Qt::UserRole).toInt() : 0;
+                const QString titre = titleItem ? titleItem->text() : QString();
+                const QString auteur = ui->SR_tablePublications->item(r, 1) ? ui->SR_tablePublications->item(r, 1)->text() : QString();
+                const QString date = ui->SR_tablePublications->item(r, 2) ? ui->SR_tablePublications->item(r, 2)->text() : QString();
+                const QString revue = ui->SR_tablePublications->item(r, 3) ? ui->SR_tablePublications->item(r, 3)->text() : QString();
+                const QString statut = ui->SR_tablePublications->item(r, 4) ? ui->SR_tablePublications->item(r, 4)->text() : QString();
+                const QString doi = titleItem ? titleItem->toolTip() : QString();
+                stream << id << "," << titre << "," << auteur << ","
+                       << date << "," << revue << "," << statut << ","
+                       << doi << "\n";
+            }
+            file.close();
+            QMessageBox::information(this, "Export", "Export réussi !");
+        }
     }
 }
 
 void SmartPub::on_SR_btnStatistiques_clicked() {
-    ui->SR_stackedWidget->setCurrentIndex(2);
-    SR_updateButtonStyles();
+    QList<PublicationStatData> publications;
+    publications.reserve(ui->SR_tablePublications->rowCount());
+    for (int r = 0; r < ui->SR_tablePublications->rowCount(); ++r) {
+        if (ui->SR_tablePublications->isRowHidden(r))
+            continue;
+        PublicationStatData p;
+        p.titre = ui->SR_tablePublications->item(r, 0) ? ui->SR_tablePublications->item(r, 0)->text() : QString();
+        p.auteur = ui->SR_tablePublications->item(r, 1) ? ui->SR_tablePublications->item(r, 1)->text() : QString();
+        p.date = ui->SR_tablePublications->item(r, 2) ? ui->SR_tablePublications->item(r, 2)->text() : QString();
+        p.revue = ui->SR_tablePublications->item(r, 3) ? ui->SR_tablePublications->item(r, 3)->text() : QString();
+        p.statut = ui->SR_tablePublications->item(r, 4) ? ui->SR_tablePublications->item(r, 4)->text() : QString();
+        publications.push_back(p);
+    }
+    PubStatistiquesDialog *dialog = new PubStatistiquesDialog(publications, this);
+    dialog->setAttribute(Qt::WA_DeleteOnClose);
+    dialog->exec();
 }
 
 void SmartPub::on_SR_btnAjouterPublication_clicked() {
@@ -5962,7 +6450,9 @@ void SmartPub::on_SR_btnAjouterPublication_clicked() {
         return;
     }
 
-    const QString statutDb = SR_statutUiToDb(statut);
+    QString statutDb = ui->SR_comboBoxStatut->currentData().toString();
+    if (statutDb.isEmpty())
+        statutDb = SR_statutUiToDb(statut);
 
     if (editingPublicationRow != -1) {
         QTableWidgetItem *titItem = ui->SR_tablePublications->item(editingPublicationRow, 0);
@@ -6027,6 +6517,7 @@ void SmartPub::on_SR_btnAnnulerAjout_clicked() {
 }
 
 void SmartPub::SR_applyFilterListe() {
+    const QString searchText = ui->SR_lineEditRecherche->text().trimmed();
     QString titreFilter = SR_filterTitre->text().trimmed();
     QString auteurFilter = SR_filterAuteur->text().trimmed();
     QString statutFilter = SR_filterStatut->currentIndex() <= 0 ? QString() : SR_filterStatut->currentText();
@@ -6045,16 +6536,66 @@ void SmartPub::SR_applyFilterListe() {
             QTableWidgetItem *it = ui->SR_tablePublications->item(r, 4);
             show = it && it->text().trimmed().compare(statutFilter, Qt::CaseInsensitive) == 0;
         }
+        if (show && !searchText.isEmpty()) {
+            const QString titre = ui->SR_tablePublications->item(r, 0) ? ui->SR_tablePublications->item(r, 0)->text() : QString();
+            const QString auteur = ui->SR_tablePublications->item(r, 1) ? ui->SR_tablePublications->item(r, 1)->text() : QString();
+            const QString date = ui->SR_tablePublications->item(r, 2) ? ui->SR_tablePublications->item(r, 2)->text() : QString();
+            const QString revue = ui->SR_tablePublications->item(r, 3) ? ui->SR_tablePublications->item(r, 3)->text() : QString();
+            const QString statut = ui->SR_tablePublications->item(r, 4) ? ui->SR_tablePublications->item(r, 4)->text() : QString();
+            const QString doi = ui->SR_tablePublications->item(r, 0) ? ui->SR_tablePublications->item(r, 0)->toolTip() : QString();
+            const QString haystack = QStringLiteral("%1 %2 %3 %4 %5 %6")
+                                         .arg(titre, auteur, revue, statut, date, doi);
+            show = haystack.contains(searchText, Qt::CaseInsensitive);
+        }
         ui->SR_tablePublications->setRowHidden(r, !show);
     }
+    SR_refreshStatsForCurrentView();
 }
 
 void SmartPub::SR_reinitFilterListe() {
     SR_filterTitre->clear();
     SR_filterAuteur->clear();
     SR_filterStatut->setCurrentIndex(0);
+    ui->SR_lineEditRecherche->clear();
     for (int r = 0; r < ui->SR_tablePublications->rowCount(); r++)
         ui->SR_tablePublications->setRowHidden(r, false);
+    SR_refreshStatsForCurrentView();
+}
+
+void SmartPub::SR_refreshStatsForCurrentView() {
+    const int total = ui->SR_tablePublications->rowCount();
+    int visibles = 0;
+    int thisYear = QDate::currentDate().year();
+    int countThisYear = 0;
+    int publie = 0, soumis = 0, revision = 0, accepte = 0;
+
+    for (int r = 0; r < total; ++r) {
+        if (ui->SR_tablePublications->isRowHidden(r))
+            continue;
+        visibles++;
+        const QString ds = ui->SR_tablePublications->item(r, 2) ? ui->SR_tablePublications->item(r, 2)->text() : QString();
+        if (ds.length() >= 4 && ds.left(4).toInt() == thisYear)
+            countThisYear++;
+
+        const QString s = ui->SR_tablePublications->item(r, 4) ? ui->SR_tablePublications->item(r, 4)->text() : QString();
+        if (s.contains(QStringLiteral("Publié"), Qt::CaseInsensitive))
+            publie++;
+        else if (s.contains(QStringLiteral("Soumis"), Qt::CaseInsensitive))
+            soumis++;
+        else if (s.contains(QStringLiteral("révision"), Qt::CaseInsensitive))
+            revision++;
+        else if (s.contains(QStringLiteral("Accepté"), Qt::CaseInsensitive))
+            accepte++;
+    }
+
+    const int base = visibles > 0 ? visibles : 1;
+    ui->SR_lblTotalNumber->setText(QString::number(visibles));
+    ui->SR_lblThisYearNumber->setText(QString::number(countThisYear));
+    ui->SR_lblPlanSNumber->setText(QString::number(total));
+    ui->SR_lblStatPublie->setText(QStringLiteral("● Publié (%1%)").arg((publie * 100) / base));
+    ui->SR_lblStatSoumis->setText(QStringLiteral("● Soumis (%1%)").arg((soumis * 100) / base));
+    ui->SR_lblStatRevision->setText(QStringLiteral("● En révision (%1%)").arg((revision * 100) / base));
+    ui->SR_lblStatAccepte->setText(QStringLiteral("● Accepté (%1%)").arg((accepte * 100) / base));
 }
 
 static int SR_rowFromActionButton(QTableWidget *table, QObject *sender) {

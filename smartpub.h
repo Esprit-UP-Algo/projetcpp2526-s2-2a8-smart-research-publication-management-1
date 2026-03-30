@@ -345,6 +345,7 @@ private:
     void SR_loadSampleData();
     void SR_updateButtonStyles();
     void SR_addButtonsToRow(int row);
+    void SR_refreshStatsForCurrentView();
 
     // === MODULE FINANCES ===
     void finSetupUI();
@@ -489,6 +490,8 @@ private:
     QLineEdit *SR_filterAuteur;
     QComboBox *SR_filterStatut;
     QPushButton *SR_btnReinitFilter;
+    int SR_sortColumn;
+    Qt::SortOrder SR_sortOrder;
 
     // === VARIABLES MODULE LABORATOIRES ===
     QWidget        *labPage;

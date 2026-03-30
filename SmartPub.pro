@@ -12,12 +12,14 @@ SOURCES += \
     connection.cpp \
     main.cpp \
     smartpub.cpp \
+    publicationauth.cpp \
     promotionengine.cpp \
     matchmakingengine.cpp
 
 HEADERS += \
     connection.h \
     smartpub.h \
+    publicationauth.h \
     promotionengine.h \
     matchmakingengine.h \
     chercheur.h \
