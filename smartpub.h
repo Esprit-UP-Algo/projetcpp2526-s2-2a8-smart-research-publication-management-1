@@ -61,6 +61,7 @@
 #include <QSqlQuery>
 #include <QSqlError>
 #include <QSqlRecord>
+#include <QRegularExpression>
 // PDF Export
 #include <QPrinter>
 #include <QPainter>
@@ -482,6 +483,11 @@ private:
     QDate filtreDateDebutMin;
     QDate filtreDateDebutMax;
     bool filtresActifs;
+
+    // === WIDGET PROJETS DYNAMIQUE (formulaire ajout chercheur) ===
+    QPushButton   *cherchBtnSelectProjets;   // bouton déclencheur toggle
+    QListWidget   *cherchProjetsListWidget;  // liste inline des projets
+    QLabel        *cherchLabelProjetsSelec;  // label résumé des projets sélectionnés
 
     // === VARIABLES MODULE PUBLICATIONS ===
     int editingPublicationRow;

@@ -13,7 +13,6 @@
 #include <QScreen>
 #include <QFile>
 #include <QTextStream>
-#include <QSignalBlocker>
 
 // ============================================================================
 // FONCTIONS HELPER GLOBALES (pour module Projets)
@@ -2524,7 +2523,9 @@ SmartPub::SmartPub(QWidget *parent)
     isUserLoggedIn(false), cherchVueListeActive(true),
     cherchVueIconesActive(true), cherchChercheurSelectionne(-1),
     cherchIsLoggedIn(false), cherchOrderByClause("ID_CHERCHEUR"),
-    cherchWhereClause(), finVueListeActive(true),
+    cherchWhereClause(), cherchBtnSelectProjets(nullptr),
+    cherchProjetsListWidget(nullptr), cherchLabelProjetsSelec(nullptr),
+    finVueListeActive(true),
     finTransactionSelectionnee(-1), finTriColonne(4),
     finTriOrdre(Qt::DescendingOrder), evEventSelectionne(-1), nextProjetId(1),
     currentProjetId(-1), isEditing(false), currentSortColumn(-1),
@@ -3281,7 +3282,7 @@ void SmartPub::on_btnEvenements_clicked() {
 // ============================================================================
 
 void SmartPub::cherchSetupUI() {
-    // Bouton toggle vue (icônes/liste)
+    // ── Bouton toggle vue (icônes/liste) ──────────────────────────────────────
     cherchBtnToggleVue = new QPushButton(this);
     cherchBtnToggleVue->setObjectName("cherchBtnToggleVue");
     cherchBtnToggleVue->setFixedSize(44, 44);
@@ -3303,13 +3304,93 @@ void SmartPub::cherchSetupUI() {
             color: #3b82f6;
         }
     )");
-
-    // Insérer dans le toolbar si le layout existe
-    if (ui->horizontalLayoutToolbar) {
+    if (ui->horizontalLayoutToolbar)
         ui->horizontalLayoutToolbar->insertWidget(1, cherchBtnToggleVue);
-    }
     connect(cherchBtnToggleVue, &QPushButton::clicked, this,
             &SmartPub::on_cherchBtnToggleVue_clicked);
+
+    // ── Récupérer les widgets Projets déclarés dans le .ui ───────────────────
+    // Les widgets cherchBtnSelectProjets, cherchProjetsListWidget,
+    // cherchBtnValiderProjets et cherchLabelProjetsSelec sont maintenant
+    // définis directement dans smartpub.ui (row=3 de gridLayoutInputs).
+    // On se contente ici de récupérer leurs pointeurs et brancher les signaux.
+
+    cherchBtnSelectProjets  = ui->cherchFormFrame->findChild<QPushButton*>(
+                                  QStringLiteral("cherchBtnSelectProjets"));
+    cherchProjetsListWidget = ui->cherchFormFrame->findChild<QListWidget*>(
+                                  QStringLiteral("cherchProjetsListWidget"));
+    cherchLabelProjetsSelec = ui->cherchFormFrame->findChild<QLabel*>(
+                                  QStringLiteral("cherchLabelProjetsSelec"));
+    QPushButton *btnValiderProjets = ui->cherchFormFrame->findChild<QPushButton*>(
+                                         QStringLiteral("cherchBtnValiderProjets"));
+
+    // Sécurité : si le .ui n'a pas encore été regénéré, on sort silencieusement
+    if (!cherchBtnSelectProjets || !cherchProjetsListWidget ||
+        !cherchLabelProjetsSelec || !btnValiderProjets)
+        return;
+
+    // ── Connexion : toggle liste de projets ───────────────────────────────────
+    connect(cherchBtnSelectProjets, &QPushButton::clicked, this,
+            [this, btnValiderProjets]() {
+        bool visible = cherchProjetsListWidget->isVisible();
+        if (!visible && cherchProjetsListWidget->count() == 0) {
+            QSqlDatabase db = Connection::instance()->getDatabase();
+            if (db.isOpen()) {
+                QSqlQuery q(db);
+                if (q.exec(QStringLiteral(
+                        "SELECT CODE_PROJET, TITRE FROM PROJET ORDER BY CODE_PROJET"))) {
+                    while (q.next()) {
+                        QListWidgetItem *it = new QListWidgetItem(
+                            QString("[%1]  %2")
+                                .arg(q.value(0).toInt())
+                                .arg(q.value(1).toString()));
+                        it->setData(Qt::UserRole, q.value(0).toInt());
+                        cherchProjetsListWidget->addItem(it);
+                    }
+                }
+            }
+        }
+        cherchProjetsListWidget->setVisible(!visible);
+        btnValiderProjets->setVisible(!visible);
+        cherchBtnSelectProjets->setText(
+            visible ? QStringLiteral("▼  Sélectionner des projets…")
+                    : QStringLiteral("▲  Fermer la liste"));
+    });
+
+    // ── Limiter à 5 sélections ────────────────────────────────────────────────
+    connect(cherchProjetsListWidget, &QListWidget::itemSelectionChanged,
+            this, [this]() {
+        QList<QListWidgetItem *> sel = cherchProjetsListWidget->selectedItems();
+        if (sel.size() > 5) {
+            bool b = cherchProjetsListWidget->blockSignals(true);
+            sel.last()->setSelected(false);
+            cherchProjetsListWidget->blockSignals(b);
+            QToolTip::showText(QCursor::pos(),
+                               QStringLiteral("Maximum 5 projets autorisés"),
+                               cherchProjetsListWidget);
+        }
+    });
+
+    // ── Valider la sélection : fermer liste + mettre à jour résumé ───────────
+    connect(btnValiderProjets, &QPushButton::clicked, this,
+            [this, btnValiderProjets]() {
+        QList<QListWidgetItem *> sel = cherchProjetsListWidget->selectedItems();
+        cherchProjetsListWidget->setVisible(false);
+        btnValiderProjets->setVisible(false);
+        cherchBtnSelectProjets->setText(QStringLiteral("▼  Sélectionner des projets…"));
+        if (sel.isEmpty()) {
+            cherchLabelProjetsSelec->setText(QStringLiteral("Aucun projet sélectionné"));
+            cherchLabelProjetsSelec->setStyleSheet(
+                QStringLiteral("color: #94a3b8; font-size: 12px; "
+                                "background: transparent; border: none;"));
+        } else {
+            cherchLabelProjetsSelec->setText(
+                QString("✔  %1 projet(s) sélectionné(s)").arg(sel.size()));
+            cherchLabelProjetsSelec->setStyleSheet(
+                QStringLiteral("color: #10b981; font-size: 12px; font-weight: 600; "
+                                "background: transparent; border: none;"));
+        }
+    });
 }
 
 void SmartPub::cherchConnectSignals() {
@@ -5180,12 +5261,58 @@ void SmartPub::on_cherchBtnAjouterChercheur_clicked() {
         return;
     }
 
+    // Validation format email
+    static const QRegularExpression emailRegex(
+        QStringLiteral(R"(^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$)"));
+    if (!emailRegex.match(email).hasMatch()) {
+        QMessageBox::warning(this, "Erreur",
+                             "L'adresse email n'est pas valide.\n"
+                             "Format attendu : exemple@domaine.com");
+        ui->cherchLineEditEmail->setFocus();
+        return;
+    }
+
+    // Validation format CIN : exactement 8 chiffres
+    static const QRegularExpression cinRegex(QStringLiteral(R"(^\d{8}$)"));
+    if (!cinRegex.match(cin).hasMatch()) {
+        QMessageBox::warning(this, "Erreur",
+                             "Le CIN doit être composé exactement de 8 chiffres.");
+        ui->cherchLineEditCIN->setFocus();
+        return;
+    }
+
     QString photoPath = ":/avatar.png";
 
     QSqlDatabase db = Connection::instance()->getDatabase();
     if (!db.isOpen()) {
         QMessageBox::critical(this, "Erreur", "Connexion à la base de données impossible.");
         return;
+    }
+
+    // Vérification unicité email avant INSERT
+    {
+        QSqlQuery chkQuery(db);
+        chkQuery.prepare("SELECT COUNT(*) FROM CHERCHEUR WHERE LOWER(EMAIL) = LOWER(:email)");
+        chkQuery.bindValue(":email", email);
+        if (chkQuery.exec() && chkQuery.next() && chkQuery.value(0).toInt() > 0) {
+            QMessageBox::warning(this, "Erreur",
+                                 "Un chercheur avec cet email existe déjà.");
+            ui->cherchLineEditEmail->setFocus();
+            return;
+        }
+    }
+
+    // Vérification unicité CIN avant INSERT
+    {
+        QSqlQuery chkQuery(db);
+        chkQuery.prepare("SELECT COUNT(*) FROM CHERCHEUR WHERE CIN = :cin");
+        chkQuery.bindValue(":cin", cin);
+        if (chkQuery.exec() && chkQuery.next() && chkQuery.value(0).toInt() > 0) {
+            QMessageBox::warning(this, "Erreur",
+                                 "Un chercheur avec ce CIN existe déjà.");
+            ui->cherchLineEditCIN->setFocus();
+            return;
+        }
     }
 
     QSqlQuery query(db);
@@ -5209,6 +5336,29 @@ void SmartPub::on_cherchBtnAjouterChercheur_clicked() {
 
     QMessageBox::information(this, "Succès", "Chercheur ajouté !");
 
+    // Récupérer l'ID du nouveau chercheur via la séquence Oracle
+    int newId = -1;
+    {
+        QSqlQuery qId(db);
+        if (qId.exec("SELECT SEQ_CHERCHEUR.CURRVAL FROM DUAL") && qId.next())
+            newId = qId.value(0).toInt();
+    }
+
+    // Insérer les contributions dans CONTRIBUER si des projets ont été sélectionnés
+    if (newId > 0 && cherchProjetsListWidget) {
+        QList<QListWidgetItem*> selItems = cherchProjetsListWidget->selectedItems();
+        for (QListWidgetItem *item : selItems) {
+            int codeProjet = item->data(Qt::UserRole).toInt();
+            QSqlQuery qContrib(db);
+            qContrib.prepare(
+                "INSERT INTO CONTRIBUER (ID_CHERCHEUR, CODE_PROJET) "
+                "VALUES (:idc, :idp)");
+            qContrib.bindValue(":idc", newId);
+            qContrib.bindValue(":idp", codeProjet);
+            qContrib.exec(); // erreur silencieuse si doublon (PK déjà présente)
+        }
+    }
+
     ui->cherchLineEditNom->clear();
     ui->cherchLineEditPrenom->clear();
     ui->cherchLineEditCIN->clear();
@@ -5218,6 +5368,14 @@ void SmartPub::on_cherchBtnAjouterChercheur_clicked() {
     ui->cherchLabelPhotoHint->setStyleSheet(
         "color: #94a3b8; font-size: 12px; background: transparent; border: "
         "none;");
+    // Réinitialiser le widget projets
+    if (cherchProjetsListWidget) cherchProjetsListWidget->clearSelection();
+    if (cherchBtnSelectProjets)  cherchBtnSelectProjets->setText("Sélectionner des projets…");
+    if (cherchLabelProjetsSelec) {
+        cherchLabelProjetsSelec->setText("Aucun projet sélectionné");
+        cherchLabelProjetsSelec->setStyleSheet(
+            "color: #94a3b8; font-size: 12px; background: transparent; border: none;");
+    }
 
     on_cherchBtnVueListe_clicked();
 }
@@ -5270,36 +5428,57 @@ void SmartPub::on_cherchModifierChercheur(int id) {
     QDialog dialog(this);
     dialog.setWindowTitle(
         QString("Modifier - %1 %2").arg(data.prenom).arg(data.nom));
-    dialog.setMinimumWidth(480);
+    dialog.setMinimumSize(520, 620);
+    dialog.setMaximumSize(600, 780);
+    dialog.resize(520, 700);
     dialog.setStyleSheet("background-color: #f8fafc;");
 
-    const QString labelStyle = "color: #334155; font-size: 14px; font-weight: 600; background: transparent; border: none;";
-    const QString inputStyle = "padding: 12px; border-radius: 10px; border: 2px solid #e2e8f0; font-size: 14px; color: #1e293b; background-color: white;";
+    const QString labelStyle = "color: #334155; font-size: 13px; font-weight: 600; background: transparent; border: none;";
+    const QString inputStyle = "padding: 10px 12px; border-radius: 10px; border: 2px solid #e2e8f0; font-size: 13px; color: #1e293b; background-color: white;";
 
-    QVBoxLayout layout(&dialog);
-    layout.setSpacing(16);
-    layout.setContentsMargins(30, 30, 30, 30);
+    // Layout principal du dialogue
+    QVBoxLayout *dialogMainLayout = new QVBoxLayout(&dialog);
+    dialogMainLayout->setSpacing(0);
+    dialogMainLayout->setContentsMargins(0, 0, 0, 0);
 
-    QLabel *title = new QLabel("Modifier le chercheur");
-    title->setStyleSheet("font-size: 22px; font-weight: 700; color: #1e293b; background: transparent; border: none;");
-    layout.addWidget(title);
+    // Titre fixe en haut
+    QFrame *titleFrame = new QFrame();
+    titleFrame->setStyleSheet("background-color: white; border-bottom: 1px solid #e2e8f0;");
+    titleFrame->setFixedHeight(60);
+    QHBoxLayout *titleHL = new QHBoxLayout(titleFrame);
+    titleHL->setContentsMargins(24, 0, 24, 0);
+    QLabel *titleLbl = new QLabel("Modifier le chercheur");
+    titleLbl->setStyleSheet("font-size: 18px; font-weight: 700; color: #1e293b; background: transparent; border: none;");
+    titleHL->addWidget(titleLbl);
+    dialogMainLayout->addWidget(titleFrame);
 
+    // Zone scrollable
+    QScrollArea *scrollArea = new QScrollArea();
+    scrollArea->setWidgetResizable(true);
+    scrollArea->setFrameShape(QFrame::NoFrame);
+    scrollArea->setStyleSheet("background-color: #f8fafc; border: none;");
+    scrollArea->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+
+    QWidget *scrollContent = new QWidget();
+    scrollContent->setStyleSheet("background-color: #f8fafc;");
+    QVBoxLayout *layout = new QVBoxLayout(scrollContent);
+    layout->setSpacing(10);
+    layout->setContentsMargins(24, 16, 24, 16);
+
+    // Photo
     QString newPhotoPath = data.photoPath;
     QHBoxLayout *photoRow = new QHBoxLayout();
     photoRow->setSpacing(16);
-    QLabel *photoLabel = new QLabel(&dialog);
-    photoLabel->setFixedSize(80, 80);
+    QLabel *photoLabel = new QLabel(scrollContent);
+    photoLabel->setFixedSize(70, 70);
     photoLabel->setAlignment(Qt::AlignCenter);
     photoLabel->setStyleSheet("border: 2px solid #e2e8f0; background: transparent;");
     photoLabel->setScaledContents(false);
-    photoLabel->setMask(QRegion(0, 0, 80, 80, QRegion::Ellipse));
+    photoLabel->setMask(QRegion(0, 0, 70, 70, QRegion::Ellipse));
     QPixmap photoPix;
-    if (!newPhotoPath.isEmpty())
-        photoPix.load(newPhotoPath);
-    if (photoPix.isNull())
-        photoPix.load(":/avatar.png");
-    if (!photoPix.isNull())
-        photoLabel->setPixmap(makeCircularPixmap(photoPix, 80));
+    if (!newPhotoPath.isEmpty()) photoPix.load(newPhotoPath);
+    if (photoPix.isNull()) photoPix.load(":/avatar.png");
+    if (!photoPix.isNull()) photoLabel->setPixmap(makeCircularPixmap(photoPix, 70));
     photoRow->addWidget(photoLabel);
     QVBoxLayout *photoCol = new QVBoxLayout();
     QLabel *photoTitle = new QLabel("Photo de profil");
@@ -5307,52 +5486,75 @@ void SmartPub::on_cherchModifierChercheur(int id) {
     photoCol->addWidget(photoTitle);
     QPushButton *btnChangerPhoto = new QPushButton("Changer la photo");
     btnChangerPhoto->setStyleSheet(R"(
-        QPushButton { background-color: #e2e8f0; color: #334155; border: none; border-radius: 8px; padding: 8px 16px; font-size: 13px; font-weight: 500; }
-        QPushButton:hover { background-color: #cbd5e1; color: #1e293b; }
+        QPushButton { background-color: #e2e8f0; color: #334155; border: none; border-radius: 8px; padding: 7px 14px; font-size: 12px; font-weight: 500; }
+        QPushButton:hover { background-color: #cbd5e1; }
     )");
     connect(btnChangerPhoto, &QPushButton::clicked, &dialog, [&dialog, photoLabel, &newPhotoPath]() {
         QString path = QFileDialog::getOpenFileName(&dialog, "Choisir une photo", QDir::homePath(), "Images (*.png *.jpg *.jpeg)");
         if (path.isEmpty()) return;
         newPhotoPath = path;
         QPixmap pm(path);
-        if (!pm.isNull())
-            photoLabel->setPixmap(makeCircularPixmap(pm, 80));
+        if (!pm.isNull()) photoLabel->setPixmap(makeCircularPixmap(pm, 70));
     });
     photoCol->addWidget(btnChangerPhoto);
     photoRow->addLayout(photoCol);
-    layout.addLayout(photoRow);
+    layout->addLayout(photoRow);
 
-    QLabel *lblNom = new QLabel("Nom:");
+    // Nom + Prénom sur la même ligne
+    QHBoxLayout *nomPrenomRow = new QHBoxLayout();
+    nomPrenomRow->setSpacing(12);
+    QVBoxLayout *colNom = new QVBoxLayout();
+    QLabel *lblNom = new QLabel("Nom :");
     lblNom->setStyleSheet(labelStyle);
-    layout.addWidget(lblNom);
+    colNom->addWidget(lblNom);
     QLineEdit *editNom = new QLineEdit(data.nom);
     editNom->setStyleSheet(inputStyle);
-    layout.addWidget(editNom);
-
-    QLabel *lblPrenom = new QLabel("Prénom:");
+    colNom->addWidget(editNom);
+    nomPrenomRow->addLayout(colNom, 1);
+    QVBoxLayout *colPrenom = new QVBoxLayout();
+    QLabel *lblPrenom = new QLabel("Prénom :");
     lblPrenom->setStyleSheet(labelStyle);
-    layout.addWidget(lblPrenom);
+    colPrenom->addWidget(lblPrenom);
     QLineEdit *editPrenom = new QLineEdit(data.prenom);
     editPrenom->setStyleSheet(inputStyle);
-    layout.addWidget(editPrenom);
+    colPrenom->addWidget(editPrenom);
+    nomPrenomRow->addLayout(colPrenom, 1);
+    layout->addLayout(nomPrenomRow);
 
-    QLabel *lblEmail = new QLabel("Email:");
+    // Email + CIN sur la même ligne
+    QHBoxLayout *emailCinRow = new QHBoxLayout();
+    emailCinRow->setSpacing(12);
+    QVBoxLayout *colEmail = new QVBoxLayout();
+    QLabel *lblEmail = new QLabel("Email :");
     lblEmail->setStyleSheet(labelStyle);
-    layout.addWidget(lblEmail);
+    colEmail->addWidget(lblEmail);
     QLineEdit *editEmail = new QLineEdit(data.email);
     editEmail->setStyleSheet(inputStyle);
-    layout.addWidget(editEmail);
+    colEmail->addWidget(editEmail);
+    emailCinRow->addLayout(colEmail, 3);
+    QVBoxLayout *colCIN = new QVBoxLayout();
+    QLabel *lblCIN = new QLabel("CIN :");
+    lblCIN->setStyleSheet(labelStyle);
+    colCIN->addWidget(lblCIN);
+    QLineEdit *editCIN = new QLineEdit(data.cin);
+    editCIN->setStyleSheet(inputStyle);
+    editCIN->setPlaceholderText("8 chiffres");
+    editCIN->setMaxLength(8);
+    colCIN->addWidget(editCIN);
+    emailCinRow->addLayout(colCIN, 2);
+    layout->addLayout(emailCinRow);
 
-    QLabel *lblGrade = new QLabel("Grade:");
+    // Grade
+    QLabel *lblGrade = new QLabel("Grade :");
     lblGrade->setStyleSheet(labelStyle);
-    layout.addWidget(lblGrade);
+    layout->addWidget(lblGrade);
     QComboBox *comboGrade = new QComboBox();
     comboGrade->setStyleSheet(R"(
         QComboBox {
-            padding: 12px;
+            padding: 10px 12px;
             border-radius: 10px;
             border: 2px solid #e2e8f0;
-            font-size: 14px;
+            font-size: 13px;
             min-height: 40px;
             color: #1e293b;
             background-color: white;
@@ -5360,54 +5562,318 @@ void SmartPub::on_cherchModifierChercheur(int id) {
         QComboBox QAbstractItemView { color: #1e293b; background-color: white; }
     )");
     comboGrade->addItems({"Professeur", "Maitre de Conferences", "Docteur",
-                          "Ingenieur de Recherche", "Post-doctorant",
-                          "Doctorant"});
+                          "Ingenieur de Recherche", "Post-doctorant", "Doctorant"});
     comboGrade->setCurrentText(data.grade);
-    layout.addWidget(comboGrade);
+    layout->addWidget(comboGrade);
 
-    QPushButton *btnSave = new QPushButton("Sauvegarder");
-    btnSave->setStyleSheet(R"(
+    // ── Champ Projets ────────────────────────────────────────────────────────
+    // Charger les projets déjà affectés à ce chercheur
+    QList<int> projetsAffectes;
+    {
+        QSqlQuery qProj(db);
+        qProj.prepare("SELECT CODE_PROJET FROM CONTRIBUER WHERE ID_CHERCHEUR = :id");
+        qProj.bindValue(":id", id);
+        if (qProj.exec())
+            while (qProj.next())
+                projetsAffectes.append(qProj.value(0).toInt());
+    }
+    // Tous les projets disponibles
+    QList<QPair<int,QString>> tousLesProjets;
+    {
+        QSqlQuery qAll(db);
+        if (qAll.exec("SELECT CODE_PROJET, TITRE FROM PROJET ORDER BY CODE_PROJET"))
+            while (qAll.next())
+                tousLesProjets.append({qAll.value(0).toInt(), qAll.value(1).toString()});
+    }
+
+    QLabel *lblProjets = new QLabel("Projets (max 5) :");
+    lblProjets->setStyleSheet(labelStyle);
+    layout->addWidget(lblProjets);
+
+    // Bouton déclencheur — même style que comboGrade
+    QPushButton *btnProjetsModif = new QPushButton(scrollContent);
+    btnProjetsModif->setCursor(Qt::PointingHandCursor);
+    btnProjetsModif->setStyleSheet(R"(
         QPushButton {
-            background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #3b82f6, stop:1 #10b981);
-            color: white;
-            border: none;
+            background-color: white;
+            border: 2px solid #e2e8f0;
             border-radius: 10px;
-            padding: 14px;
-            font-size: 15px;
+            padding: 10px 12px;
+            font-size: 13px;
+            color: #334155;
+            min-height: 40px;
+            text-align: left;
+        }
+        QPushButton:hover { border-color: #cbd5e1; }
+        QPushButton:pressed { border-color: #3b82f6; background-color: #eff6ff; }
+    )");
+    btnProjetsModif->setText(
+        projetsAffectes.isEmpty()
+            ? "▼  Sélectionner des projets…"
+            : QString("▼  %1 projet(s) affecté(s)").arg(projetsAffectes.size()));
+    layout->addWidget(btnProjetsModif);
+
+    // ListWidget inline (masqué par défaut)
+    QListWidget *listProjetsModif = new QListWidget(scrollContent);
+    listProjetsModif->setSelectionMode(QAbstractItemView::MultiSelection);
+    listProjetsModif->setFixedHeight(160);
+    listProjetsModif->setVisible(false);
+    listProjetsModif->setStyleSheet(R"(
+        QListWidget {
+            border: 2px solid #3b82f6;
+            border-radius: 10px;
+            background-color: white;
+            font-size: 13px;
+            color: #334155;
+            outline: none;
+        }
+        QListWidget::item {
+            padding: 8px 12px;
+            border-bottom: 1px solid #f1f5f9;
+        }
+        QListWidget::item:last { border-bottom: none; }
+        QListWidget::item:selected {
+            background-color: #eff6ff;
+            color: #1d4ed8;
             font-weight: 600;
         }
+        QListWidget::item:hover { background-color: #f8fafc; }
+    )");
+    // Peupler et pré-sélectionner
+    for (auto &p : tousLesProjets) {
+        QListWidgetItem *item = new QListWidgetItem(
+            QString("[%1]  %2").arg(p.first).arg(p.second));
+        item->setData(Qt::UserRole, p.first);
+        listProjetsModif->addItem(item);
+        if (projetsAffectes.contains(p.first))
+            item->setSelected(true);
+    }
+    layout->addWidget(listProjetsModif);
+
+    // Limiter à 5 sélections
+    connect(listProjetsModif, &QListWidget::itemSelectionChanged,
+            &dialog, [listProjetsModif]() {
+        QList<QListWidgetItem*> sel = listProjetsModif->selectedItems();
+        if (sel.size() > 5) {
+            bool b = listProjetsModif->blockSignals(true);
+            sel.last()->setSelected(false);
+            listProjetsModif->blockSignals(b);
+            QToolTip::showText(QCursor::pos(),
+                "Maximum 5 projets autorisés", listProjetsModif);
+        }
+    });
+
+    // Bouton valider projets
+    QPushButton *btnValiderModif = new QPushButton("✔  Valider la sélection");
+    btnValiderModif->setCursor(Qt::PointingHandCursor);
+    btnValiderModif->setVisible(false);
+    btnValiderModif->setFixedHeight(38);
+    btnValiderModif->setStyleSheet(R"(
+        QPushButton {
+            background: qlineargradient(x1:0,y1:0,x2:1,y2:0,
+                stop:0 #3b82f6, stop:1 #10b981);
+            color: white; border: none; border-radius: 8px;
+            font-size: 13px; font-weight: 600;
+        }
         QPushButton:hover {
-            background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #2563eb, stop:1 #059669);
+            background: qlineargradient(x1:0,y1:0,x2:1,y2:0,
+                stop:0 #2563eb, stop:1 #059669);
+        }
+    )");
+    layout->addWidget(btnValiderModif);
+
+    // Label résumé projets
+    QLabel *lblProjetsSelec = new QLabel(scrollContent);
+    lblProjetsSelec->setWordWrap(true);
+    if (projetsAffectes.isEmpty()) {
+        lblProjetsSelec->setText("Aucun projet sélectionné");
+        lblProjetsSelec->setStyleSheet(
+            "color: #94a3b8; font-size: 12px; background: transparent; border: none;");
+    } else {
+        QStringList titresCourants;
+        for (int pid : projetsAffectes)
+            for (auto &p : tousLesProjets)
+                if (p.first == pid) { titresCourants << QString("[%1] %2").arg(p.first).arg(p.second); break; }
+        lblProjetsSelec->setText("✔  " + titresCourants.join("  |  "));
+        lblProjetsSelec->setStyleSheet(
+            "color: #10b981; font-size: 12px; font-weight: 600; "
+            "background: transparent; border: none;");
+    }
+    layout->addWidget(lblProjetsSelec);
+
+    // Toggle liste
+    connect(btnProjetsModif, &QPushButton::clicked, &dialog,
+            [listProjetsModif, btnValiderModif, btnProjetsModif, scrollArea]() {
+        bool visible = listProjetsModif->isVisible();
+        listProjetsModif->setVisible(!visible);
+        btnValiderModif->setVisible(!visible);
+        btnProjetsModif->setText(visible
+            ? "▼  Sélectionner des projets…"
+            : "▲  Fermer la liste");
+        // Faire défiler jusqu'au bas pour montrer la liste
+        if (!visible)
+            QTimer::singleShot(50, scrollArea,
+                [scrollArea](){ scrollArea->verticalScrollBar()->setValue(
+                    scrollArea->verticalScrollBar()->maximum()); });
+    });
+
+    // Valider sélection
+    connect(btnValiderModif, &QPushButton::clicked, &dialog,
+            [listProjetsModif, btnValiderModif, btnProjetsModif, lblProjetsSelec]() {
+        listProjetsModif->setVisible(false);
+        btnValiderModif->setVisible(false);
+        QList<QListWidgetItem*> sel = listProjetsModif->selectedItems();
+        if (sel.isEmpty()) {
+            btnProjetsModif->setText("▼  Sélectionner des projets…");
+            lblProjetsSelec->setText("Aucun projet sélectionné");
+            lblProjetsSelec->setStyleSheet(
+                "color: #94a3b8; font-size: 12px; background: transparent; border: none;");
+        } else {
+            btnProjetsModif->setText(
+                QString("▼  %1 projet(s) sélectionné(s)").arg(sel.size()));
+            QStringList t;
+            for (auto *it : sel) t << it->text();
+            lblProjetsSelec->setText("✔  " + t.join("  |  "));
+            lblProjetsSelec->setStyleSheet(
+                "color: #10b981; font-size: 12px; font-weight: 600; "
+                "background: transparent; border: none;");
+        }
+    });
+
+    scrollArea->setWidget(scrollContent);
+    dialogMainLayout->addWidget(scrollArea, 1);
+
+    // Footer fixe avec bouton Sauvegarder
+    QFrame *footerFrame = new QFrame();
+    footerFrame->setStyleSheet("background-color: white; border-top: 1px solid #e2e8f0;");
+    footerFrame->setFixedHeight(62);
+    QHBoxLayout *footerHL = new QHBoxLayout(footerFrame);
+    footerHL->setContentsMargins(24, 0, 24, 0);
+    footerHL->addStretch();
+    QPushButton *btnSave = new QPushButton("💾  Sauvegarder");
+    btnSave->setFixedHeight(42);
+    btnSave->setCursor(Qt::PointingHandCursor);
+    btnSave->setStyleSheet(R"(
+        QPushButton {
+            background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                stop:0 #3b82f6, stop:1 #10b981);
+            color: white; border: none; border-radius: 10px;
+            padding: 0 32px; font-size: 14px; font-weight: 600;
+        }
+        QPushButton:hover {
+            background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                stop:0 #2563eb, stop:1 #059669);
         }
     )");
     connect(btnSave, &QPushButton::clicked, &dialog, &QDialog::accept);
-    layout.addWidget(btnSave);
+    footerHL->addWidget(btnSave);
+    dialogMainLayout->addWidget(footerFrame);
 
     if (dialog.exec() == QDialog::Accepted) {
-        QString newNom = editNom->text().trimmed();
+        QString newNom    = editNom->text().trimmed();
         QString newPrenom = editPrenom->text().trimmed();
-        QString newEmail = editEmail->text().trimmed();
-        QString newGrade = comboGrade->currentText().trimmed();
-        if (newNom.isEmpty() || newPrenom.isEmpty() || newEmail.isEmpty() || newGrade.isEmpty()) {
+        QString newEmail  = editEmail->text().trimmed();
+        QString newCIN    = editCIN->text().trimmed();
+        QString newGrade  = comboGrade->currentText().trimmed();
+
+        // Vérification champs obligatoires
+        if (newNom.isEmpty() || newPrenom.isEmpty() || newEmail.isEmpty()
+                || newCIN.isEmpty() || newGrade.isEmpty()) {
             QMessageBox::warning(this, "Erreur", "Tous les champs sont obligatoires.");
             return;
         }
+
+        // Validation format email
+        static const QRegularExpression emailRegex(
+            QStringLiteral(R"(^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$)"));
+        if (!emailRegex.match(newEmail).hasMatch()) {
+            QMessageBox::warning(this, "Erreur",
+                                 "L'adresse email n'est pas valide.\n"
+                                 "Format attendu : exemple@domaine.com");
+            return;
+        }
+
+        // Validation format CIN : exactement 8 chiffres
+        static const QRegularExpression cinRegex(QStringLiteral(R"(^\d{8}$)"));
+        if (!cinRegex.match(newCIN).hasMatch()) {
+            QMessageBox::warning(this, "Erreur",
+                                 "Le CIN doit être composé exactement de 8 chiffres.");
+            return;
+        }
+
+        // Unicité email (exclure le chercheur courant)
+        {
+            QSqlQuery chkQuery(db);
+            chkQuery.prepare("SELECT COUNT(*) FROM CHERCHEUR "
+                             "WHERE LOWER(EMAIL) = LOWER(:email) AND ID_CHERCHEUR <> :id");
+            chkQuery.bindValue(":email", newEmail);
+            chkQuery.bindValue(":id", id);
+            if (chkQuery.exec() && chkQuery.next() && chkQuery.value(0).toInt() > 0) {
+                QMessageBox::warning(this, "Erreur",
+                                     "Un autre chercheur possède déjà cet email.");
+                return;
+            }
+        }
+
+        // Unicité CIN (exclure le chercheur courant)
+        {
+            QSqlQuery chkQuery(db);
+            chkQuery.prepare("SELECT COUNT(*) FROM CHERCHEUR "
+                             "WHERE CIN = :cin AND ID_CHERCHEUR <> :id");
+            chkQuery.bindValue(":cin", newCIN);
+            chkQuery.bindValue(":id", id);
+            if (chkQuery.exec() && chkQuery.next() && chkQuery.value(0).toInt() > 0) {
+                QMessageBox::warning(this, "Erreur",
+                                     "Un autre chercheur possède déjà ce CIN.");
+                return;
+            }
+        }
+
         QSqlQuery updateQuery(db);
-        updateQuery.prepare("UPDATE CHERCHEUR SET NOM = :nom, PRENOM = :prenom, EMAIL = :email, GRADE = :grade, PHOTO_PROFIL = :photo_profil WHERE ID_CHERCHEUR = :id");
-        updateQuery.bindValue(":nom", newNom);
-        updateQuery.bindValue(":prenom", newPrenom);
-        updateQuery.bindValue(":email", newEmail);
-        updateQuery.bindValue(":grade", newGrade);
-        updateQuery.bindValue(":photo_profil", newPhotoPath.isEmpty() ? QString(":/avatar.png") : newPhotoPath);
+        updateQuery.prepare(
+            "UPDATE CHERCHEUR SET NOM = :nom, PRENOM = :prenom, EMAIL = :email, "
+            "CIN = :cin, GRADE = :grade, PHOTO_PROFIL = :photo_profil "
+            "WHERE ID_CHERCHEUR = :id");
+        updateQuery.bindValue(":nom",         newNom);
+        updateQuery.bindValue(":prenom",      newPrenom);
+        updateQuery.bindValue(":email",       newEmail);
+        updateQuery.bindValue(":cin",         newCIN);
+        updateQuery.bindValue(":grade",       newGrade);
+        updateQuery.bindValue(":photo_profil",
+            newPhotoPath.isEmpty() ? QString(":/avatar.png") : newPhotoPath);
         updateQuery.bindValue(":id", id);
+
         if (!updateQuery.exec()) {
             QString err = updateQuery.lastError().text();
             if (err.contains("unique") || err.contains("UK_CHERCHEUR"))
-                QMessageBox::warning(this, "Erreur", "Un chercheur avec cet email existe déjà.");
+                QMessageBox::warning(this, "Erreur",
+                                     "Un chercheur avec cet email ou ce CIN existe déjà.");
             else
-                QMessageBox::critical(this, "Erreur", "Échec de la modification : " + err);
+                QMessageBox::critical(this, "Erreur",
+                                      "Échec de la modification : " + err);
             return;
         }
+
+        // ── Mettre à jour les contributions dans CONTRIBUER ───────────────────
+        // 1) Supprimer toutes les contributions existantes
+        QSqlQuery delContrib(db);
+        delContrib.prepare("DELETE FROM CONTRIBUER WHERE ID_CHERCHEUR = :id");
+        delContrib.bindValue(":id", id);
+        delContrib.exec();
+
+        // 2) Réinsérer les projets nouvellement sélectionnés
+        QList<QListWidgetItem*> selItems = listProjetsModif->selectedItems();
+        for (QListWidgetItem *item : selItems) {
+            int codeProjet = item->data(Qt::UserRole).toInt();
+            QSqlQuery insContrib(db);
+            insContrib.prepare(
+                "INSERT INTO CONTRIBUER (ID_CHERCHEUR, CODE_PROJET) "
+                "VALUES (:idc, :idp)");
+            insContrib.bindValue(":idc", id);
+            insContrib.bindValue(":idp", codeProjet);
+            insContrib.exec();
+        }
+
         cherchAfficherListeChercheurs();
     }
 }
@@ -5466,31 +5932,27 @@ void SmartPub::on_cherchVoirDetailsChercheur(int id) {
     if (data.photoPath.isEmpty()) data.photoPath = ":/avatar.png";
     data.age = 0;
 
-    // ── Charger les projets depuis CONTRIBUER ─────────────────────────────────
-    QSqlQuery qProj(db);
-    qProj.prepare("SELECT CODE_PROJET FROM CONTRIBUER WHERE ID_CHERCHEUR = :id");
-    qProj.bindValue(":id", id);
-    if (qProj.exec()) {
-        while (qProj.next())
-            data.projetsIds.append(qProj.value(0).toInt());
+    // ── Charger les projets depuis CONTRIBUER (jointure directe) ─────────────
+    QList<QString> projetsTitres;
+    {
+        QSqlQuery qProj(db);
+        qProj.prepare(
+            "SELECT p.CODE_PROJET, p.TITRE "
+            "FROM CONTRIBUER c "
+            "INNER JOIN PROJET p ON p.CODE_PROJET = c.CODE_PROJET "
+            "WHERE c.ID_CHERCHEUR = :id "
+            "ORDER BY p.CODE_PROJET");
+        qProj.bindValue(":id", id);
+        if (qProj.exec()) {
+            while (qProj.next()) {
+                data.projetsIds.append(qProj.value(0).toInt());
+                projetsTitres.append(qProj.value(1).toString());
+            }
+        }
     }
 
     // ── Calculer la carrière depuis le nb de projets et le grade ─────────────
     data.carriere = cherchDeterminerCarriere(data.projetsIds.size(), data.grade);
-
-    // ── Récupérer les titres des projets pour affichage et PDF ────────────────
-    QList<QString> projetsTitres;
-    if (!data.projetsIds.isEmpty()) {
-        for (int pid : data.projetsIds) {
-            QSqlQuery qT(db);
-            qT.prepare("SELECT TITRE FROM PROJET WHERE CODE_PROJET = :pid");
-            qT.bindValue(":pid", pid);
-            if (qT.exec() && qT.next())
-                projetsTitres.append(qT.value(0).toString());
-            else
-                projetsTitres.append(QString("Projet #%1").arg(pid));
-        }
-    }
 
     // ═══════════════════════════════════════════════════════════════════════════
     // DIALOGUE DE DÉTAILS
