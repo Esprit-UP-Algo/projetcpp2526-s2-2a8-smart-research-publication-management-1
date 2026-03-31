@@ -12,10 +12,13 @@ SOURCES += \
     connection.cpp \
     main.cpp \
     smartpub.cpp \
+<<<<<<< HEAD
     ai_service.cpp \
     reminder.cpp \
     finance.cpp \
     evenement.cpp \
+=======
+>>>>>>> 6e05745b67fc1f6812746e031777202ee10efaa6
     publicationauth.cpp \
     promotionengine.cpp \
     matchmakingengine.cpp
@@ -23,8 +26,11 @@ SOURCES += \
 HEADERS += \
     connection.h \
     smartpub.h \
+<<<<<<< HEAD
     ai_service.h \
     reminder.h \
+=======
+>>>>>>> 6e05745b67fc1f6812746e031777202ee10efaa6
     publicationauth.h \
     promotionengine.h \
     matchmakingengine.h \
