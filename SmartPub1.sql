@@ -233,5 +233,10 @@ CREATE INDEX IDX_PUBLICATION_DATE ON PUBLICATION (DATE_PUBLICATION);
 CREATE INDEX IDX_PROJET_DATES ON PROJET (DATE_DEBUT, DATE_FIN);
 CREATE INDEX IDX_FINANCE_DATE ON FINANCE (DATE_TRANSACTION);
 
+-- Modifications
+alter table "SMARTPUB"."PARTICIPER" drop column "ROLE_LAB" cascade constraints;
+alter table "SMARTPUB"."CONTRIBUER" drop column "DATE_DEBUT_CONTRIB" cascade constraints;
+alter table "SMARTPUB"."CONTRIBUER" drop column "ROLE_CONTRIB" cascade constraints;
+
 -- Fin du script
 COMMIT;  

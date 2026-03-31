@@ -6,9 +6,14 @@
 int main(int argc, char *argv[])
 {
     QApplication a(argc, argv);
-    SmartPub w;  // Changed from MainWindow to SmartPub
+    
+    // Establishing connection BEFORE creating SmartPub 
+    // to fix data not loading on launch
     Connection* c = Connection::instance();
     bool test=c->createConnect();
+    
+    SmartPub w;  // Changed from MainWindow to SmartPub
+    
     if(test)
     {w.show();
         QMessageBox::information(nullptr, QObject::tr("database is open"),
@@ -18,8 +23,8 @@ int main(int argc, char *argv[])
     }
     else
         QMessageBox::critical(nullptr, QObject::tr("database is not open"),
-                              QObject::tr("connection failed.\n"
-                                          "Click Cancel to exit."), QMessageBox::Cancel);
+                               QObject::tr("connection failed.\n"
+                                           "Click Cancel to exit."), QMessageBox::Cancel);
 
 
 

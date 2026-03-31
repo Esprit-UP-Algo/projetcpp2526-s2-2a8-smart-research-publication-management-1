@@ -1,25 +1,60 @@
 #include "smartpub.h"
 #include "ui_smartpub.h"
 #include "connection.h"
+#include "publicationauth.h"
+#include "promotionengine.h"
+#include "matchmakingengine.h"
+#include "ai_service.h"
+#include "reminder.h"
+#include <algorithm>
+#include <QTableWidgetItem>
 #include <QApplication>
+#include <QDateTime>
 #include <QRegion>
 #include <QProcess>
 #include <QScreen>
+#include <QFile>
+#include <QTextStream>
 
 // ============================================================================
 // FONCTIONS HELPER GLOBALES (pour module Projets)
 // ============================================================================
 
 static QString getEtatColor(const QString &etat) {
-    if (etat == "Actif")
-        return "#10b981";
-    if (etat == "Terminé")
-        return "#3b82f6";
-    if (etat == "En pause")
-        return "#f59e0b";
-    if (etat == "Planifié")
-        return "#8b5cf6";
-    return "#64748b";
+    const QString t = etat.trimmed();
+    if (t == QLatin1String("en_cours") || t == QLatin1String("Actif") || t == QLatin1String("En cours"))
+        return QStringLiteral("#10b981");
+    if (t == QLatin1String("termine") || t == QLatin1String("Terminé"))
+        return QStringLiteral("#3b82f6");
+    if (t == QLatin1String("suspendu") || t == QLatin1String("En pause") || t == QLatin1String("Suspendu"))
+        return QStringLiteral("#f59e0b");
+    if (t == QLatin1String("annule") || t == QLatin1String("Planifié") || t == QLatin1String("Annulé"))
+        return QStringLiteral("#8b5cf6");
+    return QStringLiteral("#64748b");
+}
+
+static QString projEtatDbToUi(const QString &db) {
+    const QString d = db.trimmed().toLower();
+    if (d == QLatin1String("en_cours"))
+        return QStringLiteral("En cours");
+    if (d == QLatin1String("termine"))
+        return QStringLiteral("Terminé");
+    if (d == QLatin1String("suspendu"))
+        return QStringLiteral("Suspendu");
+    if (d == QLatin1String("annule"))
+        return QStringLiteral("Annulé");
+    return db;
+}
+
+static double projProgressionStrToDouble(const QString &s) {
+    QString t = s.trimmed();
+    if (t.endsWith(QLatin1Char('%')))
+        t.chop(1);
+    bool ok = false;
+    double v = t.toDouble(&ok);
+    if (!ok)
+        return 0.0;
+    return qBound(0.0, v, 100.0);
 }
 
 static QString getProgressionColor(int valeur) {
@@ -63,6 +98,273 @@ static QPixmap makeCircularPixmap(const QPixmap &src, int size) {
     painter.end();
     return result;
 }
+
+// Publications : libellés UI (combo) <-> valeurs CHECK Oracle (SmartPub1.sql)
+static QString SR_statutUiToDb(const QString &ui) {
+    const QString t = ui.trimmed();
+    if (t.compare(QLatin1String("Publié"), Qt::CaseInsensitive) == 0)
+        return QStringLiteral("publie");
+    if (t.compare(QLatin1String("Soumis"), Qt::CaseInsensitive) == 0)
+        return QStringLiteral("soumis");
+    if (t.contains(QLatin1String("révision"), Qt::CaseInsensitive) ||
+        t.contains(QLatin1String("revision"), Qt::CaseInsensitive))
+        return QStringLiteral("en_revision");
+    if (t.compare(QLatin1String("Accepté"), Qt::CaseInsensitive) == 0)
+        return QStringLiteral("accepte");
+    if (t.compare(QLatin1String("Rejeté"), Qt::CaseInsensitive) == 0)
+        return QStringLiteral("rejete");
+    return QStringLiteral("soumis");
+}
+
+static QString SR_statutDbToUi(const QString &db) {
+    const QString d = db.trimmed().toLower();
+    if (d == QLatin1String("publie"))
+        return QStringLiteral("Publié");
+    if (d == QLatin1String("soumis"))
+        return QStringLiteral("Soumis");
+    if (d == QLatin1String("en_revision"))
+        return QStringLiteral("En révision");
+    if (d == QLatin1String("accepte"))
+        return QStringLiteral("Accepté");
+    if (d == QLatin1String("rejete"))
+        return QStringLiteral("Rejeté");
+    return db;
+}
+
+struct PublicationStatData {
+    QString titre;
+    QString auteur;
+    QString date;
+    QString revue;
+    QString statut;
+};
+
+class PubStatistiquesDialog : public QDialog {
+public:
+    explicit PubStatistiquesDialog(const QList<PublicationStatData> &publications, QWidget *parent = nullptr)
+        : QDialog(parent), m_publications(publications), labelTotal(nullptr), labelCetteAnnee(nullptr),
+          labelNbRevues(nullptr), labelNbPublications(nullptr), chartStatutView(nullptr), chartRevueView(nullptr) {
+        setWindowTitle("Statistiques Publications");
+        setMinimumSize(900, 650);
+        resize(1000, 700);
+        setStyleSheet(
+            "QDialog { background-color: #f1f5f9; font-family: 'Segoe UI', sans-serif; }"
+            "QLabel { color: #334155; }"
+            "QGroupBox { font-weight: bold; border: 1px solid #e2e8f0; border-radius: 12px;"
+            " margin-top: 15px; padding-top: 15px; background-color: white; }"
+            "QGroupBox::title { subcontrol-origin: margin; left: 15px; padding: 0 10px;"
+            " color: #3b82f6; font-size: 14px; }"
+            "QPushButton { background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 #3b82f6, stop:1 #10b981);"
+            " color: white; border: none; border-radius: 10px; padding: 12px 24px; font-size: 14px; font-weight: 600; }"
+            "QPushButton:hover { background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 #2563eb, stop:1 #059669); }");
+        setupUI();
+        calculerStatistiques();
+        creerGraphiques();
+    }
+
+private:
+    void setupUI() {
+        QVBoxLayout *mainLayout = new QVBoxLayout(this);
+        mainLayout->setSpacing(0);
+        mainLayout->setContentsMargins(0, 0, 0, 0);
+
+        QFrame *headerFrame = new QFrame();
+        headerFrame->setStyleSheet(
+            "QFrame { background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 #3b82f6, stop:1 #10b981); border: none; }");
+        headerFrame->setFixedHeight(100);
+        QVBoxLayout *headerLayout = new QVBoxLayout(headerFrame);
+        headerLayout->setContentsMargins(30, 20, 30, 20);
+        QLabel *titleLabel = new QLabel("📊 Statistiques Publications");
+        titleLabel->setStyleSheet("color: white; font-size: 28px; font-weight: bold;");
+        QLabel *subtitleLabel = new QLabel("Tableau de bord des publications");
+        subtitleLabel->setStyleSheet("color: rgba(255,255,255,0.9); font-size: 14px;");
+        headerLayout->addWidget(titleLabel);
+        headerLayout->addWidget(subtitleLabel);
+        mainLayout->addWidget(headerFrame);
+
+        QScrollArea *scrollArea = new QScrollArea();
+        scrollArea->setWidgetResizable(true);
+        scrollArea->setStyleSheet("background-color: #f1f5f9;");
+
+        QWidget *contentWidget = new QWidget();
+        QVBoxLayout *contentLayout = new QVBoxLayout(contentWidget);
+        contentLayout->setSpacing(25);
+        contentLayout->setContentsMargins(30, 30, 30, 30);
+
+        QHBoxLayout *kpiLayout = new QHBoxLayout();
+        kpiLayout->setSpacing(20);
+        auto createKPI = [](const QString &icon, const QString &value, const QString &label,
+                            const QString &color, QLabel **valueLabelPtr) -> QFrame * {
+            QFrame *kpi = new QFrame();
+            kpi->setStyleSheet("QFrame { background-color: white; border-radius: 12px; border: 1px solid #e2e8f0; }");
+            kpi->setFixedHeight(120);
+            QVBoxLayout *layout = new QVBoxLayout(kpi);
+            layout->setSpacing(5);
+            QLabel *iconLabel = new QLabel(icon);
+            iconLabel->setStyleSheet("font-size: 24px;");
+            iconLabel->setAlignment(Qt::AlignCenter);
+            QLabel *valueLabel = new QLabel(value);
+            valueLabel->setStyleSheet(QString("font-size: 28px; font-weight: bold; color: %1;").arg(color));
+            valueLabel->setAlignment(Qt::AlignCenter);
+            *valueLabelPtr = valueLabel;
+            QLabel *textLabel = new QLabel(label);
+            textLabel->setStyleSheet("font-size: 13px; color: #64748b;");
+            textLabel->setAlignment(Qt::AlignCenter);
+            layout->addWidget(iconLabel);
+            layout->addWidget(valueLabel);
+            layout->addWidget(textLabel);
+            return kpi;
+        };
+
+        kpiLayout->addWidget(createKPI("📚", "0", "Total publications", "#3b82f6", &labelTotal));
+        kpiLayout->addWidget(createKPI("🗓️", "0", "Cette année", "#10b981", &labelCetteAnnee));
+        kpiLayout->addWidget(createKPI("🧾", "0", "Revues distinctes", "#8b5cf6", &labelNbRevues));
+        kpiLayout->addWidget(createKPI("👤", "0", "Nb. Publications", "#f59e0b", &labelNbPublications));
+        contentLayout->addLayout(kpiLayout);
+
+        QHBoxLayout *chartsLayout = new QHBoxLayout();
+        chartsLayout->setSpacing(20);
+
+        QGroupBox *chartStatutGroup = new QGroupBox("Répartition par Statut");
+        QVBoxLayout *chartStatutLayout = new QVBoxLayout(chartStatutGroup);
+        chartStatutView = new QChartView();
+        chartStatutView->setMinimumHeight(300);
+        chartStatutView->setRenderHint(QPainter::Antialiasing);
+        chartStatutLayout->addWidget(chartStatutView);
+        chartsLayout->addWidget(chartStatutGroup, 1);
+
+        QGroupBox *chartRevueGroup = new QGroupBox("Publications par Revue");
+        QVBoxLayout *chartRevueLayout = new QVBoxLayout(chartRevueGroup);
+        chartRevueView = new QChartView();
+        chartRevueView->setMinimumHeight(300);
+        chartRevueView->setRenderHint(QPainter::Antialiasing);
+        chartRevueLayout->addWidget(chartRevueView);
+        chartsLayout->addWidget(chartRevueGroup, 1);
+
+        contentLayout->addLayout(chartsLayout);
+
+        QFrame *footerFrame = new QFrame();
+        footerFrame->setStyleSheet("background-color: white; border-top: 1px solid #e2e8f0;");
+        footerFrame->setFixedHeight(70);
+        QHBoxLayout *footerLayout = new QHBoxLayout(footerFrame);
+        footerLayout->addStretch();
+        QPushButton *closeButton = new QPushButton("Fermer");
+        closeButton->setFixedSize(140, 45);
+        closeButton->setCursor(Qt::PointingHandCursor);
+        connect(closeButton, &QPushButton::clicked, this, &QDialog::accept);
+        footerLayout->addWidget(closeButton);
+        mainLayout->addWidget(footerFrame);
+
+        scrollArea->setWidget(contentWidget);
+        mainLayout->addWidget(scrollArea, 1);
+    }
+
+    void calculerStatistiques() {
+        const int total = m_publications.size();
+        const int currentYear = QDate::currentDate().year();
+        int thisYear = 0;
+        QSet<QString> revues;
+        for (const PublicationStatData &p : m_publications) {
+            if (p.date.left(4).toInt() == currentYear)
+                thisYear++;
+            if (!p.revue.trimmed().isEmpty())
+                revues.insert(p.revue.trimmed());
+        }
+
+        if (labelTotal)
+            labelTotal->setText(QString::number(total));
+        if (labelCetteAnnee)
+            labelCetteAnnee->setText(QString::number(thisYear));
+        if (labelNbRevues)
+            labelNbRevues->setText(QString::number(revues.size()));
+        if (labelNbPublications)
+            labelNbPublications->setText(QString::number(total));
+    }
+
+    void creerGraphiques() {
+        QMap<QString, int> statutCounts;
+        for (const PublicationStatData &p : m_publications)
+            statutCounts[p.statut.trimmed().isEmpty() ? QStringLiteral("Inconnu") : p.statut.trimmed()]++;
+
+        QPieSeries *seriesStatut = new QPieSeries();
+        if (statutCounts.isEmpty())
+            statutCounts.insert(QStringLiteral("Aucune donnée"), 1);
+        for (auto it = statutCounts.constBegin(); it != statutCounts.constEnd(); ++it)
+            seriesStatut->append(it.key(), it.value());
+        for (int i = 0; i < seriesStatut->count(); ++i) {
+            seriesStatut->slices().at(i)->setLabelVisible(true);
+            const QString name = seriesStatut->slices().at(i)->label();
+            seriesStatut->slices().at(i)->setLabel(
+                QString("%1 (%2%)").arg(name).arg(seriesStatut->slices().at(i)->percentage() * 100, 0, 'f', 1));
+        }
+        QChart *chartStatut = new QChart();
+        chartStatut->addSeries(seriesStatut);
+        chartStatut->setAnimationOptions(QChart::SeriesAnimations);
+        chartStatut->setBackgroundBrush(QBrush(QColor("transparent")));
+        chartStatut->legend()->setVisible(true);
+        chartStatutView->setChart(chartStatut);
+
+        QMap<QString, int> byRevue;
+        for (const PublicationStatData &p : m_publications) {
+            const QString revue = p.revue.trimmed().isEmpty() ? QStringLiteral("Sans revue") : p.revue.trimmed();
+            byRevue[revue]++;
+        }
+        if (byRevue.isEmpty())
+            byRevue.insert(QStringLiteral("Aucune donnée"), 0);
+
+        QVector<QPair<QString, int>> revueData;
+        revueData.reserve(byRevue.size());
+        for (auto it = byRevue.constBegin(); it != byRevue.constEnd(); ++it)
+            revueData.push_back(qMakePair(it.key(), it.value()));
+        std::sort(revueData.begin(), revueData.end(),
+                  [](const QPair<QString, int> &a, const QPair<QString, int> &b) {
+                      return a.second > b.second;
+                  });
+
+        const int maxBars = 8;
+        QBarSet *barSet = new QBarSet("Publications");
+        QStringList categories;
+        int maxValue = 0;
+        for (int i = 0; i < revueData.size() && i < maxBars; ++i) {
+            barSet->append(revueData[i].second);
+            categories << revueData[i].first;
+            maxValue = qMax(maxValue, revueData[i].second);
+        }
+        barSet->setColor(QColor("#3b82f6"));
+        barSet->setLabelColor(QColor("#1e293b"));
+        QBarSeries *barSeries = new QBarSeries();
+        barSeries->append(barSet);
+        barSeries->setLabelsVisible(true);
+        barSeries->setLabelsFormat("@value");
+        barSeries->setLabelsPosition(QAbstractBarSeries::LabelsOutsideEnd);
+
+        QChart *chartRevue = new QChart();
+        chartRevue->addSeries(barSeries);
+        chartRevue->setTitle(QStringLiteral("Top revues (%1)").arg(categories.size()));
+        chartRevue->setAnimationOptions(QChart::SeriesAnimations);
+        chartRevue->setBackgroundBrush(QBrush(QColor("transparent")));
+        QBarCategoryAxis *axisX = new QBarCategoryAxis();
+        axisX->append(categories);
+        chartRevue->addAxis(axisX, Qt::AlignBottom);
+        barSeries->attachAxis(axisX);
+        QValueAxis *axisY = new QValueAxis();
+        axisY->setRange(0, qMax(1, maxValue + 1));
+        axisY->setLabelFormat("%d");
+        axisY->setTickCount(qMin(10, qMax(2, maxValue + 2)));
+        chartRevue->addAxis(axisY, Qt::AlignLeft);
+        barSeries->attachAxis(axisY);
+        chartRevue->legend()->setVisible(false);
+        chartRevueView->setChart(chartRevue);
+    }
+
+    QList<PublicationStatData> m_publications;
+    QLabel *labelTotal;
+    QLabel *labelCetteAnnee;
+    QLabel *labelNbRevues;
+    QLabel *labelNbPublications;
+    QChartView *chartStatutView;
+    QChartView *chartRevueView;
+};
 
 
 // ============================================================================
@@ -130,6 +432,14 @@ void LoginDialog::setupAccounts()
         "Projets",
         UserRole::Admin,
         "Gestionnaire Projets"
+    });
+
+    accounts.append({
+        "laboratoires@smartpub.com",
+        "lab123",
+        "Laboratoires",
+        UserRole::Admin,
+        "Dr de recherche"
     });
 }
 
@@ -290,7 +600,8 @@ void LoginDialog::setupUI()
     QLabel *infoLabel = new QLabel(
         "Comptes de test:\n"
         "admin@smartpub.com / admin123\n"
-        "chercheur@smartpub.com / chercheur123"
+        "chercheur@smartpub.com / chercheur123\n"
+        "laboratoires@smartpub.com / lab123"
     );
     infoLabel->setAlignment(Qt::AlignCenter);
     infoLabel->setStyleSheet(
@@ -672,6 +983,10 @@ void SettingsDialog::setupUI()
 // ==================== DIALOG FILTRES CORRIGÉ ====================
 
 
+// ============================================================================
+// MODULE PROJETS - FILTRES
+// ============================================================================
+
 FiltresDialog::FiltresDialog(QWidget *parent)
     : QDialog(parent), filtreActif(false)
 {
@@ -932,6 +1247,10 @@ bool FiltresDialog::isFiltreActif() const
 // ==================== IA RECOMMANDATIONS DIALOG ====================
 
 
+// ============================================================================
+// MODULE PROJETS - IA RECOMMANDATIONS
+// ============================================================================
+
 IARecommandationsDialog::IARecommandationsDialog(const QVector<Projet> &projets, QWidget *parent)
     : QDialog(parent), m_projets(projets)
 {
@@ -1084,7 +1403,8 @@ void IARecommandationsDialog::setupUI()
 
     QVBoxLayout *stat2Layout = new QVBoxLayout();
     int actifs = 0;
-    for (const auto &p : m_projets) if (p.etat == "Actif") actifs++;
+    for (const auto &p : m_projets)
+        if (p.etat == QLatin1String("en_cours")) actifs++;
     QLabel *stat2Value = new QLabel(QString::number(actifs));
     stat2Value->setStyleSheet("font-size: 32px; font-weight: bold; color: #10b981;");
     stat2Value->setAlignment(Qt::AlignCenter);
@@ -1257,73 +1577,29 @@ void IARecommandationsDialog::setupUI()
 
 void IARecommandationsDialog::genererRecommandations()
 {
-    bool hasAI = false, hasBio = false, hasQuantum = false, hasEnergy = false;
+    m_recommandations.clear();
 
-    for (const auto &p : m_projets) {
-        QString desc = p.description.toLower();
-        if (desc.contains("ia") || desc.contains("intelligent") || desc.contains("machine learning")) hasAI = true;
-        if (desc.contains("bio") || desc.contains("genome") || desc.contains("medical")) hasBio = true;
-        if (desc.contains("quantique")) hasQuantum = true;
-        if (desc.contains("energie") || desc.contains("solaire")) hasEnergy = true;
-    }
+    const QVector<AIService::Recommandation> recs = AIService::genererRecommandations(m_projets);
+    m_recommandations.reserve(recs.size());
 
-    if (hasAI) {
+    for (const auto &r : recs) {
         Recommandation rec;
-        rec.titre = "Deep Learning pour la Santé Prédictive";
-        rec.domaine = "IA × Biotechnologie";
-        rec.scoreSimilarite = 92.0;
-        rec.description = "Extension naturelle de votre expertise en IA vers le domaine médical. "
-                          "Ce projet vise à développer des modèles de deep learning pour la prédiction "
-                          "précoce des maladies chroniques basés sur l'analyse génomique.";
-        rec.raison = "Synergie forte avec Smart-Traffic (IA) et Analyse Génome (Biologie). "
-                     "Fort potentiel d'innovation et de publications scientifiques.";
-        rec.collaborateursSuggeres = {
-            "Dr. Ahmed Ben Ali - Expertise IA (Score: 95%)",
-            "Pr. Fatima Zohra - Génomique (Score: 88%)",
-            "Dr. Sarah Johnson - Analyse de données (Score: 82%)"
-        };
-        m_recommandations.append(rec);
-    }
-
-    if (hasQuantum || hasAI) {
-        Recommandation rec;
-        rec.titre = "Calculateur Quantique pour la Bioinformatique";
-        rec.domaine = "Quantique × Biologie";
-        rec.scoreSimilarite = 87.0;
-        rec.description = "Fusion de trois domaines d'excellence : informatique quantique, "
-                          "intelligence artificielle et biologie. Utilisation d'algorithmes quantiques "
-                          "pour accélérer l'analyse des séquences génomiques.";
-        rec.raison = "Combinaison unique de vos forces en quantique et biologie. "
-                     "Projet hautement innovant avec fort potentiel de financement européen.";
-        rec.collaborateursSuggeres = {
-            "Dr. Mohamed Salah - Informatique Quantique (Score: 96%)",
-            "Dr. Ahmed Ben Ali - IA & Algorithmes (Score: 91%)",
-            "Pr. Fatima Zohra - Bioinformatique (Score: 89%)"
-        };
-        m_recommandations.append(rec);
-    }
-
-    if (hasEnergy || hasAI) {
-        Recommandation rec;
-        rec.titre = "Smart Grid IA pour Villes Durables";
-        rec.domaine = "Énergie × IA";
-        rec.scoreSimilarite = 84.0;
-        rec.description = "Extension de Smart-Traffic vers la gestion énergétique urbaine. "
-                          "Développement d'un réseau électrique intelligent optimisé par l'IA "
-                          "pour réduire la consommation énergétique des villes.";
-        rec.raison = "Continuité logique de Smart-Traffic vers la smart city. "
-                     "Répond aux enjeux actuels de transition énergétique.";
-        rec.collaborateursSuggeres = {
-            "Dr. Sarah Johnson - Énergies Renouvelables (Score: 94%)",
-            "Dr. Ahmed Ben Ali - IA/Smart City (Score: 90%)",
-            "Pr. Robert Chen - Optimisation systèmes (Score: 85%)"
-        };
+        rec.titre = r.titre;
+        rec.description = r.description;
+        rec.scoreSimilarite = r.scoreSimilarite;
+        rec.collaborateursSuggeres = r.collaborateursSuggeres;
+        rec.raison = r.raison;
+        rec.domaine = r.domaine;
         m_recommandations.append(rec);
     }
 }
 
 // ==================== PROJET DETAILS DIALOG ====================
 
+
+// ============================================================================
+// MODULE PROJETS - DETAILS
+// ============================================================================
 
 ProjetDetailsDialog::ProjetDetailsDialog(const Projet &projet, QWidget *parent)
     : QDialog(parent), m_projet(projet)
@@ -1426,8 +1702,8 @@ ProjetDetailsDialog::ProjetDetailsDialog(const Projet &projet, QWidget *parent)
     etatLabelInfo->setStyleSheet(labelStyle);
     infoLayout->addWidget(etatLabelInfo, 2, 0);
 
-    QLabel *etatBadge = new QLabel(projet.etat);
-    QString etatColor = ::getEtatColor(projet.etat);
+    QLabel *etatBadge = new QLabel(projEtatDbToUi(projet.etat));
+    QString etatColor = ::getEtatColor(projEtatDbToUi(projet.etat));
     etatBadge->setStyleSheet(QString(
                                  "background-color: %1;"
                                  "color: white;"
@@ -1548,6 +1824,10 @@ ProjetDetailsDialog::ProjetDetailsDialog(const Projet &projet, QWidget *parent)
 
 // ==================== STATISTIQUES DIALOG ====================
 
+
+// ============================================================================
+// MODULE PROJETS - STATISTIQUES
+// ============================================================================
 
 StatistiquesDialog::StatistiquesDialog(const QVector<Projet> &projets, QWidget *parent)
     : QDialog(parent), m_projets(projets)
@@ -1794,12 +2074,12 @@ void StatistiquesDialog::calculerStatistiques()
     int projetsEnRetard = 0;
 
     for (const auto &p : m_projets) {
-        if (p.etat == "Actif") actifs++;
-        else if (p.etat == "Terminé") termines++;
-        else if (p.etat == "En pause") pause++;
-        else if (p.etat == "Planifié") planifies++;
+        if (p.etat == QLatin1String("en_cours")) actifs++;
+        else if (p.etat == QLatin1String("termine")) termines++;
+        else if (p.etat == QLatin1String("suspendu")) pause++;
+        else if (p.etat == QLatin1String("annule")) planifies++;
 
-        if (p.etat != "Terminé" && p.etat != "Planifié") {
+        if (p.etat != QLatin1String("termine") && p.etat != QLatin1String("annule")) {
             QString progStr = p.progression;
             if (progStr.endsWith('%')) progStr.chop(1);
             progressionTotale += progStr.toInt();
@@ -1829,10 +2109,10 @@ void StatistiquesDialog::creerGraphiques()
 
     int actifs = 0, termines = 0, pause = 0, planifies = 0;
     for (const auto &p : m_projets) {
-        if (p.etat == "Actif") actifs++;
-        else if (p.etat == "Terminé") termines++;
-        else if (p.etat == "En pause") pause++;
-        else if (p.etat == "Planifié") planifies++;
+        if (p.etat == QLatin1String("en_cours")) actifs++;
+        else if (p.etat == QLatin1String("termine")) termines++;
+        else if (p.etat == QLatin1String("suspendu")) pause++;
+        else if (p.etat == QLatin1String("annule")) planifies++;
     }
 
     if (actifs > 0) seriesEtat->append("Actifs", actifs);
@@ -1934,6 +2214,10 @@ void StatistiquesDialog::creerGraphiques()
 }
 
 // ==================== FIN STATISTIQUES DIALOG ====================
+
+// ============================================================================
+// MODULE FINANCES - STATISTIQUES
+// ============================================================================
 
 FinStatistiquesDialog::FinStatistiquesDialog(const QMap<int, TransactionData> &transactions,
                                              QWidget *parent)
@@ -2153,14 +2437,17 @@ SmartPub::SmartPub(QWidget *parent)
     isUserLoggedIn(false), cherchVueListeActive(true),
     cherchVueIconesActive(true), cherchChercheurSelectionne(-1),
     cherchIsLoggedIn(false), cherchOrderByClause("ID_CHERCHEUR"),
-    cherchWhereClause(), finVueListeActive(true),
+    cherchWhereClause(), cherchBtnSelectProjets(nullptr),
+    cherchProjetsListWidget(nullptr), cherchLabelProjetsSelec(nullptr),
+    finVueListeActive(true),
     finTransactionSelectionnee(-1), finTriColonne(4),
     finTriOrdre(Qt::DescendingOrder), evEventSelectionne(-1), nextProjetId(1),
     currentProjetId(-1), isEditing(false), currentSortColumn(-1),
     currentSortOrder(Qt::AscendingOrder), filtresActifs(false),
     editingPublicationRow(-1),
     SR_filterFrame(nullptr), SR_filterTitre(nullptr), SR_filterAuteur(nullptr),
-    SR_filterStatut(nullptr), SR_btnReinitFilter(nullptr) {
+    SR_filterStatut(nullptr), SR_btnReinitFilter(nullptr),
+    SR_sortColumn(2), SR_sortOrder(Qt::DescendingOrder) {
     ui->setupUi(this);
     // Configurer les dimensions de la fenêtre
     this->setMinimumSize(1280, 720);
@@ -2250,6 +2537,28 @@ SmartPub::SmartPub(QWidget *parent)
     projSetupStatistiquesButton();  // AJOUTÉ: Styliser le bouton statistiques
     projSetupAIButton();  // AJOUTÉ: Créer et ajouter le bouton AI
     projChargerProjets();
+
+    // === MODULE LABORATOIRES ===
+    labNextId = 1;
+    labEditingId = -1;
+    labPage = nullptr;
+    labTable = nullptr;
+    labSearchEdit = nullptr;
+    labTotalLabel = nullptr;
+    labBtnAjouter = nullptr;
+    labBtnModifier = nullptr;
+    labBtnSupprimer = nullptr;
+    labFormFrame = nullptr;
+    labFormNom = nullptr;
+    labFormThematique = nullptr;
+    labFormBudget = nullptr;
+    labFormCapacite = nullptr;
+    labFormStatut = nullptr;
+    labFormEquipements = nullptr;
+    labFormDirecteur = nullptr;
+    labSetupUI();
+    labConnectSignals();
+    labChargerDonnees();
 
     // Configurer la sidebar et les permissions
     updateSidebarProfileVisibility();
@@ -2793,13 +3102,60 @@ void SmartPub::on_btnChercheurs_clicked() {
     ui->stackedWidgetModules->setCurrentIndex(0);
     setActiveNavigationButton(0);
     updateProfileName(0);
-    if (cherchIsLoggedIn || currentUser.role == UserRole::Guest) {
-        cherchShowMainView();
-        cherchAfficherListeChercheurs();
-    }
+
+    // FIX: Toujours réinitialiser sur la vue liste au clic sidebar
+    ui->cherchStackedWidget->setCurrentIndex(0);
+    cherchVueListeActive = true;
+
+    // Rendre visibles les boutons de la toolbar (cachés quand formulaire Ajouter actif)
+    ui->cherchLineEditRecherche->setVisible(true);
+    ui->cherchBtnRecherche->setVisible(true);
+    ui->cherchBtnTri->setVisible(true);
+    ui->cherchBtnExport->setVisible(true);
+    ui->cherchBtnStatistiques->setVisible(true);
+    if (cherchBtnToggleVue) cherchBtnToggleVue->setVisible(true);
+
+    // Mettre à jour le style des onglets Liste / Ajouter
+    QString tabActive = R"(
+        QPushButton {
+            background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                stop:0 #3b82f6, stop:1 #10b981);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            padding: 8px 16px;
+            font-size: 13px;
+            font-weight: 600;
+        }
+    )";
+    QString tabInactive = R"(
+        QPushButton {
+            background-color: transparent;
+            color: #64748b;
+            border: none;
+            border-radius: 8px;
+            padding: 8px 16px;
+            font-size: 13px;
+            font-weight: 500;
+        }
+        QPushButton:hover {
+            background-color: #f1f5f9;
+            color: #334155;
+        }
+    )";
+    ui->cherchBtnVueListe->setStyleSheet(tabActive);
+    ui->cherchBtnAjouter->setStyleSheet(tabInactive);
+
+    cherchAfficherListeChercheurs();
 }
 
 void SmartPub::on_btnPublications_clicked() {
+    PublicationLoginDialog authDialog(this);
+    if (authDialog.exec() != QDialog::Accepted) {
+        QMessageBox::warning(this, "Accès refusé",
+                             "Authentification requise pour accéder au module Publications.");
+        return;
+    }
     ui->stackedWidgetModules->setCurrentIndex(1);
     setActiveNavigationButton(1);
     updateProfileName(1);
@@ -2807,11 +3163,10 @@ void SmartPub::on_btnPublications_clicked() {
 }
 
 void SmartPub::on_btnLaboratoires_clicked() {
-    ui->stackedWidgetModules->setCurrentIndex(1);
+    ui->stackedWidgetModules->setCurrentIndex(5);
     setActiveNavigationButton(5);
     updateProfileName(5);
-    QMessageBox::information(this, "Information",
-                             "Module Laboratoires en cours de développement");
+    labAfficherListe();
 }
 
 void SmartPub::on_btnFinances_clicked() {
@@ -2841,7 +3196,7 @@ void SmartPub::on_btnEvenements_clicked() {
 // ============================================================================
 
 void SmartPub::cherchSetupUI() {
-    // Bouton toggle vue (icônes/liste)
+    // ── Bouton toggle vue (icônes/liste) ──────────────────────────────────────
     cherchBtnToggleVue = new QPushButton(this);
     cherchBtnToggleVue->setObjectName("cherchBtnToggleVue");
     cherchBtnToggleVue->setFixedSize(44, 44);
@@ -2863,13 +3218,93 @@ void SmartPub::cherchSetupUI() {
             color: #3b82f6;
         }
     )");
-
-    // Insérer dans le toolbar si le layout existe
-    if (ui->horizontalLayoutToolbar) {
+    if (ui->horizontalLayoutToolbar)
         ui->horizontalLayoutToolbar->insertWidget(1, cherchBtnToggleVue);
-    }
     connect(cherchBtnToggleVue, &QPushButton::clicked, this,
             &SmartPub::on_cherchBtnToggleVue_clicked);
+
+    // ── Récupérer les widgets Projets déclarés dans le .ui ───────────────────
+    // Les widgets cherchBtnSelectProjets, cherchProjetsListWidget,
+    // cherchBtnValiderProjets et cherchLabelProjetsSelec sont maintenant
+    // définis directement dans smartpub.ui (row=3 de gridLayoutInputs).
+    // On se contente ici de récupérer leurs pointeurs et brancher les signaux.
+
+    cherchBtnSelectProjets  = ui->cherchFormFrame->findChild<QPushButton*>(
+                                  QStringLiteral("cherchBtnSelectProjets"));
+    cherchProjetsListWidget = ui->cherchFormFrame->findChild<QListWidget*>(
+                                  QStringLiteral("cherchProjetsListWidget"));
+    cherchLabelProjetsSelec = ui->cherchFormFrame->findChild<QLabel*>(
+                                  QStringLiteral("cherchLabelProjetsSelec"));
+    QPushButton *btnValiderProjets = ui->cherchFormFrame->findChild<QPushButton*>(
+                                         QStringLiteral("cherchBtnValiderProjets"));
+
+    // Sécurité : si le .ui n'a pas encore été regénéré, on sort silencieusement
+    if (!cherchBtnSelectProjets || !cherchProjetsListWidget ||
+        !cherchLabelProjetsSelec || !btnValiderProjets)
+        return;
+
+    // ── Connexion : toggle liste de projets ───────────────────────────────────
+    connect(cherchBtnSelectProjets, &QPushButton::clicked, this,
+            [this, btnValiderProjets]() {
+        bool visible = cherchProjetsListWidget->isVisible();
+        if (!visible && cherchProjetsListWidget->count() == 0) {
+            QSqlDatabase db = Connection::instance()->getDatabase();
+            if (db.isOpen()) {
+                QSqlQuery q(db);
+                if (q.exec(QStringLiteral(
+                        "SELECT CODE_PROJET, TITRE FROM PROJET ORDER BY CODE_PROJET"))) {
+                    while (q.next()) {
+                        QListWidgetItem *it = new QListWidgetItem(
+                            QString("[%1]  %2")
+                                .arg(q.value(0).toInt())
+                                .arg(q.value(1).toString()));
+                        it->setData(Qt::UserRole, q.value(0).toInt());
+                        cherchProjetsListWidget->addItem(it);
+                    }
+                }
+            }
+        }
+        cherchProjetsListWidget->setVisible(!visible);
+        btnValiderProjets->setVisible(!visible);
+        cherchBtnSelectProjets->setText(
+            visible ? QStringLiteral("▼  Sélectionner des projets…")
+                    : QStringLiteral("▲  Fermer la liste"));
+    });
+
+    // ── Limiter à 5 sélections ────────────────────────────────────────────────
+    connect(cherchProjetsListWidget, &QListWidget::itemSelectionChanged,
+            this, [this]() {
+        QList<QListWidgetItem *> sel = cherchProjetsListWidget->selectedItems();
+        if (sel.size() > 5) {
+            bool b = cherchProjetsListWidget->blockSignals(true);
+            sel.last()->setSelected(false);
+            cherchProjetsListWidget->blockSignals(b);
+            QToolTip::showText(QCursor::pos(),
+                               QStringLiteral("Maximum 5 projets autorisés"),
+                               cherchProjetsListWidget);
+        }
+    });
+
+    // ── Valider la sélection : fermer liste + mettre à jour résumé ───────────
+    connect(btnValiderProjets, &QPushButton::clicked, this,
+            [this, btnValiderProjets]() {
+        QList<QListWidgetItem *> sel = cherchProjetsListWidget->selectedItems();
+        cherchProjetsListWidget->setVisible(false);
+        btnValiderProjets->setVisible(false);
+        cherchBtnSelectProjets->setText(QStringLiteral("▼  Sélectionner des projets…"));
+        if (sel.isEmpty()) {
+            cherchLabelProjetsSelec->setText(QStringLiteral("Aucun projet sélectionné"));
+            cherchLabelProjetsSelec->setStyleSheet(
+                QStringLiteral("color: #94a3b8; font-size: 12px; "
+                                "background: transparent; border: none;"));
+        } else {
+            cherchLabelProjetsSelec->setText(
+                QString("✔  %1 projet(s) sélectionné(s)").arg(sel.size()));
+            cherchLabelProjetsSelec->setStyleSheet(
+                QStringLiteral("color: #10b981; font-size: 12px; font-weight: 600; "
+                                "background: transparent; border: none;"));
+        }
+    });
 }
 
 void SmartPub::cherchConnectSignals() {
@@ -3453,12 +3888,28 @@ void SmartPub::cherchAjouterDonneesTest() {
 
 QString SmartPub::cherchDeterminerCarriere(int projetsCount,
                                            const QString &grade) {
-    if (projetsCount >= 4)
-        return "Senior - Expert";
-    if (projetsCount >= 2)
-        return "Confirmé";
-    if (grade == "Professeur" || grade == "Maitre de Conferences")
-        return "Senior";
+    // Basé sur le grade académique ET le nombre de contributions dans CONTRIBUER
+    if (grade == "Professeur") {
+        return projetsCount >= 3 ? "Professeur Senior — Expert" : "Professeur";
+    }
+    if (grade == "Maitre de Conferences") {
+        return projetsCount >= 3 ? "MdC — Confirmé Expert" : "Maître de Conférences";
+    }
+    if (grade == "Docteur") {
+        return projetsCount >= 2 ? "Docteur — Chercheur Actif" : "Docteur";
+    }
+    if (grade == "Ingenieur de Recherche") {
+        return projetsCount >= 2 ? "Ingénieur Recherche Senior" : "Ingénieur de Recherche";
+    }
+    if (grade == "Post-doctorant") {
+        return "Post-Doctorant";
+    }
+    if (grade == "Doctorant") {
+        return "Doctorant — En Formation";
+    }
+    // Fallback générique basé sur le nombre de projets
+    if (projetsCount >= 4) return "Senior — Expert";
+    if (projetsCount >= 2) return "Confirmé";
     return "Junior";
 }
 
@@ -3476,9 +3927,6 @@ void SmartPub::cherchShowMainView() {
 
 void SmartPub::cherchCheckLogin() {
     // === BYPASS AUTHENTICATION (User Request) ===
-    // Connect directly as Admin without checking credentials
-
-    // Default to Admin
     currentUser =
         UserAccount{"admin", "", "Tous", UserRole::Admin, "Administrateur"};
     isUserLoggedIn = true;
@@ -3492,15 +3940,20 @@ void SmartPub::cherchCheckLogin() {
     if (roleLabel)
         roleLabel->setText("Administrateur");
 
-    // RAFRAICHIR LA LISTE DES CHERCHEURS POUR AFFICHER LES BOUTONS
-    // Important : On le fait ici pour être sûr que l'interface réagit au rôle
-    // Admin
-    cherchAfficherListeChercheurs();
+    // FIX: Ouvrir Publications en premier lieu après login (index 1)
+    ui->stackedWidgetModules->setCurrentIndex(1);
+    setActiveNavigationButton(1);
+    updateProfileName(1);
+    SR_updateButtonStyles();
 
-    // Afficher l'application
+    // S'assurer que le module Chercheur sera en vue liste lors d'une navigation future
+    ui->cherchStackedWidget->setCurrentIndex(0);
+    cherchVueListeActive = true;
+
+    // Afficher l'application principale
     mainStack->setCurrentIndex(1);
 
-    // Vider les champs pour la forme (même s'ils sont cachés ou ignorés)
+    // Vider les champs de login
     ui->cherchLineEditLoginEmail->clear();
     ui->cherchLineEditLoginPassword->clear();
 }
@@ -3552,6 +4005,33 @@ void SmartPub::on_cherchBtnLogin_clicked() { cherchCheckLogin(); }
 //     }
 // }
 
+
+void SmartPub::cherchEnrichirDonneesDepuisOracle()
+{
+    QSqlDatabase db = Connection::instance()->getDatabase();
+    if (!db.isOpen())
+        return;
+    for (auto it = cherchChercheursMap.begin(); it != cherchChercheursMap.end(); ++it) {
+        it->projetsIds.clear();
+    }
+    QSqlQuery q(db);
+    if (q.exec(QStringLiteral("SELECT ID_CHERCHEUR, CODE_PROJET FROM CONTRIBUER"))) {
+        while (q.next()) {
+            const int cid = q.value(0).toInt();
+            const int pid = q.value(1).toInt();
+            if (!cherchChercheursMap.contains(cid))
+                continue;
+            auto &lst = cherchChercheursMap[cid].projetsIds;
+            if (!lst.contains(pid))
+                lst.append(pid);
+        }
+    }
+    for (auto it = cherchChercheursMap.begin(); it != cherchChercheursMap.end(); ++it) {
+        const int n = it->projetsIds.size();
+        it->carriere = cherchDeterminerCarriere(n, it->grade);
+    }
+}
+
 void SmartPub::cherchAfficherListeChercheurs() {
     cherchClearChercheursList();
     cherchChercheursMap.clear();
@@ -3584,7 +4064,7 @@ void SmartPub::cherchAfficherListeChercheurs() {
         return;
     }
 
-    QString sql = "SELECT ID, NOM, PRENOM, EMAIL, GRADE, CIN, PHOTO_PROFIL FROM chercheur";
+    QString sql = "SELECT ID_CHERCHEUR, NOM, PRENOM, EMAIL, GRADE, CIN, PHOTO_PROFIL FROM CHERCHEUR";
     if (!cherchWhereClause.isEmpty())
         sql += " WHERE " + cherchWhereClause;
     if (!cherchOrderByClause.isEmpty())
@@ -3596,8 +4076,11 @@ void SmartPub::cherchAfficherListeChercheurs() {
         return;
     }
 
+    // --- MODIFICATION : stocker l'ordre des ID récupérés ---
+    QList<int> orderedIds;
+
     while (query.next()) {
-        int id = query.value("ID").toInt();
+        int id = query.value("ID_CHERCHEUR").toInt();
         ChercheurData data;
         data.nom = query.value("NOM").toString();
         data.prenom = query.value("PRENOM").toString();
@@ -3611,7 +4094,10 @@ void SmartPub::cherchAfficherListeChercheurs() {
         data.carriere = "";
         data.age = 0;
         cherchChercheursMap[id] = data;
+        orderedIds.append(id);   // <--- ordre SQL préservé
     }
+
+    cherchEnrichirDonneesDepuisOracle();
 
     if (cherchVueIconesActive) {
         QGridLayout *gridLayout = qobject_cast<QGridLayout *>(
@@ -3632,10 +4118,9 @@ void SmartPub::cherchAfficherListeChercheurs() {
             gridLayout->setContentsMargins(24, 24, 24, 24);
         }
 
-        for (auto it = cherchChercheursMap.begin(); it != cherchChercheursMap.end();
-             ++it) {
-            int id = it.key();
-            auto data = it.value();
+        // --- MODIFICATION : itérer sur orderedIds au lieu de la map ---
+        for (int id : orderedIds) {
+            auto data = cherchChercheursMap.value(id);
             cherchAjouterChercheurCard(id, data.nom, data.prenom, data.grade,
                                        data.email, data.photoPath);
         }
@@ -3659,10 +4144,9 @@ void SmartPub::cherchAfficherListeChercheurs() {
             listLayout->setAlignment(Qt::AlignTop);
         }
 
-        for (auto it = cherchChercheursMap.begin(); it != cherchChercheursMap.end();
-             ++it) {
-            int id = it.key();
-            auto data = it.value();
+        // --- MODIFICATION : itérer sur orderedIds au lieu de la map ---
+        for (int id : orderedIds) {
+            auto data = cherchChercheursMap.value(id);
             cherchAjouterChercheurListItem(id, data.nom, data.prenom, data.grade,
                                            data.email, data.photoPath);
         }
@@ -4081,7 +4565,7 @@ void SmartPub::on_cherchBtnTri_clicked() {
             border: 1px solid #e2e8f0;
             border-radius: 12px;
             padding: 8px;
-            min-width: 220px;
+            min-width: 250px;
         }
         QMenu::item {
             padding: 12px 20px;
@@ -4101,17 +4585,17 @@ void SmartPub::on_cherchBtnTri_clicked() {
         }
     )");
 
-    menu->addAction("Trier par Nom (A-Z)", this,
+    menu->addAction("⬆️  Nom (A → Z)", this,
                     [this]() { cherchTrierParNom(true); });
-    menu->addAction("Trier par Nom (Z-A)", this,
+    menu->addAction("⬇️  Nom (Z → A)", this,
                     [this]() { cherchTrierParNom(false); });
     menu->addSeparator();
-    menu->addAction("Trier par Grade (Hiérarchie)", this,
+    menu->addAction("🎓  Grade (Hiérarchie académique)", this,
                     [this]() { cherchTrierParGrade(); });
     menu->addSeparator();
-    menu->addAction("Trier par Date (Plus récent)", this,
+    menu->addAction("🕐  Date d'ajout (Plus récent)", this,
                     [this]() { cherchTrierParDateCreation(true); });
-    menu->addAction("Trier par Date (Plus ancien)", this,
+    menu->addAction("🕓  Date d'ajout (Plus ancien)", this,
                     [this]() { cherchTrierParDateCreation(false); });
 
     menu->exec(QCursor::pos());
@@ -4123,13 +4607,22 @@ void SmartPub::cherchTrierParNom(bool croissant) {
 }
 
 void SmartPub::cherchTrierParGrade() {
-    cherchOrderByClause = "DECODE(GRADE, 'Professeur', 1, 'Maitre de Conferences', 2, "
-                         "'Docteur', 3, 'Ingenieur de Recherche', 4, 'Post-doctorant', 5, 'Doctorant', 6, 99), NOM, PRENOM";
+    // CASE WHEN portable Oracle/standard — tri hiérarchique académique
+    cherchOrderByClause =
+        "CASE GRADE "
+        "WHEN 'Professeur' THEN 1 "
+        "WHEN 'Maitre de Conferences' THEN 2 "
+        "WHEN 'Docteur' THEN 3 "
+        "WHEN 'Ingenieur de Recherche' THEN 4 "
+        "WHEN 'Post-doctorant' THEN 5 "
+        "WHEN 'Doctorant' THEN 6 "
+        "ELSE 99 END, NOM ASC, PRENOM ASC";
     cherchAfficherListeChercheurs();
 }
 
 void SmartPub::cherchTrierParDateCreation(bool croissant) {
-    cherchOrderByClause = croissant ? "ID DESC" : "ID ASC";
+    // ID_CHERCHEUR auto-incrémenté via séquence Oracle = proxy fiable de la date d'insertion
+    cherchOrderByClause = croissant ? "ID_CHERCHEUR DESC" : "ID_CHERCHEUR ASC";
     cherchAfficherListeChercheurs();
 }
 
@@ -4163,32 +4656,40 @@ void SmartPub::on_cherchBtnStatistiques_clicked() {
 
 void SmartPub::cherchAfficherStatistiques() {
     QDialog *dialog = new QDialog(this);
-    dialog->setWindowTitle("Statistiques des Chercheurs");
-    dialog->setMinimumSize(1000, 800);
-    dialog->setStyleSheet("background-color: #f8fafc;");
+    dialog->setWindowTitle("Statistiques et métiers innovants — Chercheurs");
+    dialog->setMinimumSize(1100, 820);
+    dialog->setStyleSheet(R"(
+            QDialog { background-color: #f8fafc; }
+            QLabel { color: #1e293b; background: transparent; border: none; }
+            QTabWidget::pane {
+                border: 1px solid #e2e8f0;
+                border-radius: 12px;
+                background-color: white;
+            }
+            QTabBar::tab {
+                padding: 10px 20px;
+                font-weight: 600;
+                color: #64748b;
+                background: #f1f5f9;
+                border: none;
+                border-radius: 6px;
+                margin-right: 4px;
+            }
+            QTabBar::tab:selected {
+                color: #1e40af;
+                background: white;
+                border-bottom: 3px solid #3b82f6;
+            }
+        )");
 
     QVBoxLayout *mainLayout = new QVBoxLayout(dialog);
-    mainLayout->setSpacing(24);
-    mainLayout->setContentsMargins(30, 30, 30, 30);
+    mainLayout->setSpacing(16);
+    mainLayout->setContentsMargins(24, 24, 24, 24);
 
-    QLabel *titleLabel = new QLabel("📊 Tableau de Bord Statistique", dialog);
-    titleLabel->setStyleSheet("font-size: 28px; font-weight: 700; color: "
+    QLabel *titleLabel = new QLabel("Tableau de bord — Chercheurs", dialog);
+    titleLabel->setStyleSheet("font-size: 22px; font-weight: 700; color: "
                               "#1e293b; background: transparent; border: none;");
     mainLayout->addWidget(titleLabel);
-
-    QScrollArea *scrollArea = new QScrollArea(dialog);
-    scrollArea->setWidgetResizable(true);
-    scrollArea->setFrameShape(QFrame::NoFrame);
-    scrollArea->setStyleSheet("background-color: transparent;");
-
-    QWidget *contentWidget = new QWidget();
-    QVBoxLayout *contentLayout = new QVBoxLayout(contentWidget);
-    contentLayout->setSpacing(24);
-    contentLayout->setContentsMargins(0, 0, 0, 0);
-
-    // Stats grid
-    QGridLayout *statsGrid = new QGridLayout();
-    statsGrid->setSpacing(20);
 
     auto createStatCard = [](const QString &title, const QString &value,
                              const QString &color) -> QFrame * {
@@ -4200,140 +4701,219 @@ void SmartPub::cherchAfficherStatistiques() {
                 border: 1px solid #e2e8f0;
             }
         )"));
-        card->setMinimumHeight(140);
+        card->setMinimumHeight(120);
         QVBoxLayout *layout = new QVBoxLayout(card);
         layout->setSpacing(8);
-        layout->setContentsMargins(24, 24, 24, 24);
+        layout->setContentsMargins(20, 20, 20, 20);
 
-        QLabel *titleLabel = new QLabel(title);
-        titleLabel->setStyleSheet("color: #64748b; font-size: 14px; font-weight: "
-                                  "600; background: transparent; border: none;");
+        QLabel *t = new QLabel(title);
+        t->setStyleSheet("color: #64748b; font-size: 13px; font-weight: "
+                         "600; background: transparent; border: none;");
 
-        QLabel *valueLabel = new QLabel(value);
-        valueLabel->setStyleSheet(
-            QString("color: %1; font-size: 48px; font-weight: 700; background: "
-                    "transparent; border: none;")
-                .arg(color));
+        QLabel *v = new QLabel(value);
+        v->setStyleSheet(QString("color: %1; font-size: 40px; font-weight: 700; background: "
+                                 "transparent; border: none;")
+                             .arg(color));
 
-        layout->addWidget(titleLabel);
-        layout->addWidget(valueLabel);
+        layout->addWidget(t);
+        layout->addWidget(v);
         layout->addStretch();
         return card;
     };
 
-    statsGrid->addWidget(
-        createStatCard("Total Chercheurs",
-                       QString::number(cherchChercheursMap.size()), "#3b82f6"),
-        0, 0);
-
     int nbProfs = 0, nbDocs = 0;
     for (auto &data : cherchChercheursMap) {
-        if (data.grade == "Professeur")
+        if (data.grade == QLatin1String("Professeur"))
             nbProfs++;
-        if (data.grade == "Doctorant")
+        if (data.grade == QLatin1String("Doctorant"))
             nbDocs++;
     }
 
+    QGridLayout *statsGrid = new QGridLayout();
+    statsGrid->setSpacing(16);
     statsGrid->addWidget(
-        createStatCard("Professeurs", QString::number(nbProfs), "#10b981"), 0, 1);
-    statsGrid->addWidget(
-        createStatCard("Doctorants", QString::number(nbDocs), "#f59e0b"), 0, 2);
+        createStatCard("Total chercheurs", QString::number(cherchChercheursMap.size()), "#3b82f6"),
+        0, 0);
+    statsGrid->addWidget(createStatCard("Professeurs", QString::number(nbProfs), "#10b981"), 0, 1);
+    statsGrid->addWidget(createStatCard("Doctorants", QString::number(nbDocs), "#f59e0b"), 0, 2);
 
-    contentLayout->addLayout(statsGrid);
+    QTabWidget *tabs = new QTabWidget(dialog);
+    tabs->setDocumentMode(true);
+    tabs->setStyleSheet(
+        "QTabWidget::pane { border: 1px solid #e2e8f0; border-radius: 12px; background: white; }"
+        "QTabBar::tab { padding: 10px 18px; font-weight: 600; color: #64748b; }"
+        "QTabBar::tab:selected { color: #1e293b; border-bottom: 2px solid #3b82f6; }");
 
-    // Répartition par grade
-    QFrame *chartFrame = new QFrame();
-    chartFrame->setStyleSheet(R"(
-        QFrame {
-            background-color: white;
-            border-radius: 16px;
-            border: 1px solid #e2e8f0;
+    QWidget *tabOverview = new QWidget();
+    QVBoxLayout *ovMain = new QVBoxLayout(tabOverview);
+    ovMain->setSpacing(16);
+    ovMain->setContentsMargins(12, 12, 12, 12);
+    ovMain->addLayout(statsGrid);
+
+    QScrollArea *scrollOverview = new QScrollArea();
+    scrollOverview->setWidgetResizable(true);
+    scrollOverview->setFrameShape(QFrame::NoFrame);
+    QWidget *scrollContent = new QWidget();
+    QVBoxLayout *ovScrollLay = new QVBoxLayout(scrollContent);
+    ovScrollLay->setSpacing(20);
+
+    QHBoxLayout *chartsRow = new QHBoxLayout();
+    chartsRow->setSpacing(16);
+
+    QSqlDatabase db = Connection::instance()->getDatabase();
+    QStringList labNames;
+    QList<double> labCounts;
+    QStringList labNamesSat;
+    QList<double> labSurcharge;
+
+    if (db.isOpen()) {
+        QSqlQuery qLab(db);
+        const QString sqlEffectifs =
+            QStringLiteral("SELECT L.NOM, COUNT(DISTINCT C.ID_CHERCHEUR) AS NB "
+                           "FROM LABORATOIRE L "
+                           "INNER JOIN CONTRIBUER C ON C.CODE_PROJET = L.CODE_PROJET "
+                           "GROUP BY L.ID_LABORATOIRE, L.NOM ORDER BY L.NOM");
+        if (qLab.exec(sqlEffectifs)) {
+            while (qLab.next()) {
+                labNames << qLab.value(0).toString();
+                labCounts << qLab.value(1).toDouble();
+            }
         }
-    )");
-    chartFrame->setMinimumHeight(400);
-    QVBoxLayout *chartLayout = new QVBoxLayout(chartFrame);
-    chartLayout->setSpacing(20);
-    chartLayout->setContentsMargins(24, 24, 24, 24);
+        QSqlQuery qSat(db);
+        const QString sqlSat =
+            QStringLiteral("SELECT L.NOM, AVG(LEAST(cnt * 25, 100)) AS SAT "
+                           "FROM ( "
+                           "  SELECT L2.ID_LABORATOIRE, C.ID_CHERCHEUR, COUNT(DISTINCT C.CODE_PROJET) AS cnt "
+                           "  FROM LABORATOIRE L2 "
+                           "  INNER JOIN CONTRIBUER C ON C.CODE_PROJET = L2.CODE_PROJET "
+                           "  GROUP BY L2.ID_LABORATOIRE, C.ID_CHERCHEUR "
+                           ") X "
+                           "JOIN LABORATOIRE L ON L.ID_LABORATOIRE = X.ID_LABORATOIRE "
+                           "GROUP BY L.ID_LABORATOIRE, L.NOM ORDER BY L.NOM");
+        if (qSat.exec(sqlSat)) {
+            while (qSat.next()) {
+                labNamesSat << qSat.value(0).toString();
+                labSurcharge << qSat.value(1).toDouble();
+            }
+        }
+    }
 
-    QLabel *chartTitle = new QLabel("Répartition par Grade", chartFrame);
-    chartTitle->setStyleSheet("font-size: 20px; font-weight: 600; color: "
-                              "#1e293b; background: transparent; border: none;");
-    chartLayout->addWidget(chartTitle);
+    auto makeBarChartView = [](const QString &title, const QStringList &categories,
+                               const QList<double> &values, const QString &colorHex,
+                               const QString &yLabel) -> QChartView * {
+        QChartView *cv = new QChartView();
+        cv->setRenderHint(QPainter::Antialiasing);
+        cv->setMinimumHeight(320);
+
+        QBarSet *set = new QBarSet("Valeur");
+        for (double v : values)
+            *set << v;
+        set->setColor(QColor(colorHex));
+        set->setBorderColor(QColor(colorHex).darker(110));
+
+        QBarSeries *series = new QBarSeries();
+        series->append(set);
+        series->setBarWidth(0.65);
+
+        QChart *chart = new QChart();
+        chart->addSeries(series);
+        chart->setTitle(title);
+        chart->setAnimationOptions(QChart::SeriesAnimations);
+        chart->setBackgroundRoundness(8);
+        chart->setBackgroundBrush(QBrush(QColor("#ffffff")));
+        chart->legend()->setVisible(false);
+
+        QBarCategoryAxis *axisX = new QBarCategoryAxis();
+        for (const QString &c : categories)
+            axisX->append(c);
+        axisX->setLabelsAngle(-25);
+        chart->addAxis(axisX, Qt::AlignBottom);
+        series->attachAxis(axisX);
+
+        QValueAxis *axisY = new QValueAxis();
+        double vmax = 1.0;
+        for (double v : values)
+            vmax = qMax(vmax, v);
+        axisY->setRange(0, vmax * 1.15 + 0.5);
+        axisY->setLabelFormat("%.0f");
+        axisY->setTitleText(yLabel);
+        chart->addAxis(axisY, Qt::AlignLeft);
+        series->attachAxis(axisY);
+
+        cv->setChart(chart);
+        return cv;
+    };
+
+    if (!labNames.isEmpty() && labCounts.size() == labNames.size()) {
+        chartsRow->addWidget(makeBarChartView(
+            "Effectifs par laboratoire (chercheurs distincts via projets)", labNames, labCounts,
+            "#3b82f6", "Nombre de chercheurs"));
+    } else {
+        QLabel *empty = new QLabel(
+            "Aucune donnée laboratoire : vérifiez LABORATOIRE, CONTRIBUER et les clés CODE_PROJET.");
+        empty->setWordWrap(true);
+        empty->setStyleSheet("color: #64748b; padding: 16px;");
+        chartsRow->addWidget(empty);
+    }
+
+    if (!labNamesSat.isEmpty() && labSurcharge.size() == labNamesSat.size()) {
+        chartsRow->addWidget(makeBarChartView(
+            "Taux de charge moyen par laboratoire (min(n×25, 100) par chercheur)", labNamesSat,
+            labSurcharge, "#8b5cf6", "Score sur 100"));
+    }
+
+    ovScrollLay->addLayout(chartsRow);
+
+    QFrame *gradeFrame = new QFrame();
+    gradeFrame->setStyleSheet("QFrame { background: white; border-radius: 16px; border: 1px solid #e2e8f0; }");
+    QVBoxLayout *gradeLay = new QVBoxLayout(gradeFrame);
+    gradeLay->setContentsMargins(20, 20, 20, 20);
+    QLabel *gradeTitle = new QLabel("Répartition par grade");
+    gradeTitle->setStyleSheet("font-size: 17px; font-weight: 600; color: #1e293b;");
+    gradeLay->addWidget(gradeTitle);
 
     QMap<QString, int> gradeCount;
-    for (auto &data : cherchChercheursMap) {
+    for (auto &data : cherchChercheursMap)
         gradeCount[data.grade]++;
-    }
 
+    int totalC = qMax(1, cherchChercheursMap.size());
     for (auto it = gradeCount.begin(); it != gradeCount.end(); ++it) {
         QHBoxLayout *row = new QHBoxLayout();
-        QLabel *gradeLabel = new QLabel(it.key() + ":");
-        gradeLabel->setStyleSheet("font-size: 16px; color: #334155; font-weight: "
-                                  "600; background: transparent; border: none;");
+        QLabel *gradeLabel = new QLabel(it.key().isEmpty() ? QStringLiteral("(non renseigné)") : it.key());
+        gradeLabel->setStyleSheet("font-size: 14px; color: #334155; font-weight: 600;");
         gradeLabel->setFixedWidth(200);
-
         QProgressBar *progress = new QProgressBar();
-        progress->setRange(0, cherchChercheursMap.size());
+        progress->setRange(0, totalC);
         progress->setValue(it.value());
         progress->setTextVisible(true);
-        progress->setFormat(QString("%1 chercheurs").arg(it.value()));
+        progress->setFormat(QString("%1 chercheur(s)").arg(it.value()));
         progress->setStyleSheet(R"(
-            QProgressBar {
-                border: none;
-                border-radius: 8px;
-                background-color: #e2e8f0;
-                text-align: center;
-                height: 24px;
-            }
-            QProgressBar::chunk {
-                background-color: #3b82f6;
-                border-radius: 8px;
-            }
+            QProgressBar { border: none; border-radius: 8px; background-color: #e2e8f0; text-align: center; height: 22px; }
+            QProgressBar::chunk { background-color: #0ea5e9; border-radius: 8px; }
         )");
-
         row->addWidget(gradeLabel);
         row->addWidget(progress, 1);
-        chartLayout->addLayout(row);
+        gradeLay->addLayout(row);
     }
+    ovScrollLay->addWidget(gradeFrame);
 
-    chartLayout->addStretch();
-    contentLayout->addWidget(chartFrame);
-
-    // Indice de surcharge
     QFrame *overloadFrame = new QFrame();
-    overloadFrame->setStyleSheet(R"(
-        QFrame {
-            background-color: white;
-            border-radius: 16px;
-            border: 1px solid #e2e8f0;
-        }
-    )");
+    overloadFrame->setStyleSheet("QFrame { background: white; border-radius: 16px; border: 1px solid #e2e8f0; }");
     QVBoxLayout *overloadLayout = new QVBoxLayout(overloadFrame);
-    overloadLayout->setSpacing(20);
-    overloadLayout->setContentsMargins(24, 24, 24, 24);
-
-    QLabel *overloadTitle =
-        new QLabel("📈 Indice de Surcharge (Projets en cours)", overloadFrame);
-    overloadTitle->setStyleSheet(
-        "font-size: 20px; font-weight: 600; color: #1e293b; background: "
-        "transparent; border: none;");
+    overloadLayout->setContentsMargins(20, 20, 20, 20);
+    QLabel *overloadTitle = new QLabel("Indice de surcharge par chercheur (projets affectés)");
+    overloadTitle->setStyleSheet("font-size: 17px; font-weight: 600; color: #1e293b;");
     overloadLayout->addWidget(overloadTitle);
 
     QHBoxLayout *headerRow = new QHBoxLayout();
     QLabel *headerName = new QLabel("Chercheur");
-    headerName->setStyleSheet("color: #64748b; font-weight: 600; font-size: "
-                              "13px; background: transparent; border: none;");
+    headerName->setStyleSheet("color: #64748b; font-weight: 600; font-size: 12px;");
     headerName->setFixedWidth(200);
-
-    QLabel *headerProgress = new QLabel("Charge de travail");
-    headerProgress->setStyleSheet("color: #64748b; font-weight: 600; font-size: "
-                                  "13px; background: transparent; border: none;");
-
+    QLabel *headerProgress = new QLabel("Charge (n projets)");
+    headerProgress->setStyleSheet("color: #64748b; font-weight: 600; font-size: 12px;");
     QLabel *headerStatus = new QLabel("Statut");
-    headerStatus->setStyleSheet("color: #64748b; font-weight: 600; font-size: "
-                                "13px; background: transparent; border: none;");
-    headerStatus->setFixedWidth(100);
-
+    headerStatus->setStyleSheet("color: #64748b; font-weight: 600; font-size: 12px;");
+    headerStatus->setFixedWidth(90);
     headerRow->addWidget(headerName);
     headerRow->addWidget(headerProgress, 1);
     headerRow->addWidget(headerStatus);
@@ -4341,31 +4921,26 @@ void SmartPub::cherchAfficherStatistiques() {
 
     QFrame *line = new QFrame();
     line->setFrameShape(QFrame::HLine);
-    line->setStyleSheet("background-color: #e2e8f0;");
-    line->setFixedHeight(1);
+    line->setStyleSheet("background-color: #e2e8f0; max-height: 1px;");
     overloadLayout->addWidget(line);
 
-    for (auto it = cherchChercheursMap.begin(); it != cherchChercheursMap.end();
-         ++it) {
-        auto data = it.value();
+    for (auto it = cherchChercheursMap.begin(); it != cherchChercheursMap.end(); ++it) {
+        const ChercheurData &data = it.value();
         int nbProjets = data.projetsIds.size();
         int surcharge = qMin(nbProjets * 25, 100);
 
         QHBoxLayout *rowLayout = new QHBoxLayout();
-        rowLayout->setSpacing(15);
-
         QLabel *nameLabel =
-            new QLabel(QString("%1 %2").arg(data.prenom).arg(data.nom));
+            new QLabel(QString("%1 %2").arg(data.prenom, data.nom));
         nameLabel->setFixedWidth(200);
-        nameLabel->setStyleSheet("font-weight: 600; color: #334155; background: "
-                                 "transparent; border: none;");
+        nameLabel->setStyleSheet("font-weight: 600; color: #334155;");
 
         QProgressBar *progressBar = new QProgressBar();
         progressBar->setRange(0, 100);
         progressBar->setValue(surcharge);
         progressBar->setTextVisible(true);
-        progressBar->setFormat(QString("%1 projets").arg(nbProjets));
-        progressBar->setFixedHeight(28);
+        progressBar->setFormat(QString("%1 projet(s)").arg(nbProjets));
+        progressBar->setFixedHeight(26);
 
         QString color;
         if (surcharge < 50)
@@ -4376,62 +4951,197 @@ void SmartPub::cherchAfficherStatistiques() {
             color = "#ef4444";
 
         progressBar->setStyleSheet(QString(R"(
-            QProgressBar {
-                border: none;
-                border-radius: 14px;
-                background-color: #e2e8f0;
-                text-align: center;
-                color: white;
-                font-weight: 600;
-                font-size: 12px;
-            }
-            QProgressBar::chunk {
-                background-color: %1;
-                border-radius: 14px;
-            }
+            QProgressBar { border: none; border-radius: 13px; background-color: #e2e8f0; text-align: center; color: white; font-weight: 600; font-size: 11px; }
+            QProgressBar::chunk { background-color: %1; border-radius: 13px; }
         )")
                                        .arg(color));
 
         QLabel *statusLabel = new QLabel();
         if (surcharge < 50)
-            statusLabel->setText("🟢 Normal");
+            statusLabel->setText("Normal");
         else if (surcharge < 75)
-            statusLabel->setText("🟡 Occupé");
+            statusLabel->setText("Occupé");
         else
-            statusLabel->setText("🔴 Surchargé");
-        statusLabel->setStyleSheet(QString("color: %1; font-weight: 600; "
-                                           "background: transparent; border: none;")
-                                       .arg(color));
-        statusLabel->setFixedWidth(100);
+            statusLabel->setText("Surchargé");
+        statusLabel->setStyleSheet(QString("color: %1; font-weight: 600;").arg(color));
+        statusLabel->setFixedWidth(90);
 
         rowLayout->addWidget(nameLabel);
         rowLayout->addWidget(progressBar, 1);
         rowLayout->addWidget(statusLabel);
-
         overloadLayout->addLayout(rowLayout);
     }
 
-    contentLayout->addWidget(overloadFrame);
-    contentLayout->addStretch();
+    ovScrollLay->addWidget(overloadFrame);
+    ovScrollLay->addStretch();
+    scrollOverview->setWidget(scrollContent);
+    ovMain->addWidget(scrollOverview, 1);
+    tabs->addTab(tabOverview, "Vue d'ensemble");
 
-    scrollArea->setWidget(contentWidget);
-    mainLayout->addWidget(scrollArea);
+    QWidget *tabPromo = new QWidget();
+    QVBoxLayout *promoLay = new QVBoxLayout(tabPromo);
+    promoLay->setContentsMargins(16, 16, 16, 16);
+    promoLay->setSpacing(12);
+
+    QFormLayout *promoForm = new QFormLayout();
+    QComboBox *comboPromo = new QComboBox();
+    QList<int> idsSorted = cherchChercheursMap.keys();
+    std::sort(idsSorted.begin(), idsSorted.end());
+    for (int id : idsSorted) {
+        const ChercheurData &d = cherchChercheursMap[id];
+        comboPromo->addItem(QString("%1 %2 — id %3").arg(d.prenom, d.nom).arg(id), id);
+    }
+
+    PromotionCriteria critDefaults;
+    QSpinBox *spinAns = new QSpinBox();
+    spinAns->setRange(0, 50);
+    spinAns->setValue(critDefaults.minAnneesAnciennete);
+    QSpinBox *spinPub = new QSpinBox();
+    spinPub->setRange(0, 500);
+    spinPub->setValue(critDefaults.minPublications);
+    QSpinBox *spinProj = new QSpinBox();
+    spinProj->setRange(0, 100);
+    spinProj->setValue(critDefaults.minProjetsGeres);
+
+    promoForm->addRow("Chercheur", comboPromo);
+    promoForm->addRow("Seuil ancienneté (années)", spinAns);
+    promoForm->addRow("Seuil publications", spinPub);
+    promoForm->addRow("Seuil projets (contributions)", spinProj);
+    promoLay->addLayout(promoForm);
+
+    QLabel *promoResultTitle = new QLabel("Résultat");
+    promoResultTitle->setStyleSheet("font-weight: 700; color: #1e293b;");
+    promoLay->addWidget(promoResultTitle);
+
+    QLabel *promoVerdict = new QLabel();
+    promoVerdict->setWordWrap(true);
+    promoVerdict->setStyleSheet("font-size: 15px; padding: 8px;");
+    QListWidget *promoDetails = new QListWidget();
+    promoDetails->setMinimumHeight(180);
+    promoLay->addWidget(promoVerdict);
+    promoLay->addWidget(promoDetails);
+
+    auto runPromotion = [=]() {
+        if (!db.isOpen() || comboPromo->count() == 0) {
+            promoVerdict->setText("Base indisponible ou aucun chercheur chargé.");
+            promoDetails->clear();
+            return;
+        }
+        PromotionCriteria c;
+        c.minAnneesAnciennete = spinAns->value();
+        c.minPublications = spinPub->value();
+        c.minProjetsGeres = spinProj->value();
+        int cid = comboPromo->currentData().toInt();
+        QSqlDatabase dbConn(db);
+        ChercheurPromotionProfile p = PromotionEngine::loadProfile(dbConn, cid);
+        bool ok = PromotionEngine::isEligible(p, c);
+        double score = PromotionEngine::eligibilityScore(p, c);
+        promoVerdict->setText(
+            ok ? QString("<span style='color:#059669;font-weight:700'>Éligible</span> au regard des "
+                           "critères — score de complétude : %1 / 10")
+                     .arg(score, 0, 'f', 1)
+               : QString("<span style='color:#b91c1c;font-weight:700'>Non éligible</span> — score de "
+                         "complétude : %1 / 10")
+                     .arg(score, 0, 'f', 1));
+        promoDetails->clear();
+        for (const QString &line : PromotionEngine::detailChecks(p, c))
+            promoDetails->addItem(line);
+    };
+
+    QPushButton *btnEvalPromo = new QPushButton("Évaluer l'éligibilité");
+    btnEvalPromo->setCursor(Qt::PointingHandCursor);
+    btnEvalPromo->setStyleSheet(
+        "QPushButton { background-color: #3b82f6; color: white; border: none; border-radius: 10px; "
+        "padding: 10px 20px; font-weight: 600; }"
+        "QPushButton:hover { background-color: #2563eb; }");
+    connect(btnEvalPromo, &QPushButton::clicked, dialog, [runPromotion]() { runPromotion(); });
+    connect(comboPromo, QOverload<int>::of(&QComboBox::currentIndexChanged), dialog,
+            [runPromotion](int) { runPromotion(); });
+    connect(spinAns, QOverload<int>::of(&QSpinBox::valueChanged), dialog,
+            [runPromotion](int) { runPromotion(); });
+    connect(spinPub, QOverload<int>::of(&QSpinBox::valueChanged), dialog,
+            [runPromotion](int) { runPromotion(); });
+    connect(spinProj, QOverload<int>::of(&QSpinBox::valueChanged), dialog,
+            [runPromotion](int) { runPromotion(); });
+    promoLay->addWidget(btnEvalPromo, 0, Qt::AlignLeft);
+    promoLay->addStretch();
+    tabs->addTab(tabPromo, "Prédicteur de promotion");
+    runPromotion();
+
+    QWidget *tabMatch = new QWidget();
+    QVBoxLayout *matchLay = new QVBoxLayout(tabMatch);
+    matchLay->setContentsMargins(16, 16, 16, 16);
+    matchLay->setSpacing(12);
+
+    QLabel *matchInfo = new QLabel(
+        "Suggestions de collègues ayant des mots-clés proches (titres de publications), "
+        "sans collaboration passée sur un même projet (CONTRIBUER). Classement par indice de Jaccard.");
+    matchInfo->setWordWrap(true);
+    matchInfo->setStyleSheet("color: #64748b; font-size: 13px;");
+    matchLay->addWidget(matchInfo);
+
+    QHBoxLayout *matchRow = new QHBoxLayout();
+    QComboBox *comboMatch = new QComboBox();
+    for (int id : idsSorted) {
+        const ChercheurData &d = cherchChercheursMap[id];
+        comboMatch->addItem(QString("%1 %2 — id %3").arg(d.prenom, d.nom).arg(id), id);
+    }
+    QPushButton *btnMatch = new QPushButton("Actualiser les suggestions");
+    btnMatch->setCursor(Qt::PointingHandCursor);
+    btnMatch->setStyleSheet(
+        "QPushButton { background-color: #10b981; color: white; border: none; border-radius: 10px; "
+        "padding: 10px 20px; font-weight: 600; }"
+        "QPushButton:hover { background-color: #059669; }");
+    matchRow->addWidget(new QLabel("Chercheur de référence:"));
+    matchRow->addWidget(comboMatch, 1);
+    matchRow->addWidget(btnMatch);
+    matchLay->addLayout(matchRow);
+
+    QTableWidget *tableMatch = new QTableWidget(0, 4);
+    tableMatch->setHorizontalHeaderLabels(
+        QStringList() << "ID"
+                      << "Nom"
+                      << "Indice Jaccard"
+                      << "Mots-clés communs");
+    tableMatch->horizontalHeader()->setStretchLastSection(true);
+    tableMatch->setAlternatingRowColors(true);
+    tableMatch->setStyleSheet(
+        "QTableWidget { gridline-color: #e2e8f0; background: white; }"
+        "QHeaderView::section { background: #f1f5f9; font-weight: 600; padding: 6px; }");
+    matchLay->addWidget(tableMatch);
+
+    auto runMatch = [=]() {
+        tableMatch->setRowCount(0);
+        if (!db.isOpen() || comboMatch->count() == 0)
+            return;
+        int cid = comboMatch->currentData().toInt();
+        QSqlDatabase dbConn(db);
+        QVector<MatchCandidate> vec = MatchmakingEngine::suggestColleagues(dbConn, cid, 20);
+        tableMatch->setRowCount(vec.size());
+        for (int i = 0; i < vec.size(); ++i) {
+            const MatchCandidate &m = vec[i];
+            tableMatch->setItem(i, 0, new QTableWidgetItem(QString::number(m.idChercheur)));
+            tableMatch->setItem(i, 1, new QTableWidgetItem(m.nomComplet));
+            tableMatch->setItem(i, 2,
+                                new QTableWidgetItem(QString::number(m.scoreJaccard, 'f', 3)));
+            tableMatch->setItem(i, 3, new QTableWidgetItem(QString::number(m.nbMotsCommuns)));
+        }
+        tableMatch->resizeColumnsToContents();
+    };
+    connect(btnMatch, &QPushButton::clicked, dialog, [runMatch]() { runMatch(); });
+    connect(comboMatch, QOverload<int>::of(&QComboBox::currentIndexChanged), dialog,
+            [runMatch](int) { runMatch(); });
+    tabs->addTab(tabMatch, "Smart matchmaking");
+    runMatch();
+
+    mainLayout->addWidget(tabs, 1);
 
     QPushButton *btnClose = new QPushButton("Fermer", dialog);
-    btnClose->setStyleSheet(R"(
-        QPushButton {
-            background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #3b82f6, stop:1 #10b981);
-            color: white;
-            border: none;
-            border-radius: 12px;
-            padding: 14px 48px;
-            font-size: 16px;
-            font-weight: 600;
-        }
-        QPushButton:hover {
-            background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #2563eb, stop:1 #059669);
-        }
-    )");
+    btnClose->setCursor(Qt::PointingHandCursor);
+    btnClose->setStyleSheet(
+        "QPushButton { background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #3b82f6, stop:1 #10b981); "
+        "color: white; border: none; border-radius: 12px; padding: 12px 40px; font-size: 15px; font-weight: 600; }"
+        "QPushButton:hover { background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #2563eb, stop:1 #059669); }");
     connect(btnClose, &QPushButton::clicked, dialog, &QDialog::accept);
     mainLayout->addWidget(btnClose, 0, Qt::AlignCenter);
 
@@ -4467,6 +5177,26 @@ void SmartPub::on_cherchBtnAjouterChercheur_clicked() {
         return;
     }
 
+    // Validation format email
+    static const QRegularExpression emailRegex(
+        QStringLiteral(R"(^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$)"));
+    if (!emailRegex.match(email).hasMatch()) {
+        QMessageBox::warning(this, "Erreur",
+                             "L'adresse email n'est pas valide.\n"
+                             "Format attendu : exemple@domaine.com");
+        ui->cherchLineEditEmail->setFocus();
+        return;
+    }
+
+    // Validation format CIN : exactement 8 chiffres
+    static const QRegularExpression cinRegex(QStringLiteral(R"(^\d{8}$)"));
+    if (!cinRegex.match(cin).hasMatch()) {
+        QMessageBox::warning(this, "Erreur",
+                             "Le CIN doit être composé exactement de 8 chiffres.");
+        ui->cherchLineEditCIN->setFocus();
+        return;
+    }
+
     QString photoPath = ":/avatar.png";
 
     QSqlDatabase db = Connection::instance()->getDatabase();
@@ -4475,18 +5205,35 @@ void SmartPub::on_cherchBtnAjouterChercheur_clicked() {
         return;
     }
 
-    int newId = 1;
-    QSqlQuery query(db);
-    if (query.exec("SELECT TABLE1_SEQ.NEXTVAL FROM DUAL") && query.next()) {
-        newId = query.value(0).toInt();
-    } else {
-        if (query.exec("SELECT NVL(MAX(ID), 0) + 1 FROM CHERCHEUR") && query.next())
-            newId = query.value(0).toInt();
+    // Vérification unicité email avant INSERT
+    {
+        QSqlQuery chkQuery(db);
+        chkQuery.prepare("SELECT COUNT(*) FROM CHERCHEUR WHERE LOWER(EMAIL) = LOWER(:email)");
+        chkQuery.bindValue(":email", email);
+        if (chkQuery.exec() && chkQuery.next() && chkQuery.value(0).toInt() > 0) {
+            QMessageBox::warning(this, "Erreur",
+                                 "Un chercheur avec cet email existe déjà.");
+            ui->cherchLineEditEmail->setFocus();
+            return;
+        }
     }
 
-    query.prepare("INSERT INTO chercheur (ID, NOM, PRENOM, EMAIL, GRADE, CIN, PHOTO_PROFIL) "
-                 "VALUES (:id, :nom, :prenom, :email, :grade, :cin, :photo_profil)");
-    query.bindValue(":id", newId);
+    // Vérification unicité CIN avant INSERT
+    {
+        QSqlQuery chkQuery(db);
+        chkQuery.prepare("SELECT COUNT(*) FROM CHERCHEUR WHERE CIN = :cin");
+        chkQuery.bindValue(":cin", cin);
+        if (chkQuery.exec() && chkQuery.next() && chkQuery.value(0).toInt() > 0) {
+            QMessageBox::warning(this, "Erreur",
+                                 "Un chercheur avec ce CIN existe déjà.");
+            ui->cherchLineEditCIN->setFocus();
+            return;
+        }
+    }
+
+    QSqlQuery query(db);
+    query.prepare("INSERT INTO CHERCHEUR (NOM, PRENOM, EMAIL, GRADE, CIN, PHOTO_PROFIL) "
+                 "VALUES (:nom, :prenom, :email, :grade, :cin, :photo_profil)");
     query.bindValue(":nom", nom);
     query.bindValue(":prenom", prenom);
     query.bindValue(":email", email);
@@ -4505,6 +5252,29 @@ void SmartPub::on_cherchBtnAjouterChercheur_clicked() {
 
     QMessageBox::information(this, "Succès", "Chercheur ajouté !");
 
+    // Récupérer l'ID du nouveau chercheur via la séquence Oracle
+    int newId = -1;
+    {
+        QSqlQuery qId(db);
+        if (qId.exec("SELECT SEQ_CHERCHEUR.CURRVAL FROM DUAL") && qId.next())
+            newId = qId.value(0).toInt();
+    }
+
+    // Insérer les contributions dans CONTRIBUER si des projets ont été sélectionnés
+    if (newId > 0 && cherchProjetsListWidget) {
+        QList<QListWidgetItem*> selItems = cherchProjetsListWidget->selectedItems();
+        for (QListWidgetItem *item : selItems) {
+            int codeProjet = item->data(Qt::UserRole).toInt();
+            QSqlQuery qContrib(db);
+            qContrib.prepare(
+                "INSERT INTO CONTRIBUER (ID_CHERCHEUR, CODE_PROJET) "
+                "VALUES (:idc, :idp)");
+            qContrib.bindValue(":idc", newId);
+            qContrib.bindValue(":idp", codeProjet);
+            qContrib.exec(); // erreur silencieuse si doublon (PK déjà présente)
+        }
+    }
+
     ui->cherchLineEditNom->clear();
     ui->cherchLineEditPrenom->clear();
     ui->cherchLineEditCIN->clear();
@@ -4514,6 +5284,14 @@ void SmartPub::on_cherchBtnAjouterChercheur_clicked() {
     ui->cherchLabelPhotoHint->setStyleSheet(
         "color: #94a3b8; font-size: 12px; background: transparent; border: "
         "none;");
+    // Réinitialiser le widget projets
+    if (cherchProjetsListWidget) cherchProjetsListWidget->clearSelection();
+    if (cherchBtnSelectProjets)  cherchBtnSelectProjets->setText("Sélectionner des projets…");
+    if (cherchLabelProjetsSelec) {
+        cherchLabelProjetsSelec->setText("Aucun projet sélectionné");
+        cherchLabelProjetsSelec->setStyleSheet(
+            "color: #94a3b8; font-size: 12px; background: transparent; border: none;");
+    }
 
     on_cherchBtnVueListe_clicked();
 }
@@ -4548,7 +5326,7 @@ void SmartPub::on_cherchModifierChercheur(int id) {
         return;
     }
     QSqlQuery query(db);
-    query.prepare("SELECT ID, NOM, PRENOM, EMAIL, GRADE, CIN, PHOTO_PROFIL FROM chercheur WHERE ID = :id");
+    query.prepare("SELECT ID_CHERCHEUR, NOM, PRENOM, EMAIL, GRADE, CIN, PHOTO_PROFIL FROM CHERCHEUR WHERE ID_CHERCHEUR = :id");
     query.bindValue(":id", id);
     if (!query.exec() || !query.next()) {
         QMessageBox::warning(this, "Erreur", "Chercheur introuvable.");
@@ -4566,36 +5344,57 @@ void SmartPub::on_cherchModifierChercheur(int id) {
     QDialog dialog(this);
     dialog.setWindowTitle(
         QString("Modifier - %1 %2").arg(data.prenom).arg(data.nom));
-    dialog.setMinimumWidth(480);
+    dialog.setMinimumSize(520, 620);
+    dialog.setMaximumSize(600, 780);
+    dialog.resize(520, 700);
     dialog.setStyleSheet("background-color: #f8fafc;");
 
-    const QString labelStyle = "color: #334155; font-size: 14px; font-weight: 600; background: transparent; border: none;";
-    const QString inputStyle = "padding: 12px; border-radius: 10px; border: 2px solid #e2e8f0; font-size: 14px; color: #1e293b; background-color: white;";
+    const QString labelStyle = "color: #334155; font-size: 13px; font-weight: 600; background: transparent; border: none;";
+    const QString inputStyle = "padding: 10px 12px; border-radius: 10px; border: 2px solid #e2e8f0; font-size: 13px; color: #1e293b; background-color: white;";
 
-    QVBoxLayout layout(&dialog);
-    layout.setSpacing(16);
-    layout.setContentsMargins(30, 30, 30, 30);
+    // Layout principal du dialogue
+    QVBoxLayout *dialogMainLayout = new QVBoxLayout(&dialog);
+    dialogMainLayout->setSpacing(0);
+    dialogMainLayout->setContentsMargins(0, 0, 0, 0);
 
-    QLabel *title = new QLabel("Modifier le chercheur");
-    title->setStyleSheet("font-size: 22px; font-weight: 700; color: #1e293b; background: transparent; border: none;");
-    layout.addWidget(title);
+    // Titre fixe en haut
+    QFrame *titleFrame = new QFrame();
+    titleFrame->setStyleSheet("background-color: white; border-bottom: 1px solid #e2e8f0;");
+    titleFrame->setFixedHeight(60);
+    QHBoxLayout *titleHL = new QHBoxLayout(titleFrame);
+    titleHL->setContentsMargins(24, 0, 24, 0);
+    QLabel *titleLbl = new QLabel("Modifier le chercheur");
+    titleLbl->setStyleSheet("font-size: 18px; font-weight: 700; color: #1e293b; background: transparent; border: none;");
+    titleHL->addWidget(titleLbl);
+    dialogMainLayout->addWidget(titleFrame);
 
+    // Zone scrollable
+    QScrollArea *scrollArea = new QScrollArea();
+    scrollArea->setWidgetResizable(true);
+    scrollArea->setFrameShape(QFrame::NoFrame);
+    scrollArea->setStyleSheet("background-color: #f8fafc; border: none;");
+    scrollArea->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+
+    QWidget *scrollContent = new QWidget();
+    scrollContent->setStyleSheet("background-color: #f8fafc;");
+    QVBoxLayout *layout = new QVBoxLayout(scrollContent);
+    layout->setSpacing(10);
+    layout->setContentsMargins(24, 16, 24, 16);
+
+    // Photo
     QString newPhotoPath = data.photoPath;
     QHBoxLayout *photoRow = new QHBoxLayout();
     photoRow->setSpacing(16);
-    QLabel *photoLabel = new QLabel(&dialog);
-    photoLabel->setFixedSize(80, 80);
+    QLabel *photoLabel = new QLabel(scrollContent);
+    photoLabel->setFixedSize(70, 70);
     photoLabel->setAlignment(Qt::AlignCenter);
     photoLabel->setStyleSheet("border: 2px solid #e2e8f0; background: transparent;");
     photoLabel->setScaledContents(false);
-    photoLabel->setMask(QRegion(0, 0, 80, 80, QRegion::Ellipse));
+    photoLabel->setMask(QRegion(0, 0, 70, 70, QRegion::Ellipse));
     QPixmap photoPix;
-    if (!newPhotoPath.isEmpty())
-        photoPix.load(newPhotoPath);
-    if (photoPix.isNull())
-        photoPix.load(":/avatar.png");
-    if (!photoPix.isNull())
-        photoLabel->setPixmap(makeCircularPixmap(photoPix, 80));
+    if (!newPhotoPath.isEmpty()) photoPix.load(newPhotoPath);
+    if (photoPix.isNull()) photoPix.load(":/avatar.png");
+    if (!photoPix.isNull()) photoLabel->setPixmap(makeCircularPixmap(photoPix, 70));
     photoRow->addWidget(photoLabel);
     QVBoxLayout *photoCol = new QVBoxLayout();
     QLabel *photoTitle = new QLabel("Photo de profil");
@@ -4603,52 +5402,75 @@ void SmartPub::on_cherchModifierChercheur(int id) {
     photoCol->addWidget(photoTitle);
     QPushButton *btnChangerPhoto = new QPushButton("Changer la photo");
     btnChangerPhoto->setStyleSheet(R"(
-        QPushButton { background-color: #e2e8f0; color: #334155; border: none; border-radius: 8px; padding: 8px 16px; font-size: 13px; font-weight: 500; }
-        QPushButton:hover { background-color: #cbd5e1; color: #1e293b; }
+        QPushButton { background-color: #e2e8f0; color: #334155; border: none; border-radius: 8px; padding: 7px 14px; font-size: 12px; font-weight: 500; }
+        QPushButton:hover { background-color: #cbd5e1; }
     )");
     connect(btnChangerPhoto, &QPushButton::clicked, &dialog, [&dialog, photoLabel, &newPhotoPath]() {
         QString path = QFileDialog::getOpenFileName(&dialog, "Choisir une photo", QDir::homePath(), "Images (*.png *.jpg *.jpeg)");
         if (path.isEmpty()) return;
         newPhotoPath = path;
         QPixmap pm(path);
-        if (!pm.isNull())
-            photoLabel->setPixmap(makeCircularPixmap(pm, 80));
+        if (!pm.isNull()) photoLabel->setPixmap(makeCircularPixmap(pm, 70));
     });
     photoCol->addWidget(btnChangerPhoto);
     photoRow->addLayout(photoCol);
-    layout.addLayout(photoRow);
+    layout->addLayout(photoRow);
 
-    QLabel *lblNom = new QLabel("Nom:");
+    // Nom + Prénom sur la même ligne
+    QHBoxLayout *nomPrenomRow = new QHBoxLayout();
+    nomPrenomRow->setSpacing(12);
+    QVBoxLayout *colNom = new QVBoxLayout();
+    QLabel *lblNom = new QLabel("Nom :");
     lblNom->setStyleSheet(labelStyle);
-    layout.addWidget(lblNom);
+    colNom->addWidget(lblNom);
     QLineEdit *editNom = new QLineEdit(data.nom);
     editNom->setStyleSheet(inputStyle);
-    layout.addWidget(editNom);
-
-    QLabel *lblPrenom = new QLabel("Prénom:");
+    colNom->addWidget(editNom);
+    nomPrenomRow->addLayout(colNom, 1);
+    QVBoxLayout *colPrenom = new QVBoxLayout();
+    QLabel *lblPrenom = new QLabel("Prénom :");
     lblPrenom->setStyleSheet(labelStyle);
-    layout.addWidget(lblPrenom);
+    colPrenom->addWidget(lblPrenom);
     QLineEdit *editPrenom = new QLineEdit(data.prenom);
     editPrenom->setStyleSheet(inputStyle);
-    layout.addWidget(editPrenom);
+    colPrenom->addWidget(editPrenom);
+    nomPrenomRow->addLayout(colPrenom, 1);
+    layout->addLayout(nomPrenomRow);
 
-    QLabel *lblEmail = new QLabel("Email:");
+    // Email + CIN sur la même ligne
+    QHBoxLayout *emailCinRow = new QHBoxLayout();
+    emailCinRow->setSpacing(12);
+    QVBoxLayout *colEmail = new QVBoxLayout();
+    QLabel *lblEmail = new QLabel("Email :");
     lblEmail->setStyleSheet(labelStyle);
-    layout.addWidget(lblEmail);
+    colEmail->addWidget(lblEmail);
     QLineEdit *editEmail = new QLineEdit(data.email);
     editEmail->setStyleSheet(inputStyle);
-    layout.addWidget(editEmail);
+    colEmail->addWidget(editEmail);
+    emailCinRow->addLayout(colEmail, 3);
+    QVBoxLayout *colCIN = new QVBoxLayout();
+    QLabel *lblCIN = new QLabel("CIN :");
+    lblCIN->setStyleSheet(labelStyle);
+    colCIN->addWidget(lblCIN);
+    QLineEdit *editCIN = new QLineEdit(data.cin);
+    editCIN->setStyleSheet(inputStyle);
+    editCIN->setPlaceholderText("8 chiffres");
+    editCIN->setMaxLength(8);
+    colCIN->addWidget(editCIN);
+    emailCinRow->addLayout(colCIN, 2);
+    layout->addLayout(emailCinRow);
 
-    QLabel *lblGrade = new QLabel("Grade:");
+    // Grade
+    QLabel *lblGrade = new QLabel("Grade :");
     lblGrade->setStyleSheet(labelStyle);
-    layout.addWidget(lblGrade);
+    layout->addWidget(lblGrade);
     QComboBox *comboGrade = new QComboBox();
     comboGrade->setStyleSheet(R"(
         QComboBox {
-            padding: 12px;
+            padding: 10px 12px;
             border-radius: 10px;
             border: 2px solid #e2e8f0;
-            font-size: 14px;
+            font-size: 13px;
             min-height: 40px;
             color: #1e293b;
             background-color: white;
@@ -4656,54 +5478,318 @@ void SmartPub::on_cherchModifierChercheur(int id) {
         QComboBox QAbstractItemView { color: #1e293b; background-color: white; }
     )");
     comboGrade->addItems({"Professeur", "Maitre de Conferences", "Docteur",
-                          "Ingenieur de Recherche", "Post-doctorant",
-                          "Doctorant"});
+                          "Ingenieur de Recherche", "Post-doctorant", "Doctorant"});
     comboGrade->setCurrentText(data.grade);
-    layout.addWidget(comboGrade);
+    layout->addWidget(comboGrade);
 
-    QPushButton *btnSave = new QPushButton("Sauvegarder");
-    btnSave->setStyleSheet(R"(
+    // ── Champ Projets ────────────────────────────────────────────────────────
+    // Charger les projets déjà affectés à ce chercheur
+    QList<int> projetsAffectes;
+    {
+        QSqlQuery qProj(db);
+        qProj.prepare("SELECT CODE_PROJET FROM CONTRIBUER WHERE ID_CHERCHEUR = :id");
+        qProj.bindValue(":id", id);
+        if (qProj.exec())
+            while (qProj.next())
+                projetsAffectes.append(qProj.value(0).toInt());
+    }
+    // Tous les projets disponibles
+    QList<QPair<int,QString>> tousLesProjets;
+    {
+        QSqlQuery qAll(db);
+        if (qAll.exec("SELECT CODE_PROJET, TITRE FROM PROJET ORDER BY CODE_PROJET"))
+            while (qAll.next())
+                tousLesProjets.append({qAll.value(0).toInt(), qAll.value(1).toString()});
+    }
+
+    QLabel *lblProjets = new QLabel("Projets (max 5) :");
+    lblProjets->setStyleSheet(labelStyle);
+    layout->addWidget(lblProjets);
+
+    // Bouton déclencheur — même style que comboGrade
+    QPushButton *btnProjetsModif = new QPushButton(scrollContent);
+    btnProjetsModif->setCursor(Qt::PointingHandCursor);
+    btnProjetsModif->setStyleSheet(R"(
         QPushButton {
-            background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #3b82f6, stop:1 #10b981);
-            color: white;
-            border: none;
+            background-color: white;
+            border: 2px solid #e2e8f0;
             border-radius: 10px;
-            padding: 14px;
-            font-size: 15px;
+            padding: 10px 12px;
+            font-size: 13px;
+            color: #334155;
+            min-height: 40px;
+            text-align: left;
+        }
+        QPushButton:hover { border-color: #cbd5e1; }
+        QPushButton:pressed { border-color: #3b82f6; background-color: #eff6ff; }
+    )");
+    btnProjetsModif->setText(
+        projetsAffectes.isEmpty()
+            ? "▼  Sélectionner des projets…"
+            : QString("▼  %1 projet(s) affecté(s)").arg(projetsAffectes.size()));
+    layout->addWidget(btnProjetsModif);
+
+    // ListWidget inline (masqué par défaut)
+    QListWidget *listProjetsModif = new QListWidget(scrollContent);
+    listProjetsModif->setSelectionMode(QAbstractItemView::MultiSelection);
+    listProjetsModif->setFixedHeight(160);
+    listProjetsModif->setVisible(false);
+    listProjetsModif->setStyleSheet(R"(
+        QListWidget {
+            border: 2px solid #3b82f6;
+            border-radius: 10px;
+            background-color: white;
+            font-size: 13px;
+            color: #334155;
+            outline: none;
+        }
+        QListWidget::item {
+            padding: 8px 12px;
+            border-bottom: 1px solid #f1f5f9;
+        }
+        QListWidget::item:last { border-bottom: none; }
+        QListWidget::item:selected {
+            background-color: #eff6ff;
+            color: #1d4ed8;
             font-weight: 600;
         }
+        QListWidget::item:hover { background-color: #f8fafc; }
+    )");
+    // Peupler et pré-sélectionner
+    for (auto &p : tousLesProjets) {
+        QListWidgetItem *item = new QListWidgetItem(
+            QString("[%1]  %2").arg(p.first).arg(p.second));
+        item->setData(Qt::UserRole, p.first);
+        listProjetsModif->addItem(item);
+        if (projetsAffectes.contains(p.first))
+            item->setSelected(true);
+    }
+    layout->addWidget(listProjetsModif);
+
+    // Limiter à 5 sélections
+    connect(listProjetsModif, &QListWidget::itemSelectionChanged,
+            &dialog, [listProjetsModif]() {
+        QList<QListWidgetItem*> sel = listProjetsModif->selectedItems();
+        if (sel.size() > 5) {
+            bool b = listProjetsModif->blockSignals(true);
+            sel.last()->setSelected(false);
+            listProjetsModif->blockSignals(b);
+            QToolTip::showText(QCursor::pos(),
+                "Maximum 5 projets autorisés", listProjetsModif);
+        }
+    });
+
+    // Bouton valider projets
+    QPushButton *btnValiderModif = new QPushButton("✔  Valider la sélection");
+    btnValiderModif->setCursor(Qt::PointingHandCursor);
+    btnValiderModif->setVisible(false);
+    btnValiderModif->setFixedHeight(38);
+    btnValiderModif->setStyleSheet(R"(
+        QPushButton {
+            background: qlineargradient(x1:0,y1:0,x2:1,y2:0,
+                stop:0 #3b82f6, stop:1 #10b981);
+            color: white; border: none; border-radius: 8px;
+            font-size: 13px; font-weight: 600;
+        }
         QPushButton:hover {
-            background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #2563eb, stop:1 #059669);
+            background: qlineargradient(x1:0,y1:0,x2:1,y2:0,
+                stop:0 #2563eb, stop:1 #059669);
+        }
+    )");
+    layout->addWidget(btnValiderModif);
+
+    // Label résumé projets
+    QLabel *lblProjetsSelec = new QLabel(scrollContent);
+    lblProjetsSelec->setWordWrap(true);
+    if (projetsAffectes.isEmpty()) {
+        lblProjetsSelec->setText("Aucun projet sélectionné");
+        lblProjetsSelec->setStyleSheet(
+            "color: #94a3b8; font-size: 12px; background: transparent; border: none;");
+    } else {
+        QStringList titresCourants;
+        for (int pid : projetsAffectes)
+            for (auto &p : tousLesProjets)
+                if (p.first == pid) { titresCourants << QString("[%1] %2").arg(p.first).arg(p.second); break; }
+        lblProjetsSelec->setText("✔  " + titresCourants.join("  |  "));
+        lblProjetsSelec->setStyleSheet(
+            "color: #10b981; font-size: 12px; font-weight: 600; "
+            "background: transparent; border: none;");
+    }
+    layout->addWidget(lblProjetsSelec);
+
+    // Toggle liste
+    connect(btnProjetsModif, &QPushButton::clicked, &dialog,
+            [listProjetsModif, btnValiderModif, btnProjetsModif, scrollArea]() {
+        bool visible = listProjetsModif->isVisible();
+        listProjetsModif->setVisible(!visible);
+        btnValiderModif->setVisible(!visible);
+        btnProjetsModif->setText(visible
+            ? "▼  Sélectionner des projets…"
+            : "▲  Fermer la liste");
+        // Faire défiler jusqu'au bas pour montrer la liste
+        if (!visible)
+            QTimer::singleShot(50, scrollArea,
+                [scrollArea](){ scrollArea->verticalScrollBar()->setValue(
+                    scrollArea->verticalScrollBar()->maximum()); });
+    });
+
+    // Valider sélection
+    connect(btnValiderModif, &QPushButton::clicked, &dialog,
+            [listProjetsModif, btnValiderModif, btnProjetsModif, lblProjetsSelec]() {
+        listProjetsModif->setVisible(false);
+        btnValiderModif->setVisible(false);
+        QList<QListWidgetItem*> sel = listProjetsModif->selectedItems();
+        if (sel.isEmpty()) {
+            btnProjetsModif->setText("▼  Sélectionner des projets…");
+            lblProjetsSelec->setText("Aucun projet sélectionné");
+            lblProjetsSelec->setStyleSheet(
+                "color: #94a3b8; font-size: 12px; background: transparent; border: none;");
+        } else {
+            btnProjetsModif->setText(
+                QString("▼  %1 projet(s) sélectionné(s)").arg(sel.size()));
+            QStringList t;
+            for (auto *it : sel) t << it->text();
+            lblProjetsSelec->setText("✔  " + t.join("  |  "));
+            lblProjetsSelec->setStyleSheet(
+                "color: #10b981; font-size: 12px; font-weight: 600; "
+                "background: transparent; border: none;");
+        }
+    });
+
+    scrollArea->setWidget(scrollContent);
+    dialogMainLayout->addWidget(scrollArea, 1);
+
+    // Footer fixe avec bouton Sauvegarder
+    QFrame *footerFrame = new QFrame();
+    footerFrame->setStyleSheet("background-color: white; border-top: 1px solid #e2e8f0;");
+    footerFrame->setFixedHeight(62);
+    QHBoxLayout *footerHL = new QHBoxLayout(footerFrame);
+    footerHL->setContentsMargins(24, 0, 24, 0);
+    footerHL->addStretch();
+    QPushButton *btnSave = new QPushButton("💾  Sauvegarder");
+    btnSave->setFixedHeight(42);
+    btnSave->setCursor(Qt::PointingHandCursor);
+    btnSave->setStyleSheet(R"(
+        QPushButton {
+            background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                stop:0 #3b82f6, stop:1 #10b981);
+            color: white; border: none; border-radius: 10px;
+            padding: 0 32px; font-size: 14px; font-weight: 600;
+        }
+        QPushButton:hover {
+            background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                stop:0 #2563eb, stop:1 #059669);
         }
     )");
     connect(btnSave, &QPushButton::clicked, &dialog, &QDialog::accept);
-    layout.addWidget(btnSave);
+    footerHL->addWidget(btnSave);
+    dialogMainLayout->addWidget(footerFrame);
 
     if (dialog.exec() == QDialog::Accepted) {
-        QString newNom = editNom->text().trimmed();
+        QString newNom    = editNom->text().trimmed();
         QString newPrenom = editPrenom->text().trimmed();
-        QString newEmail = editEmail->text().trimmed();
-        QString newGrade = comboGrade->currentText().trimmed();
-        if (newNom.isEmpty() || newPrenom.isEmpty() || newEmail.isEmpty() || newGrade.isEmpty()) {
+        QString newEmail  = editEmail->text().trimmed();
+        QString newCIN    = editCIN->text().trimmed();
+        QString newGrade  = comboGrade->currentText().trimmed();
+
+        // Vérification champs obligatoires
+        if (newNom.isEmpty() || newPrenom.isEmpty() || newEmail.isEmpty()
+                || newCIN.isEmpty() || newGrade.isEmpty()) {
             QMessageBox::warning(this, "Erreur", "Tous les champs sont obligatoires.");
             return;
         }
+
+        // Validation format email
+        static const QRegularExpression emailRegex(
+            QStringLiteral(R"(^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$)"));
+        if (!emailRegex.match(newEmail).hasMatch()) {
+            QMessageBox::warning(this, "Erreur",
+                                 "L'adresse email n'est pas valide.\n"
+                                 "Format attendu : exemple@domaine.com");
+            return;
+        }
+
+        // Validation format CIN : exactement 8 chiffres
+        static const QRegularExpression cinRegex(QStringLiteral(R"(^\d{8}$)"));
+        if (!cinRegex.match(newCIN).hasMatch()) {
+            QMessageBox::warning(this, "Erreur",
+                                 "Le CIN doit être composé exactement de 8 chiffres.");
+            return;
+        }
+
+        // Unicité email (exclure le chercheur courant)
+        {
+            QSqlQuery chkQuery(db);
+            chkQuery.prepare("SELECT COUNT(*) FROM CHERCHEUR "
+                             "WHERE LOWER(EMAIL) = LOWER(:email) AND ID_CHERCHEUR <> :id");
+            chkQuery.bindValue(":email", newEmail);
+            chkQuery.bindValue(":id", id);
+            if (chkQuery.exec() && chkQuery.next() && chkQuery.value(0).toInt() > 0) {
+                QMessageBox::warning(this, "Erreur",
+                                     "Un autre chercheur possède déjà cet email.");
+                return;
+            }
+        }
+
+        // Unicité CIN (exclure le chercheur courant)
+        {
+            QSqlQuery chkQuery(db);
+            chkQuery.prepare("SELECT COUNT(*) FROM CHERCHEUR "
+                             "WHERE CIN = :cin AND ID_CHERCHEUR <> :id");
+            chkQuery.bindValue(":cin", newCIN);
+            chkQuery.bindValue(":id", id);
+            if (chkQuery.exec() && chkQuery.next() && chkQuery.value(0).toInt() > 0) {
+                QMessageBox::warning(this, "Erreur",
+                                     "Un autre chercheur possède déjà ce CIN.");
+                return;
+            }
+        }
+
         QSqlQuery updateQuery(db);
-        updateQuery.prepare("UPDATE chercheur SET NOM = :nom, PRENOM = :prenom, EMAIL = :email, GRADE = :grade, PHOTO_PROFIL = :photo_profil WHERE ID = :id");
-        updateQuery.bindValue(":nom", newNom);
-        updateQuery.bindValue(":prenom", newPrenom);
-        updateQuery.bindValue(":email", newEmail);
-        updateQuery.bindValue(":grade", newGrade);
-        updateQuery.bindValue(":photo_profil", newPhotoPath.isEmpty() ? QString(":/avatar.png") : newPhotoPath);
+        updateQuery.prepare(
+            "UPDATE CHERCHEUR SET NOM = :nom, PRENOM = :prenom, EMAIL = :email, "
+            "CIN = :cin, GRADE = :grade, PHOTO_PROFIL = :photo_profil "
+            "WHERE ID_CHERCHEUR = :id");
+        updateQuery.bindValue(":nom",         newNom);
+        updateQuery.bindValue(":prenom",      newPrenom);
+        updateQuery.bindValue(":email",       newEmail);
+        updateQuery.bindValue(":cin",         newCIN);
+        updateQuery.bindValue(":grade",       newGrade);
+        updateQuery.bindValue(":photo_profil",
+            newPhotoPath.isEmpty() ? QString(":/avatar.png") : newPhotoPath);
         updateQuery.bindValue(":id", id);
+
         if (!updateQuery.exec()) {
             QString err = updateQuery.lastError().text();
             if (err.contains("unique") || err.contains("UK_CHERCHEUR"))
-                QMessageBox::warning(this, "Erreur", "Un chercheur avec cet email existe déjà.");
+                QMessageBox::warning(this, "Erreur",
+                                     "Un chercheur avec cet email ou ce CIN existe déjà.");
             else
-                QMessageBox::critical(this, "Erreur", "Échec de la modification : " + err);
+                QMessageBox::critical(this, "Erreur",
+                                      "Échec de la modification : " + err);
             return;
         }
+
+        // ── Mettre à jour les contributions dans CONTRIBUER ───────────────────
+        // 1) Supprimer toutes les contributions existantes
+        QSqlQuery delContrib(db);
+        delContrib.prepare("DELETE FROM CONTRIBUER WHERE ID_CHERCHEUR = :id");
+        delContrib.bindValue(":id", id);
+        delContrib.exec();
+
+        // 2) Réinsérer les projets nouvellement sélectionnés
+        QList<QListWidgetItem*> selItems = listProjetsModif->selectedItems();
+        for (QListWidgetItem *item : selItems) {
+            int codeProjet = item->data(Qt::UserRole).toInt();
+            QSqlQuery insContrib(db);
+            insContrib.prepare(
+                "INSERT INTO CONTRIBUER (ID_CHERCHEUR, CODE_PROJET) "
+                "VALUES (:idc, :idp)");
+            insContrib.bindValue(":idc", id);
+            insContrib.bindValue(":idp", codeProjet);
+            insContrib.exec();
+        }
+
         cherchAfficherListeChercheurs();
     }
 }
@@ -4726,7 +5812,7 @@ void SmartPub::on_cherchSupprimerChercheur(int id) {
         return;
     }
     QSqlQuery query(db);
-    query.prepare("DELETE FROM chercheur WHERE ID = :id");
+    query.prepare("DELETE FROM CHERCHEUR WHERE ID_CHERCHEUR = :id");
     query.bindValue(":id", id);
     if (!query.exec()) {
         QMessageBox::critical(this, "Erreur", "Échec de la suppression : " + query.lastError().text());
@@ -4741,72 +5827,110 @@ void SmartPub::on_cherchVoirDetailsChercheur(int id) {
         QMessageBox::critical(this, "Erreur", "Connexion à la base de données impossible.");
         return;
     }
+
+    // ── Charger les données du chercheur ──────────────────────────────────────
     QSqlQuery query(db);
-    query.prepare("SELECT ID, NOM, PRENOM, EMAIL, GRADE, CIN, PHOTO_PROFIL FROM chercheur WHERE ID = :id");
+    query.prepare("SELECT ID_CHERCHEUR, NOM, PRENOM, EMAIL, GRADE, CIN, PHOTO_PROFIL "
+                  "FROM CHERCHEUR WHERE ID_CHERCHEUR = :id");
     query.bindValue(":id", id);
     if (!query.exec() || !query.next()) {
         QMessageBox::warning(this, "Erreur", "Chercheur introuvable.");
         return;
     }
+
     ChercheurData data;
-    data.nom = query.value("NOM").toString();
-    data.prenom = query.value("PRENOM").toString();
-    data.email = query.value("EMAIL").toString();
-    data.grade = query.value("GRADE").toString();
-    data.cin = query.value("CIN").toString();
+    data.nom       = query.value("NOM").toString();
+    data.prenom    = query.value("PRENOM").toString();
+    data.email     = query.value("EMAIL").toString();
+    data.grade     = query.value("GRADE").toString();
+    data.cin       = query.value("CIN").toString();
     data.photoPath = query.value("PHOTO_PROFIL").toString();
     if (data.photoPath.isEmpty()) data.photoPath = ":/avatar.png";
-    data.dateCreation = QDateTime();
-    data.carriere = "";
     data.age = 0;
 
+    // ── Charger les projets depuis CONTRIBUER (jointure directe) ─────────────
+    QList<QString> projetsTitres;
+    {
+        QSqlQuery qProj(db);
+        qProj.prepare(
+            "SELECT p.CODE_PROJET, p.TITRE "
+            "FROM CONTRIBUER c "
+            "INNER JOIN PROJET p ON p.CODE_PROJET = c.CODE_PROJET "
+            "WHERE c.ID_CHERCHEUR = :id "
+            "ORDER BY p.CODE_PROJET");
+        qProj.bindValue(":id", id);
+        if (qProj.exec()) {
+            while (qProj.next()) {
+                data.projetsIds.append(qProj.value(0).toInt());
+                projetsTitres.append(qProj.value(1).toString());
+            }
+        }
+    }
+
+    // ── Calculer la carrière depuis le nb de projets et le grade ─────────────
+    data.carriere = cherchDeterminerCarriere(data.projetsIds.size(), data.grade);
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // DIALOGUE DE DÉTAILS
+    // ═══════════════════════════════════════════════════════════════════════════
     QDialog *dialog = new QDialog(this);
-    dialog->setWindowTitle(
-        QString("Profil - %1 %2").arg(data.prenom).arg(data.nom));
-    dialog->setMinimumSize(700, 600);
-    dialog->setMaximumSize(900, 800);
+    dialog->setWindowTitle(QString("Profil — %1 %2").arg(data.prenom, data.nom));
+    dialog->setMinimumSize(720, 640);
+    dialog->setMaximumSize(920, 840);
     dialog->setStyleSheet("background-color: #f8fafc;");
+    dialog->setAttribute(Qt::WA_DeleteOnClose);
 
     QVBoxLayout *mainLayout = new QVBoxLayout(dialog);
     mainLayout->setSpacing(0);
     mainLayout->setContentsMargins(0, 0, 0, 0);
 
+    // ── Header gradient ───────────────────────────────────────────────────────
     QFrame *headerFrame = new QFrame();
     headerFrame->setStyleSheet(R"(
         QFrame {
-            background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #3b82f6, stop:1 #10b981);
-            border-top-left-radius: 8px;
-            border-top-right-radius: 8px;
+            background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                stop:0 #3b82f6, stop:1 #10b981);
         }
     )");
-    headerFrame->setFixedHeight(200);
+    headerFrame->setFixedHeight(210);
+
     QVBoxLayout *headerLayout = new QVBoxLayout(headerFrame);
     headerLayout->setAlignment(Qt::AlignCenter);
-    headerLayout->setSpacing(15);
+    headerLayout->setSpacing(10);
+    headerLayout->setContentsMargins(20, 20, 20, 16);
 
-    QLabel *avatarLabel = new QLabel();
-    avatarLabel->setFixedSize(120, 120);
-    avatarLabel->setAlignment(Qt::AlignCenter);
-    avatarLabel->setStyleSheet("border: 4px solid white; background: transparent;");
-    avatarLabel->setScaledContents(false);
-    avatarLabel->setMask(QRegion(0, 0, 120, 120, QRegion::Ellipse));
+    // Avatar circulaire
+    QLabel *avatarLbl = new QLabel();
+    avatarLbl->setFixedSize(110, 110);
+    avatarLbl->setAlignment(Qt::AlignCenter);
+    avatarLbl->setStyleSheet("border: 4px solid white; background: transparent;");
+    avatarLbl->setScaledContents(false);
+    avatarLbl->setMask(QRegion(0, 0, 110, 110, QRegion::Ellipse));
     QPixmap profilePix;
-    QString avatarPath = data.photoPath.isEmpty() ? QString(":/avatar.png") : data.photoPath;
-    if (!profilePix.load(avatarPath))
-        profilePix.load(":/avatar.png");
+    if (!profilePix.load(data.photoPath)) profilePix.load(":/avatar.png");
     if (!profilePix.isNull())
-        avatarLabel->setPixmap(makeCircularPixmap(profilePix, 120));
-    headerLayout->addWidget(avatarLabel, 0, Qt::AlignCenter);
+        avatarLbl->setPixmap(makeCircularPixmap(profilePix, 110));
+    headerLayout->addWidget(avatarLbl, 0, Qt::AlignCenter);
 
-    QLabel *nameLabel =
-        new QLabel(QString("%1 %2").arg(data.prenom).arg(data.nom));
-    nameLabel->setStyleSheet("color: white; font-size: 26px; font-weight: 700; "
-                             "background: transparent; border: none;");
-    nameLabel->setAlignment(Qt::AlignCenter);
-    headerLayout->addWidget(nameLabel, 0, Qt::AlignCenter);
+    QLabel *nameHeaderLbl = new QLabel(QString("%1 %2").arg(data.prenom, data.nom));
+    nameHeaderLbl->setStyleSheet(
+        "color: white; font-size: 22px; font-weight: 700; "
+        "background: transparent; border: none;");
+    nameHeaderLbl->setAlignment(Qt::AlignCenter);
+    headerLayout->addWidget(nameHeaderLbl, 0, Qt::AlignCenter);
+
+    // Badge carrière dans le header
+    QLabel *careerBadge = new QLabel(data.carriere.isEmpty() ? "—" : data.carriere);
+    careerBadge->setStyleSheet(
+        "background: rgba(255,255,255,0.22); color: white; "
+        "border-radius: 10px; padding: 5px 16px; font-size: 12px; "
+        "font-weight: 600; border: none;");
+    careerBadge->setAlignment(Qt::AlignCenter);
+    headerLayout->addWidget(careerBadge, 0, Qt::AlignCenter);
 
     mainLayout->addWidget(headerFrame);
 
+    // ── Scroll area avec les infos ────────────────────────────────────────────
     QScrollArea *scrollArea = new QScrollArea();
     scrollArea->setWidgetResizable(true);
     scrollArea->setFrameShape(QFrame::NoFrame);
@@ -4815,86 +5939,65 @@ void SmartPub::on_cherchVoirDetailsChercheur(int id) {
     QWidget *contentWidget = new QWidget();
     contentWidget->setStyleSheet("background-color: white;");
     QVBoxLayout *contentLayout = new QVBoxLayout(contentWidget);
-    contentLayout->setSpacing(16);
-    contentLayout->setContentsMargins(30, 30, 30, 30);
+    contentLayout->setSpacing(10);
+    contentLayout->setContentsMargins(28, 24, 28, 24);
 
-    auto createInfoRow = [&](const QString &label, const QString &value,
+    // Fabrique de ligne info
+    auto createInfoRow = [](const QString &label, const QString &value,
                              const QString &icon = "") -> QFrame * {
         QFrame *row = new QFrame();
-        row->setStyleSheet("background-color: #f8fafc; border-radius: 12px;");
-        row->setMaximumHeight(80);
+        row->setStyleSheet(
+            "QFrame { background-color: #f8fafc; border-radius: 10px; border: none; }");
+        row->setMaximumHeight(68);
         QHBoxLayout *rowLayout = new QHBoxLayout(row);
-        rowLayout->setContentsMargins(20, 15, 20, 15);
+        rowLayout->setContentsMargins(16, 10, 16, 10);
 
-        QLabel *iconLabel = new QLabel(icon.isEmpty() ? "•" : icon);
-        iconLabel->setStyleSheet(
-            "font-size: 20px; background: transparent; border: none;");
-        rowLayout->addWidget(iconLabel);
+        QLabel *iconLbl = new QLabel(icon.isEmpty() ? "•" : icon);
+        iconLbl->setStyleSheet("font-size: 16px; background: transparent; border: none;");
+        iconLbl->setFixedWidth(26);
+        rowLayout->addWidget(iconLbl);
 
-        QLabel *labelWidget = new QLabel(label + ":");
-        labelWidget->setStyleSheet(
-            "color: #64748b; font-size: 14px; font-weight: 600; min-width: 150px; "
+        QLabel *labelLbl = new QLabel(label + " :");
+        labelLbl->setStyleSheet(
+            "color: #64748b; font-size: 13px; font-weight: 600; "
+            "min-width: 130px; background: transparent; border: none;");
+        rowLayout->addWidget(labelLbl);
+
+        QLabel *valueLbl = new QLabel(value.isEmpty() ? "—" : value);
+        valueLbl->setStyleSheet(
+            "color: #1e293b; font-size: 14px; font-weight: 500; "
             "background: transparent; border: none;");
-        rowLayout->addWidget(labelWidget);
-
-        QLabel *valueWidget = new QLabel(value);
-        valueWidget->setStyleSheet("color: #1e293b; font-size: 16px; font-weight: "
-                                   "500; background: transparent; border: none;");
-        valueWidget->setWordWrap(true);
-        rowLayout->addWidget(valueWidget, 1);
-
+        valueLbl->setWordWrap(true);
+        rowLayout->addWidget(valueLbl, 1);
         return row;
     };
 
-    contentLayout->addWidget(createInfoRow("Grade", data.grade, "🎓"));
-    contentLayout->addWidget(createInfoRow("Email", data.email, "✉️"));
-    contentLayout->addWidget(createInfoRow("CIN", data.cin, "🆔"));
-    contentLayout->addWidget(
-        createInfoRow("Âge", QString("%1 ans").arg(data.age), "🎂"));
-    contentLayout->addWidget(
-        createInfoRow("Date d'ajout",
-                      data.dateCreation.toString("dd MMMM yyyy à hh:mm"), "📅"));
-    contentLayout->addWidget(createInfoRow("Carrière", data.carriere, "⭐"));
-    contentLayout->addWidget(createInfoRow(
-        "Projets en cours", QString::number(data.projetsIds.size()), "📁"));
+    contentLayout->addWidget(createInfoRow("Grade",    data.grade,                    "🎓"));
+    contentLayout->addWidget(createInfoRow("Email",    data.email,                    "✉️"));
+    contentLayout->addWidget(createInfoRow("CIN",      data.cin,                      "🆔"));
+    contentLayout->addWidget(createInfoRow("Carrière", data.carriere,                 "⭐"));
+    contentLayout->addWidget(createInfoRow("Projets",
+        QString::number(data.projetsIds.size()) + " contribution(s)",                "📁"));
 
-    if (!data.projetsIds.isEmpty()) {
-        QLabel *projetsTitle = new QLabel("Détails des projets:");
-        projetsTitle->setStyleSheet(
-            "color: #1e293b; font-size: 18px; font-weight: 700; margin-top: 10px; "
-            "background: transparent; border: none;");
-        contentLayout->addWidget(projetsTitle);
+    // ── Liste des projets associés ────────────────────────────────────────────
+    if (!projetsTitres.isEmpty()) {
+        QLabel *projTitle = new QLabel("Projets associés");
+        projTitle->setStyleSheet(
+            "color: #1e293b; font-size: 15px; font-weight: 700; "
+            "margin-top: 6px; background: transparent; border: none;");
+        contentLayout->addWidget(projTitle);
 
-        for (int projId : data.projetsIds) {
+        for (const QString &titre : projetsTitres) {
             QFrame *projFrame = new QFrame();
-            projFrame->setStyleSheet("background-color: #eff6ff; border-left: 4px "
-                                     "solid #3b82f6; border-radius: 8px;");
-            QHBoxLayout *projLayout = new QHBoxLayout(projFrame);
-            projLayout->setContentsMargins(15, 12, 15, 12);
-
-            QLabel *projLabel = new QLabel(
-                QString("Projet #%1 - En cours de développement").arg(projId));
-            projLabel->setStyleSheet("color: #3b82f6; font-weight: 600; background: "
-                                     "transparent; border: none;");
-            projLayout->addWidget(projLabel);
-
-            QPushButton *btnViewProj = new QPushButton("Voir");
-            btnViewProj->setFixedWidth(80);
-            btnViewProj->setStyleSheet(R"(
-                QPushButton {
-                    background-color: #3b82f6;
-                    color: white;
-                    border: none;
-                    border-radius: 6px;
-                    padding: 6px 12px;
-                    font-size: 12px;
-                }
-                QPushButton:hover {
-                    background-color: #2563eb;
-                }
-            )");
-            projLayout->addWidget(btnViewProj);
-
+            projFrame->setStyleSheet(
+                "QFrame { background-color: #eff6ff; border-left: 4px solid #3b82f6; "
+                "border-radius: 8px; border-top: none; border-right: none; border-bottom: none; }");
+            QHBoxLayout *pLayout = new QHBoxLayout(projFrame);
+            pLayout->setContentsMargins(14, 10, 14, 10);
+            QLabel *pLbl = new QLabel(titre);
+            pLbl->setStyleSheet(
+                "color: #1e40af; font-weight: 600; background: transparent; border: none;");
+            pLayout->addWidget(pLbl, 1);
             contentLayout->addWidget(projFrame);
         }
     }
@@ -4903,46 +6006,204 @@ void SmartPub::on_cherchVoirDetailsChercheur(int id) {
     scrollArea->setWidget(contentWidget);
     mainLayout->addWidget(scrollArea, 1);
 
+    // ── Footer : Export PDF + Fermer ──────────────────────────────────────────
     QFrame *footerFrame = new QFrame();
     footerFrame->setStyleSheet(
         "background-color: white; border-top: 1px solid #e2e8f0;");
+    footerFrame->setFixedHeight(70);
     QHBoxLayout *footerLayout = new QHBoxLayout(footerFrame);
-    footerLayout->setContentsMargins(30, 20, 30, 20);
-    footerLayout->setSpacing(15);
+    footerLayout->setContentsMargins(24, 0, 24, 0);
+    footerLayout->setSpacing(12);
 
-    QPushButton *btnExport = new QPushButton("📄 Exporter la fiche");
+    QPushButton *btnExport = new QPushButton("📄  Exporter en PDF");
+    btnExport->setCursor(Qt::PointingHandCursor);
     btnExport->setStyleSheet(R"(
         QPushButton {
             background-color: white;
             color: #334155;
             border: 2px solid #e2e8f0;
             border-radius: 10px;
-            padding: 12px 24px;
-            font-size: 14px;
+            padding: 0 22px;
+            font-size: 13px;
             font-weight: 600;
+            min-height: 42px;
         }
         QPushButton:hover {
-            background-color: #f8fafc;
+            background-color: #eff6ff;
             border-color: #3b82f6;
-            color: #3b82f6;
+            color: #1d4ed8;
         }
     )");
-    connect(btnExport, &QPushButton::clicked, this,
-            [this]() { on_cherchBtnExportDetails_clicked(); });
+
+    // ── Lambda export PDF capturant id, data et projetsTitres ─────────────────
+    connect(btnExport, &QPushButton::clicked, dialog,
+        [this, data, projetsTitres]() {
+
+        QString safeNom = data.nom;
+        safeNom.replace(" ", "_");
+        QString safePrenom = data.prenom;
+        safePrenom.replace(" ", "_");
+
+        QString fileName = QFileDialog::getSaveFileName(
+            this,
+            "Exporter Fiche Chercheur — PDF",
+            QDir::homePath() + "/Fiche_" + safeNom + "_" + safePrenom + ".pdf",
+            "Fichiers PDF (*.pdf)");
+        if (fileName.isEmpty()) return;
+
+        QPrinter printer(QPrinter::HighResolution);
+        printer.setOutputFormat(QPrinter::PdfFormat);
+        printer.setOutputFileName(fileName);
+        printer.setPageSize(QPageSize(QPageSize::A4));
+        printer.setPageOrientation(QPageLayout::Portrait);
+
+        QPainter painter;
+        if (!painter.begin(&printer)) {
+            QMessageBox::critical(this, "Erreur PDF",
+                "Impossible d'initialiser le fichier PDF :\n" + fileName);
+            return;
+        }
+
+        const double res = printer.resolution();  // points / inch (ex: 1200)
+        const double cm  = res / 2.54;            // 1 cm en points
+        int x = (int)(1.8 * cm);
+        int y = (int)(1.5 * cm);
+
+        // ── EN-TÊTE : rectangle gradient simulé ────────────────────────────
+        QLinearGradient headerGrad(x, y, x + (int)(17.4 * cm), y);
+        headerGrad.setColorAt(0.0, QColor("#3b82f6"));
+        headerGrad.setColorAt(1.0, QColor("#10b981"));
+        painter.setPen(Qt::NoPen);
+        painter.setBrush(headerGrad);
+        painter.drawRoundedRect(x, y, (int)(17.4 * cm), (int)(4.0 * cm), 14, 14);
+
+        // Photo de profil (rendue circulaire)
+        QString photoPath = data.photoPath.isEmpty() ? ":/avatar.png" : data.photoPath;
+        QPixmap pix;
+        if (!pix.load(photoPath)) pix.load(":/avatar.png");
+        if (!pix.isNull()) {
+            int sz = (int)(3.2 * cm);
+            QPixmap circ = makeCircularPixmap(pix, sz);
+            // Dessin du cercle blanc derrière la photo
+            painter.setPen(Qt::NoPen);
+            painter.setBrush(Qt::white);
+            painter.drawEllipse(x + (int)(0.25 * cm), y + (int)(0.35 * cm), sz + 8, sz + 8);
+            painter.drawPixmap(x + (int)(0.29 * cm) + 4,
+                               y + (int)(0.39 * cm) + 4, sz, sz, circ);
+        }
+
+        // Nom + Grade
+        int textX = x + (int)(4.2 * cm);
+        painter.setPen(Qt::white);
+        painter.setFont(QFont("Segoe UI", 20, QFont::Bold));
+        painter.drawText(textX, y + (int)(1.3 * cm),
+                         QString("%1 %2").arg(data.prenom, data.nom));
+
+        painter.setFont(QFont("Segoe UI", 13));
+        painter.drawText(textX, y + (int)(2.1 * cm), data.grade);
+
+        // Badge carrière
+        if (!data.carriere.isEmpty()) {
+            painter.setFont(QFont("Segoe UI", 11, QFont::Bold));
+            int bx = textX, by = y + (int)(2.55 * cm);
+            int bw = (int)(5.5 * cm), bh = (int)(0.6 * cm);
+            painter.setPen(Qt::NoPen);
+            painter.setBrush(QColor(255, 255, 255, 55));
+            painter.drawRoundedRect(bx, by, bw, bh, 10, 10);
+            painter.setPen(Qt::white);
+            painter.drawText(QRect(bx, by, bw, bh), Qt::AlignCenter, data.carriere);
+        }
+
+        y += (int)(4.8 * cm);
+
+        // ── Helpers locaux ──────────────────────────────────────────────────
+        auto drawSectionHeader = [&](const QString &titre) {
+            painter.setPen(Qt::NoPen);
+            painter.setBrush(QColor("#f1f5f9"));
+            painter.drawRoundedRect(x, y - (int)(0.05 * cm),
+                                    (int)(17.4 * cm), (int)(0.75 * cm), 6, 6);
+            painter.setFont(QFont("Segoe UI", 12, QFont::Bold));
+            painter.setPen(QColor("#1e293b"));
+            painter.drawText(x + (int)(0.5 * cm), y + (int)(0.52 * cm), titre);
+            y += (int)(1.1 * cm);
+        };
+
+        auto drawField = [&](const QString &label, const QString &value) {
+            painter.setFont(QFont("Segoe UI", 11, QFont::Bold));
+            painter.setPen(QColor("#64748b"));
+            painter.drawText(x + (int)(0.4 * cm), y, label);
+            painter.setFont(QFont("Segoe UI", 11));
+            painter.setPen(QColor("#1e293b"));
+            painter.drawText(x + (int)(5.2 * cm), y, value.isEmpty() ? "—" : value);
+            y += (int)(0.75 * cm);
+        };
+
+        // ── Informations personnelles ───────────────────────────────────────
+        drawSectionHeader("Informations personnelles");
+        drawField("Email :",     data.email);
+        drawField("CIN :",       data.cin);
+        drawField("Grade :",     data.grade);
+        drawField("Carrière :",  data.carriere);
+
+        y += (int)(0.5 * cm);
+
+        // ── Projets ─────────────────────────────────────────────────────────
+        drawSectionHeader(
+            QString("Projets de recherche  (%1 contribution(s))")
+            .arg(projetsTitres.size()));
+
+        if (projetsTitres.isEmpty()) {
+            painter.setFont(QFont("Segoe UI", 11));
+            painter.setPen(QColor("#94a3b8"));
+            painter.drawText(x + (int)(0.5 * cm), y, "Aucun projet associé.");
+            y += (int)(0.7 * cm);
+        } else {
+            for (const QString &titre : projetsTitres) {
+                // Puce bleue
+                painter.setPen(Qt::NoPen);
+                painter.setBrush(QColor("#3b82f6"));
+                painter.drawEllipse(x + (int)(0.4 * cm),
+                                    y - (int)(0.2 * cm),
+                                    (int)(0.2 * cm), (int)(0.2 * cm));
+                painter.setFont(QFont("Segoe UI", 11));
+                painter.setPen(QColor("#1e293b"));
+                painter.drawText(x + (int)(0.85 * cm), y, titre);
+                y += (int)(0.6 * cm);
+            }
+        }
+
+        // ── Pied de page ────────────────────────────────────────────────────
+        int footerY = (int)(27.8 * cm);
+        painter.setPen(QColor("#e2e8f0"));
+        painter.drawLine(x, footerY, x + (int)(17.4 * cm), footerY);
+        painter.setFont(QFont("Segoe UI", 9));
+        painter.setPen(QColor("#94a3b8"));
+        painter.drawText(x, footerY + (int)(0.45 * cm),
+            QString("SmartPub — Fiche générée le %1")
+            .arg(QDate::currentDate().toString("dd/MM/yyyy")));
+
+        painter.end();
+        QMessageBox::information(this, "Export PDF",
+            "✅  Fiche exportée avec succès !\n" + fileName);
+    });
 
     QPushButton *btnClose = new QPushButton("Fermer");
+    btnClose->setCursor(Qt::PointingHandCursor);
     btnClose->setStyleSheet(R"(
         QPushButton {
-            background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #3b82f6, stop:1 #10b981);
+            background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                stop:0 #3b82f6, stop:1 #10b981);
             color: white;
             border: none;
             border-radius: 10px;
-            padding: 12px 32px;
+            padding: 0 30px;
             font-size: 14px;
             font-weight: 600;
+            min-height: 42px;
         }
         QPushButton:hover {
-            background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #2563eb, stop:1 #059669);
+            background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                stop:0 #2563eb, stop:1 #059669);
         }
     )");
     connect(btnClose, &QPushButton::clicked, dialog, &QDialog::accept);
@@ -4950,15 +6211,13 @@ void SmartPub::on_cherchVoirDetailsChercheur(int id) {
     footerLayout->addWidget(btnExport);
     footerLayout->addStretch();
     footerLayout->addWidget(btnClose);
-
     mainLayout->addWidget(footerFrame);
 
     dialog->exec();
 }
 
-void SmartPub::on_cherchBtnExportDetails_clicked() {
-    QMessageBox::information(this, "Export", "Fiche exportée avec succès !");
-}
+// on_cherchBtnExportDetails_clicked() — supprimée, export PDF géré
+// directement par une lambda dans on_cherchVoirDetailsChercheur()
 
 void SmartPub::on_cherchLineEditRecherche_textChanged(const QString &text) {
     if (text.length() >= 2 || text.isEmpty()) {
@@ -5022,6 +6281,8 @@ void SmartPub::SR_connectSignals() {
             &SmartPub::on_SR_btnAjouter_clicked);
     connect(ui->SR_btnRecherche, &QPushButton::clicked, this,
             &SmartPub::on_SR_btnRecherche_clicked);
+    connect(ui->SR_lineEditRecherche, &QLineEdit::textChanged, this,
+            [this](const QString &) { SR_applyFilterListe(); });
     connect(ui->SR_btnTri, &QPushButton::clicked, this,
             &SmartPub::on_SR_btnTri_clicked);
     // Masquer les champs email/password et le bouton guest (User Request)
@@ -5062,6 +6323,231 @@ void SmartPub::SR_connectSignals() {
     connect(SR_filterAuteur, &QLineEdit::textChanged, this, [this]() { SR_applyFilterListe(); });
     connect(SR_filterStatut, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this]() { SR_applyFilterListe(); });
     connect(SR_btnReinitFilter, &QPushButton::clicked, this, &SmartPub::SR_reinitFilterListe);
+    connect(ui->SR_tablePublications, &QTableWidget::cellDoubleClicked, this, [this](int row, int) {
+        if (row < 0)
+            return;
+        const QString titre = ui->SR_tablePublications->item(row, 0) ? ui->SR_tablePublications->item(row, 0)->text() : QString();
+        const QString auteur = ui->SR_tablePublications->item(row, 1) ? ui->SR_tablePublications->item(row, 1)->text() : QString();
+        const QString date = ui->SR_tablePublications->item(row, 2) ? ui->SR_tablePublications->item(row, 2)->text() : QString();
+        const QString revue = ui->SR_tablePublications->item(row, 3) ? ui->SR_tablePublications->item(row, 3)->text() : QString();
+        const QString statut = ui->SR_tablePublications->item(row, 4) ? ui->SR_tablePublications->item(row, 4)->text() : QString();
+        const QString doi = ui->SR_tablePublications->item(row, 0) ? ui->SR_tablePublications->item(row, 0)->toolTip() : QString();
+
+        QDialog *dialog = new QDialog(this);
+        dialog->setAttribute(Qt::WA_DeleteOnClose);
+        dialog->setWindowTitle(QString("Publication — %1").arg(titre.isEmpty() ? "Détails" : titre));
+        dialog->setMinimumSize(720, 620);
+        dialog->setMaximumSize(920, 840);
+        dialog->setStyleSheet("background-color: #f8fafc;");
+
+        QVBoxLayout *mainLayout = new QVBoxLayout(dialog);
+        mainLayout->setSpacing(0);
+        mainLayout->setContentsMargins(0, 0, 0, 0);
+
+        QFrame *headerFrame = new QFrame();
+        headerFrame->setStyleSheet(R"(
+            QFrame {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                    stop:0 #3b82f6, stop:1 #10b981);
+            }
+        )");
+        headerFrame->setFixedHeight(200);
+        QVBoxLayout *headerLayout = new QVBoxLayout(headerFrame);
+        headerLayout->setAlignment(Qt::AlignCenter);
+        headerLayout->setSpacing(10);
+        headerLayout->setContentsMargins(20, 20, 20, 16);
+
+        QLabel *iconLbl = new QLabel("📄");
+        iconLbl->setAlignment(Qt::AlignCenter);
+        iconLbl->setFixedSize(110, 110);
+        iconLbl->setStyleSheet(
+            "color: white; font-size: 56px; border: 4px solid white; border-radius: 55px;");
+        headerLayout->addWidget(iconLbl, 0, Qt::AlignCenter);
+
+        QLabel *titleHeaderLbl = new QLabel(titre.isEmpty() ? "Publication" : titre);
+        titleHeaderLbl->setStyleSheet(
+            "color: white; font-size: 22px; font-weight: 700; "
+            "background: transparent; border: none;");
+        titleHeaderLbl->setAlignment(Qt::AlignCenter);
+        titleHeaderLbl->setWordWrap(true);
+        headerLayout->addWidget(titleHeaderLbl, 0, Qt::AlignCenter);
+
+        QLabel *statusBadge = new QLabel(statut.isEmpty() ? "—" : statut);
+        statusBadge->setStyleSheet(
+            "background: rgba(255,255,255,0.22); color: white; "
+            "border-radius: 10px; padding: 5px 16px; font-size: 12px; "
+            "font-weight: 600; border: none;");
+        statusBadge->setAlignment(Qt::AlignCenter);
+        headerLayout->addWidget(statusBadge, 0, Qt::AlignCenter);
+
+        mainLayout->addWidget(headerFrame);
+
+        QScrollArea *scrollArea = new QScrollArea();
+        scrollArea->setWidgetResizable(true);
+        scrollArea->setFrameShape(QFrame::NoFrame);
+        scrollArea->setStyleSheet("background-color: white; border: none;");
+
+        QWidget *contentWidget = new QWidget();
+        contentWidget->setStyleSheet("background-color: white;");
+        QVBoxLayout *contentLayout = new QVBoxLayout(contentWidget);
+        contentLayout->setSpacing(10);
+        contentLayout->setContentsMargins(28, 24, 28, 24);
+
+        auto createInfoRow = [](const QString &label, const QString &value,
+                                const QString &icon = "") -> QFrame * {
+            QFrame *row = new QFrame();
+            row->setStyleSheet(
+                "QFrame { background-color: #f8fafc; border-radius: 10px; border: none; }");
+            row->setMaximumHeight(68);
+            QHBoxLayout *rowLayout = new QHBoxLayout(row);
+            rowLayout->setContentsMargins(16, 10, 16, 10);
+
+            QLabel *iconLbl = new QLabel(icon.isEmpty() ? "•" : icon);
+            iconLbl->setStyleSheet("font-size: 16px; background: transparent; border: none;");
+            iconLbl->setFixedWidth(26);
+            rowLayout->addWidget(iconLbl);
+
+            QLabel *labelLbl = new QLabel(label + " :");
+            labelLbl->setStyleSheet(
+                "color: #64748b; font-size: 13px; font-weight: 600; "
+                "min-width: 130px; background: transparent; border: none;");
+            rowLayout->addWidget(labelLbl);
+
+            QLabel *valueLbl = new QLabel(value.isEmpty() ? "—" : value);
+            valueLbl->setStyleSheet(
+                "color: #1e293b; font-size: 14px; font-weight: 500; "
+                "background: transparent; border: none;");
+            valueLbl->setWordWrap(true);
+            rowLayout->addWidget(valueLbl, 1);
+            return row;
+        };
+
+        contentLayout->addWidget(createInfoRow("Titre", titre, "📝"));
+        contentLayout->addWidget(createInfoRow("Auteur(s)", auteur, "👤"));
+        contentLayout->addWidget(createInfoRow("Date publication", date, "📅"));
+        contentLayout->addWidget(createInfoRow("Revue", revue, "📚"));
+        contentLayout->addWidget(createInfoRow("Statut", statut, "🏷️"));
+        contentLayout->addWidget(createInfoRow("DOI", doi, "🔗"));
+        contentLayout->addStretch();
+
+        scrollArea->setWidget(contentWidget);
+        mainLayout->addWidget(scrollArea, 1);
+
+        QFrame *footerFrame = new QFrame();
+        footerFrame->setStyleSheet("background-color: white; border-top: 1px solid #e2e8f0;");
+        footerFrame->setFixedHeight(70);
+        QHBoxLayout *footerLayout = new QHBoxLayout(footerFrame);
+        footerLayout->setContentsMargins(24, 0, 24, 0);
+        footerLayout->setSpacing(12);
+
+        QPushButton *btnExport = new QPushButton(QStringLiteral("📄 Exporter en PDF"));
+        btnExport->setCursor(Qt::PointingHandCursor);
+        btnExport->setStyleSheet(R"(
+            QPushButton {
+                background-color: white;
+                color: #334155;
+                border: 2px solid #e2e8f0;
+                border-radius: 10px;
+                padding: 0 22px;
+                font-size: 13px;
+                font-weight: 600;
+                min-height: 42px;
+            }
+            QPushButton:hover {
+                background-color: #eff6ff;
+                border-color: #3b82f6;
+                color: #1d4ed8;
+            }
+        )");
+        connect(btnExport, &QPushButton::clicked, dialog, [this, titre, auteur, date, revue, statut, doi]() {
+            QString safeTitle = titre.trimmed();
+            if (safeTitle.isEmpty())
+                safeTitle = QStringLiteral("publication");
+            safeTitle.replace(QRegularExpression("[\\\\/:*?\"<>|]"), "_");
+            const QString fileName = QFileDialog::getSaveFileName(
+                this,
+                QStringLiteral("Exporter la publication en PDF"),
+                QDir::homePath() + "/" + safeTitle + ".pdf",
+                QStringLiteral("PDF (*.pdf)"));
+            if (fileName.isEmpty())
+                return;
+
+            QPrinter printer(QPrinter::HighResolution);
+            printer.setOutputFormat(QPrinter::PdfFormat);
+            printer.setOutputFileName(fileName);
+            printer.setPageSize(QPageSize(QPageSize::A4));
+            printer.setPageOrientation(QPageLayout::Portrait);
+            printer.setPageMargins(QMarginsF(15, 15, 15, 15), QPageLayout::Millimeter);
+
+            QPainter painter;
+            if (!painter.begin(&printer)) {
+                QMessageBox::critical(this, QStringLiteral("Erreur"),
+                                      QStringLiteral("Impossible de créer le fichier PDF."));
+                return;
+            }
+
+            painter.setRenderHint(QPainter::Antialiasing);
+            int y = 120;
+            painter.setPen(Qt::NoPen);
+            painter.setBrush(QColor("#3b82f6"));
+            painter.drawRoundedRect(60, 60, 2200, 180, 14, 14);
+            painter.setPen(Qt::white);
+            painter.setFont(QFont("Segoe UI", 18, QFont::Bold));
+            painter.drawText(100, 175, QStringLiteral("Détails Publication"));
+
+            painter.setPen(QColor("#1e293b"));
+            painter.setFont(QFont("Segoe UI", 12, QFont::Bold));
+            auto drawField = [&](const QString &label, const QString &value) {
+                painter.drawText(80, y, label);
+                painter.setFont(QFont("Segoe UI", 12));
+                painter.drawText(420, y, value.isEmpty() ? QStringLiteral("—") : value);
+                painter.setFont(QFont("Segoe UI", 12, QFont::Bold));
+                y += 90;
+            };
+
+            y = 330;
+            drawField(QStringLiteral("Titre :"), titre);
+            drawField(QStringLiteral("Auteur(s) :"), auteur);
+            drawField(QStringLiteral("Date publication :"), date);
+            drawField(QStringLiteral("Revue :"), revue);
+            drawField(QStringLiteral("Statut :"), statut);
+            drawField(QStringLiteral("DOI :"), doi);
+
+            painter.setPen(QColor("#94a3b8"));
+            painter.setFont(QFont("Segoe UI", 9));
+            painter.drawText(80, 3300, QStringLiteral("Exporté depuis SmartPub"));
+            painter.end();
+
+            QMessageBox::information(this, QStringLiteral("Export"), QStringLiteral("Export PDF réussi !"));
+        });
+
+        footerLayout->addWidget(btnExport);
+        footerLayout->addStretch();
+
+        QPushButton *btnClose = new QPushButton(QStringLiteral("Fermer"));
+        btnClose->setCursor(Qt::PointingHandCursor);
+        btnClose->setStyleSheet(R"(
+            QPushButton {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                    stop:0 #3b82f6, stop:1 #10b981);
+                color: white;
+                border: none;
+                border-radius: 10px;
+                padding: 0 30px;
+                font-size: 14px;
+                font-weight: 600;
+                min-height: 42px;
+            }
+            QPushButton:hover {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                    stop:0 #2563eb, stop:1 #059669);
+            }
+        )");
+        connect(btnClose, &QPushButton::clicked, dialog, &QDialog::accept);
+        footerLayout->addWidget(btnClose);
+        mainLayout->addWidget(footerFrame);
+        dialog->exec();
+    });
 }
 
 void SmartPub::SR_updateButtonStyles() {
@@ -5128,124 +6614,69 @@ void SmartPub::SR_updateButtonStyles() {
 void SmartPub::SR_loadSampleData() {
     QSqlDatabase db = Connection::instance()->getDatabase();
     ui->SR_tablePublications->setColumnWidth(5, 135);
+    ui->SR_tablePublications->setRowCount(0);
+    ui->SR_comboBoxStatut->setItemData(0, QStringLiteral("publie"));
+    ui->SR_comboBoxStatut->setItemData(1, QStringLiteral("soumis"));
+    ui->SR_comboBoxStatut->setItemData(2, QStringLiteral("en_revision"));
+    ui->SR_comboBoxStatut->setItemData(3, QStringLiteral("accepte"));
+    ui->SR_comboBoxStatut->setItemData(4, QStringLiteral("rejete"));
 
-    if (db.isOpen()) {
-        QSqlQuery query(db);
-        if (query.exec("SELECT DOI, TITRE, AUTEUR, DATES, REVUE, STATUT FROM PUBLICATIONS ORDER BY DOI")) {
-            ui->SR_tablePublications->setRowCount(0);
-            int row = 0;
-            while (query.next()) {
-                QVariant doiVar = query.value("DOI");
-                int id = doiVar.toInt();
-                if (id == 0 && !doiVar.toString().isEmpty()) id = -1; // keep non-numeric DOI in UserRole as string
-                QString titre = query.value("TITRE").toString();
-                QString auteur = query.value("AUTEUR").toString();
-                QVariant dateVar = query.value("DATES");
-                QDate d = dateVar.toDate();
-                if (!d.isValid() && dateVar.toDateTime().isValid())
-                    d = dateVar.toDateTime().date();
-                QString dateStr = d.isValid() ? d.toString("yyyy-MM-dd") : dateVar.toString();
-                if (dateStr.length() > 10) dateStr = dateStr.left(10);
-                QString revue = query.value("REVUE").toString();
-                QString statut = query.value("STATUT").toString();
+    auto clearStats = [this]() {
+        ui->SR_lblTotalNumber->setText(QStringLiteral("0"));
+        ui->SR_lblThisYearNumber->setText(QStringLiteral("0"));
+        ui->SR_lblPlanSNumber->setText(QStringLiteral("0"));
+        ui->SR_lblStatPublie->setText(QStringLiteral("● Publié (0%)"));
+        ui->SR_lblStatSoumis->setText(QStringLiteral("● Soumis (0%)"));
+        ui->SR_lblStatRevision->setText(QStringLiteral("● En révision (0%)"));
+        ui->SR_lblStatAccepte->setText(QStringLiteral("● Accepté (0%)"));
+    };
 
-                ui->SR_tablePublications->insertRow(row);
-                QTableWidgetItem *titItem = new QTableWidgetItem(titre);
-                titItem->setData(Qt::UserRole, id != -1 ? QVariant(id) : doiVar);
-                ui->SR_tablePublications->setItem(row, 0, titItem);
-                ui->SR_tablePublications->setItem(row, 1, new QTableWidgetItem(auteur));
-                ui->SR_tablePublications->setItem(row, 2, new QTableWidgetItem(dateStr));
-                ui->SR_tablePublications->setItem(row, 3, new QTableWidgetItem(revue));
-                ui->SR_tablePublications->setItem(row, 4, new QTableWidgetItem(statut));
-                SR_addButtonsToRow(row);
-                row++;
-            }
-            ui->SR_tablePublications->resizeRowsToContents();
-            ui->SR_lblTotalNumber->setText(QString::number(row));
-            int thisYear = QDate::currentDate().year();
-            int countThisYear = 0;
-            for (int r = 0; r < row; r++) {
-                QString d = ui->SR_tablePublications->item(r, 2) ? ui->SR_tablePublications->item(r, 2)->text() : QString();
-                if (d.length() >= 4 && d.left(4).toInt() == thisYear) countThisYear++;
-            }
-            ui->SR_lblThisYearNumber->setText(QString::number(countThisYear));
-            ui->SR_lblPlanSNumber->setText("0");
-            int publie = 0, soumis = 0, revision = 0, accepte = 0;
-            for (int r = 0; r < row; r++) {
-                QString s = ui->SR_tablePublications->item(r, 4) ? ui->SR_tablePublications->item(r, 4)->text() : QString();
-                if (s.contains("Publié", Qt::CaseInsensitive)) publie++;
-                else if (s.contains("Soumis", Qt::CaseInsensitive)) soumis++;
-                else if (s.contains("révision", Qt::CaseInsensitive)) revision++;
-                else if (s.contains("Accepté", Qt::CaseInsensitive)) accepte++;
-            }
-            int total = row > 0 ? row : 1;
-            ui->SR_lblStatPublie->setText(QString("● Publié (%1%)").arg((publie * 100) / total));
-            ui->SR_lblStatSoumis->setText(QString("● Soumis (%1%)").arg((soumis * 100) / total));
-            ui->SR_lblStatRevision->setText(QString("● En révision (%1%)").arg((revision * 100) / total));
-            ui->SR_lblStatAccepte->setText(QString("● Accepté (%1%)").arg((accepte * 100) / total));
-            return;
-        }
+    if (!db.isOpen()) {
+        clearStats();
+        return;
     }
 
-    // Fallback: sample data when DB not available or table missing
-    QStringList titres = {"Machine Learning pour la détection de fraudes",
-                          "Analyse des données génomiques",
-                          "Quantum Computing: état de l'art",
-                          "Intelligence Artificielle en médecine",
-                          "Blockchain pour la sécurité des données",
-                          "Deep Learning pour la vision par ordinateur",
-                          "Cryptographie post-quantique",
-                          "IoT et sécurité des réseaux"};
-
-    QStringList auteurs = {
-                           "Dr. Martin, Prof. Dubois", "Dr. Laurent, Dr. Bernard",
-                           "Prof. Moreau, Dr. Petit",  "Dr. Roux, Prof. Simon",
-                           "Dr. Michel, Dr. Garcia",   "Prof. Durand, Dr. Lefebvre",
-                           "Dr. Morel, Prof. Girard",  "Dr. Andre, Dr. Blanc"};
-
-    QStringList dates = {"2024-01-15", "2024-02-20", "2023-11-10", "2024-03-05",
-                         "2023-09-18", "2024-04-12", "2023-12-01", "2024-05-20"};
-
-    QStringList revues = {
-                          "IEEE Transactions on AI",    "Nature Genetics",
-                          "Quantum Information Review", "Medical AI Journal",
-                          "Blockchain Security Review", "Computer Vision and Pattern Recognition",
-                          "Journal of Cryptology",      "IEEE Internet of Things Journal"};
-
-    QStringList statuts = {"Publié",  "Publié", "Soumis", "En révision",
-                           "Accepté", "Publié", "Soumis", "En révision"};
-
-    ui->SR_tablePublications->setRowCount(titres.size());
-
-    for (int i = 0; i < titres.size(); ++i) {
-        QTableWidgetItem *titItem = new QTableWidgetItem(titres[i]);
-        titItem->setData(Qt::UserRole, i + 1);
-        ui->SR_tablePublications->setItem(i, 0, titItem);
-        ui->SR_tablePublications->setItem(i, 1, new QTableWidgetItem(auteurs[i]));
-        ui->SR_tablePublications->setItem(i, 2, new QTableWidgetItem(dates[i]));
-        ui->SR_tablePublications->setItem(i, 3, new QTableWidgetItem(revues[i]));
-        ui->SR_tablePublications->setItem(i, 4, new QTableWidgetItem(statuts[i]));
-
-        SR_addButtonsToRow(i);
+    QSqlQuery query(db);
+    const QString sql =
+        QStringLiteral("SELECT ID_PUBLICATION, DOI, TITRE, AUTEUR, DATE_PUBLICATION, REVUE, STATUT "
+                       "FROM PUBLICATION ORDER BY ID_PUBLICATION");
+    if (!query.exec(sql)) {
+        QMessageBox::warning(this, QStringLiteral("Erreur"),
+                             QStringLiteral("Impossible de charger les publications : ") + query.lastError().text());
+        clearStats();
+        return;
     }
 
+    int row = 0;
+    while (query.next()) {
+        const int idPub = query.value(QStringLiteral("ID_PUBLICATION")).toInt();
+        QString titre = query.value(QStringLiteral("TITRE")).toString();
+        QString auteur = query.value(QStringLiteral("AUTEUR")).toString();
+        QVariant dateVar = query.value(QStringLiteral("DATE_PUBLICATION"));
+        QDate d = dateVar.toDate();
+        if (!d.isValid() && dateVar.toDateTime().isValid())
+            d = dateVar.toDateTime().date();
+        QString dateStr = d.isValid() ? d.toString(QStringLiteral("yyyy-MM-dd")) : dateVar.toString();
+        if (dateStr.length() > 10)
+            dateStr = dateStr.left(10);
+        QString revue = query.value(QStringLiteral("REVUE")).toString();
+        QString statut = SR_statutDbToUi(query.value(QStringLiteral("STATUT")).toString());
+
+        ui->SR_tablePublications->insertRow(row);
+        QTableWidgetItem *titItem = new QTableWidgetItem(titre);
+        titItem->setData(Qt::UserRole, idPub);
+        titItem->setToolTip(query.value(QStringLiteral("DOI")).toString());
+        ui->SR_tablePublications->setItem(row, 0, titItem);
+        ui->SR_tablePublications->setItem(row, 1, new QTableWidgetItem(auteur));
+        ui->SR_tablePublications->setItem(row, 2, new QTableWidgetItem(dateStr));
+        ui->SR_tablePublications->setItem(row, 3, new QTableWidgetItem(revue));
+        ui->SR_tablePublications->setItem(row, 4, new QTableWidgetItem(statut));
+        SR_addButtonsToRow(row);
+        row++;
+    }
     ui->SR_tablePublications->resizeRowsToContents();
-
-    ui->SR_lblTotalNumber->setText(QString::number(titres.size()));
-    ui->SR_lblThisYearNumber->setText("5");
-    ui->SR_lblPlanSNumber->setText("3");
-
-    int publie = 3, soumis = 2, revision = 2, accepte = 1;
-    int total = titres.size();
-
-    ui->SR_lblStatPublie->setText(
-        QString("● Publié (%1%)").arg((publie * 100) / total));
-    ui->SR_lblStatSoumis->setText(
-        QString("● Soumis (%1%)").arg((soumis * 100) / total));
-    ui->SR_lblStatRevision->setText(
-        QString("● En révision (%1%)").arg((revision * 100) / total));
-    ui->SR_lblStatAccepte->setText(
-        QString("● Accepté (%1%)").arg((accepte * 100) / total));
+    SR_applyFilterListe();
+    SR_refreshStatsForCurrentView();
 }
 
 void SmartPub::on_SR_btnVueListe_clicked() {
@@ -5273,13 +6704,7 @@ void SmartPub::on_SR_btnAjouter_clicked() {
 }
 
 void SmartPub::on_SR_btnRecherche_clicked() {
-    QString searchText = ui->SR_lineEditRecherche->text();
-    if (searchText.isEmpty()) {
-        QMessageBox::information(this, "Recherche",
-                                 "Veuillez entrer un terme de recherche");
-    } else {
-        QMessageBox::information(this, "Recherche", "Recherche de: " + searchText);
-    }
+    SR_applyFilterListe();
 }
 
 void SmartPub::on_SR_btnTri_clicked() {
@@ -5310,30 +6735,72 @@ void SmartPub::on_SR_btnTri_clicked() {
         }
     )");
 
-    menu->addAction("Trier par Nom (A-Z)", this,
-                    [this]() { cherchTrierParNom(true); });
-    menu->addAction("Trier par Nom (Z-A)", this,
-                    [this]() { cherchTrierParNom(false); });
-    menu->addAction("Trier par Date (Plus récent)", this,
-                    [this]() { cherchTrierParDateCreation(true); });
-    menu->addAction("Trier par Date (Plus ancien)", this,
-                    [this]() { cherchTrierParDateCreation(false); });
+    menu->addAction("Trier par Titre", this, [this]() {
+        const int targetColumn = 0; // Titre
+        SR_sortOrder = (SR_sortColumn == targetColumn && SR_sortOrder == Qt::AscendingOrder)
+                           ? Qt::DescendingOrder
+                           : Qt::AscendingOrder;
+        SR_sortColumn = targetColumn;
+        ui->SR_tablePublications->sortItems(SR_sortColumn, SR_sortOrder);
+        SR_applyFilterListe();
+    });
+    menu->addAction("Trier par Date de publication", this, [this]() {
+        const int targetColumn = 2; // Date
+        SR_sortOrder = (SR_sortColumn == targetColumn && SR_sortOrder == Qt::AscendingOrder)
+                           ? Qt::DescendingOrder
+                           : Qt::AscendingOrder;
+        SR_sortColumn = targetColumn;
+        ui->SR_tablePublications->sortItems(SR_sortColumn, SR_sortOrder);
+        SR_applyFilterListe();
+    });
 
     menu->exec(QCursor::pos());
 }
 
 void SmartPub::on_SR_btnExport_clicked() {
     QString fileName = QFileDialog::getSaveFileName(
-        this, "Exporter les transactions", QDir::homePath(), "CSV (*.csv)");
+        this, "Exporter", QDir::homePath(), "CSV (*.csv)");
     if (!fileName.isEmpty()) {
-        QMessageBox::information(this, "Export",
-                                 "Transactions exportées avec succès !");
+        QFile file(fileName);
+        if (file.open(QIODevice::WriteOnly | QIODevice::Text)) {
+            QTextStream stream(&file);
+            stream << "ID,Titre,Auteurs,Date Publication,Revue,Statut,DOI\n";
+            for (int r = 0; r < ui->SR_tablePublications->rowCount(); ++r) {
+                const QTableWidgetItem *titleItem = ui->SR_tablePublications->item(r, 0);
+                const int id = titleItem ? titleItem->data(Qt::UserRole).toInt() : 0;
+                const QString titre = titleItem ? titleItem->text() : QString();
+                const QString auteur = ui->SR_tablePublications->item(r, 1) ? ui->SR_tablePublications->item(r, 1)->text() : QString();
+                const QString date = ui->SR_tablePublications->item(r, 2) ? ui->SR_tablePublications->item(r, 2)->text() : QString();
+                const QString revue = ui->SR_tablePublications->item(r, 3) ? ui->SR_tablePublications->item(r, 3)->text() : QString();
+                const QString statut = ui->SR_tablePublications->item(r, 4) ? ui->SR_tablePublications->item(r, 4)->text() : QString();
+                const QString doi = titleItem ? titleItem->toolTip() : QString();
+                stream << id << "," << titre << "," << auteur << ","
+                       << date << "," << revue << "," << statut << ","
+                       << doi << "\n";
+            }
+            file.close();
+            QMessageBox::information(this, "Export", "Export réussi !");
+        }
     }
 }
 
 void SmartPub::on_SR_btnStatistiques_clicked() {
-    ui->SR_stackedWidget->setCurrentIndex(2);
-    SR_updateButtonStyles();
+    QList<PublicationStatData> publications;
+    publications.reserve(ui->SR_tablePublications->rowCount());
+    for (int r = 0; r < ui->SR_tablePublications->rowCount(); ++r) {
+        if (ui->SR_tablePublications->isRowHidden(r))
+            continue;
+        PublicationStatData p;
+        p.titre = ui->SR_tablePublications->item(r, 0) ? ui->SR_tablePublications->item(r, 0)->text() : QString();
+        p.auteur = ui->SR_tablePublications->item(r, 1) ? ui->SR_tablePublications->item(r, 1)->text() : QString();
+        p.date = ui->SR_tablePublications->item(r, 2) ? ui->SR_tablePublications->item(r, 2)->text() : QString();
+        p.revue = ui->SR_tablePublications->item(r, 3) ? ui->SR_tablePublications->item(r, 3)->text() : QString();
+        p.statut = ui->SR_tablePublications->item(r, 4) ? ui->SR_tablePublications->item(r, 4)->text() : QString();
+        publications.push_back(p);
+    }
+    PubStatistiquesDialog *dialog = new PubStatistiquesDialog(publications, this);
+    dialog->setAttribute(Qt::WA_DeleteOnClose);
+    dialog->exec();
 }
 
 void SmartPub::on_SR_btnAjouterPublication_clicked() {
@@ -5362,61 +6829,55 @@ void SmartPub::on_SR_btnAjouterPublication_clicked() {
         return;
     }
 
+    QString statutDb = ui->SR_comboBoxStatut->currentData().toString();
+    if (statutDb.isEmpty())
+        statutDb = SR_statutUiToDb(statut);
+
     if (editingPublicationRow != -1) {
-        // Edit mode: UPDATE in DB
+        QTableWidgetItem *titItem = ui->SR_tablePublications->item(editingPublicationRow, 0);
+        if (!titItem)
+            return;
+        const int idPublication = titItem->data(Qt::UserRole).toInt();
         QSqlQuery query(db);
-        query.prepare("UPDATE PUBLICATIONS SET TITRE = :titre, AUTEUR = :auteur, "
-                     "DATES = TO_DATE(:date_pub, 'YYYY-MM-DD'), REVUE = :revue, STATUT = :statut WHERE DOI = :doi");
-        query.bindValue(":titre", titre);
-        query.bindValue(":auteur", auteurs);
-        query.bindValue(":date_pub", dateStr);
-        query.bindValue(":revue", revue);
-        query.bindValue(":statut", statut);
-        query.bindValue(":doi", ui->SR_tablePublications->item(editingPublicationRow, 0)->data(Qt::UserRole));
+        query.prepare(
+            QStringLiteral("UPDATE PUBLICATION SET TITRE = :titre, AUTEUR = :auteur, "
+                           "DATE_PUBLICATION = TO_DATE(:date_pub, 'YYYY-MM-DD'), REVUE = :revue, STATUT = :statut "
+                           "WHERE ID_PUBLICATION = :id"));
+        query.bindValue(QStringLiteral(":titre"), titre);
+        query.bindValue(QStringLiteral(":auteur"), auteurs);
+        query.bindValue(QStringLiteral(":date_pub"), dateStr);
+        query.bindValue(QStringLiteral(":revue"), revue);
+        query.bindValue(QStringLiteral(":statut"), statutDb);
+        query.bindValue(QStringLiteral(":id"), idPublication);
         if (!query.exec()) {
-            QMessageBox::critical(this, "Erreur", "Échec de la modification : " + query.lastError().text());
+            QMessageBox::critical(this, QStringLiteral("Erreur"),
+                                  QStringLiteral("Échec de la modification : ") + query.lastError().text());
             return;
         }
-        ui->SR_tablePublications->item(editingPublicationRow, 0)->setText(titre);
-        ui->SR_tablePublications->item(editingPublicationRow, 1)->setText(auteurs);
-        ui->SR_tablePublications->item(editingPublicationRow, 2)->setText(dateStr);
-        ui->SR_tablePublications->item(editingPublicationRow, 3)->setText(revue);
-        ui->SR_tablePublications->item(editingPublicationRow, 4)->setText(statut);
-        QMessageBox::information(this, "Succès", "Publication modifiée avec succès");
+        SR_loadSampleData();
+        QMessageBox::information(this, QStringLiteral("Succès"), QStringLiteral("Publication modifiée avec succès"));
         editingPublicationRow = -1;
-        ui->SR_btnAjouterPublication->setText("Ajouter");
+        ui->SR_btnAjouterPublication->setText(QStringLiteral("Ajouter"));
     } else {
-        // Add mode: INSERT into DB
-        int newId = 1;
-        QSqlQuery seqQuery(db);
-        if (seqQuery.exec("SELECT NVL(MAX(DOI), 0) + 1 FROM PUBLICATIONS") && seqQuery.next()) {
-            newId = seqQuery.value(0).toInt();
-        }
+        const QString doi =
+            QStringLiteral("10.1000/smartpub/%1").arg(QDateTime::currentMSecsSinceEpoch());
         QSqlQuery query(db);
-        query.prepare("INSERT INTO PUBLICATIONS (DOI, TITRE, AUTEUR, DATES, REVUE, STATUT) "
-                      "VALUES (:doi, :titre, :auteur, TO_DATE(:date_pub, 'YYYY-MM-DD'), :revue, :statut)");
-        query.bindValue(":doi", newId);
-        query.bindValue(":titre", titre);
-        query.bindValue(":auteur", auteurs);
-        query.bindValue(":date_pub", dateStr);
-        query.bindValue(":revue", revue);
-        query.bindValue(":statut", statut);
+        query.prepare(
+            QStringLiteral("INSERT INTO PUBLICATION (DOI, TITRE, AUTEUR, DATE_PUBLICATION, REVUE, STATUT) "
+                           "VALUES (:doi, :titre, :auteur, TO_DATE(:date_pub, 'YYYY-MM-DD'), :revue, :statut)"));
+        query.bindValue(QStringLiteral(":doi"), doi);
+        query.bindValue(QStringLiteral(":titre"), titre);
+        query.bindValue(QStringLiteral(":auteur"), auteurs);
+        query.bindValue(QStringLiteral(":date_pub"), dateStr);
+        query.bindValue(QStringLiteral(":revue"), revue);
+        query.bindValue(QStringLiteral(":statut"), statutDb);
         if (!query.exec()) {
-            QMessageBox::critical(this, "Erreur", "Échec de l'ajout : " + query.lastError().text());
+            QMessageBox::critical(this, QStringLiteral("Erreur"),
+                                  QStringLiteral("Échec de l'ajout : ") + query.lastError().text());
             return;
         }
-        int row = ui->SR_tablePublications->rowCount();
-        ui->SR_tablePublications->insertRow(row);
-        QTableWidgetItem *titItem = new QTableWidgetItem(titre);
-        titItem->setData(Qt::UserRole, newId);
-        ui->SR_tablePublications->setItem(row, 0, titItem);
-        ui->SR_tablePublications->setItem(row, 1, new QTableWidgetItem(auteurs));
-        ui->SR_tablePublications->setItem(row, 2, new QTableWidgetItem(dateStr));
-        ui->SR_tablePublications->setItem(row, 3, new QTableWidgetItem(revue));
-        ui->SR_tablePublications->setItem(row, 4, new QTableWidgetItem(statut));
-        SR_addButtonsToRow(row);
-        ui->SR_tablePublications->resizeRowsToContents();
-        QMessageBox::information(this, "Succès", "Publication ajoutée avec succès");
+        SR_loadSampleData();
+        QMessageBox::information(this, QStringLiteral("Succès"), QStringLiteral("Publication ajoutée avec succès"));
     }
 
     ui->SR_stackedWidget->setCurrentIndex(0);
@@ -5435,6 +6896,7 @@ void SmartPub::on_SR_btnAnnulerAjout_clicked() {
 }
 
 void SmartPub::SR_applyFilterListe() {
+    const QString searchText = ui->SR_lineEditRecherche->text().trimmed();
     QString titreFilter = SR_filterTitre->text().trimmed();
     QString auteurFilter = SR_filterAuteur->text().trimmed();
     QString statutFilter = SR_filterStatut->currentIndex() <= 0 ? QString() : SR_filterStatut->currentText();
@@ -5453,16 +6915,66 @@ void SmartPub::SR_applyFilterListe() {
             QTableWidgetItem *it = ui->SR_tablePublications->item(r, 4);
             show = it && it->text().trimmed().compare(statutFilter, Qt::CaseInsensitive) == 0;
         }
+        if (show && !searchText.isEmpty()) {
+            const QString titre = ui->SR_tablePublications->item(r, 0) ? ui->SR_tablePublications->item(r, 0)->text() : QString();
+            const QString auteur = ui->SR_tablePublications->item(r, 1) ? ui->SR_tablePublications->item(r, 1)->text() : QString();
+            const QString date = ui->SR_tablePublications->item(r, 2) ? ui->SR_tablePublications->item(r, 2)->text() : QString();
+            const QString revue = ui->SR_tablePublications->item(r, 3) ? ui->SR_tablePublications->item(r, 3)->text() : QString();
+            const QString statut = ui->SR_tablePublications->item(r, 4) ? ui->SR_tablePublications->item(r, 4)->text() : QString();
+            const QString doi = ui->SR_tablePublications->item(r, 0) ? ui->SR_tablePublications->item(r, 0)->toolTip() : QString();
+            const QString haystack = QStringLiteral("%1 %2 %3 %4 %5 %6")
+                                         .arg(titre, auteur, revue, statut, date, doi);
+            show = haystack.contains(searchText, Qt::CaseInsensitive);
+        }
         ui->SR_tablePublications->setRowHidden(r, !show);
     }
+    SR_refreshStatsForCurrentView();
 }
 
 void SmartPub::SR_reinitFilterListe() {
     SR_filterTitre->clear();
     SR_filterAuteur->clear();
     SR_filterStatut->setCurrentIndex(0);
+    ui->SR_lineEditRecherche->clear();
     for (int r = 0; r < ui->SR_tablePublications->rowCount(); r++)
         ui->SR_tablePublications->setRowHidden(r, false);
+    SR_refreshStatsForCurrentView();
+}
+
+void SmartPub::SR_refreshStatsForCurrentView() {
+    const int total = ui->SR_tablePublications->rowCount();
+    int visibles = 0;
+    int thisYear = QDate::currentDate().year();
+    int countThisYear = 0;
+    int publie = 0, soumis = 0, revision = 0, accepte = 0;
+
+    for (int r = 0; r < total; ++r) {
+        if (ui->SR_tablePublications->isRowHidden(r))
+            continue;
+        visibles++;
+        const QString ds = ui->SR_tablePublications->item(r, 2) ? ui->SR_tablePublications->item(r, 2)->text() : QString();
+        if (ds.length() >= 4 && ds.left(4).toInt() == thisYear)
+            countThisYear++;
+
+        const QString s = ui->SR_tablePublications->item(r, 4) ? ui->SR_tablePublications->item(r, 4)->text() : QString();
+        if (s.contains(QStringLiteral("Publié"), Qt::CaseInsensitive))
+            publie++;
+        else if (s.contains(QStringLiteral("Soumis"), Qt::CaseInsensitive))
+            soumis++;
+        else if (s.contains(QStringLiteral("révision"), Qt::CaseInsensitive))
+            revision++;
+        else if (s.contains(QStringLiteral("Accepté"), Qt::CaseInsensitive))
+            accepte++;
+    }
+
+    const int base = visibles > 0 ? visibles : 1;
+    ui->SR_lblTotalNumber->setText(QString::number(visibles));
+    ui->SR_lblThisYearNumber->setText(QString::number(countThisYear));
+    ui->SR_lblPlanSNumber->setText(QString::number(total));
+    ui->SR_lblStatPublie->setText(QStringLiteral("● Publié (%1%)").arg((publie * 100) / base));
+    ui->SR_lblStatSoumis->setText(QStringLiteral("● Soumis (%1%)").arg((soumis * 100) / base));
+    ui->SR_lblStatRevision->setText(QStringLiteral("● En révision (%1%)").arg((revision * 100) / base));
+    ui->SR_lblStatAccepte->setText(QStringLiteral("● Accepté (%1%)").arg((accepte * 100) / base));
 }
 
 static int SR_rowFromActionButton(QTableWidget *table, QObject *sender) {
@@ -5487,7 +6999,6 @@ void SmartPub::on_SR_modifierPublication_clicked() {
     if (row < 0) return;
     QTableWidgetItem *titItem = ui->SR_tablePublications->item(row, 0);
     if (!titItem) return;
-    int id = titItem->data(Qt::UserRole).toInt();
     QString titre = titItem->text();
     QString auteurs = ui->SR_tablePublications->item(row, 1) ? ui->SR_tablePublications->item(row, 1)->text() : QString();
     QString dateStr = ui->SR_tablePublications->item(row, 2) ? ui->SR_tablePublications->item(row, 2)->text() : QDate::currentDate().toString("yyyy-MM-dd");
@@ -5519,7 +7030,6 @@ void SmartPub::on_SR_supprimerPublication_clicked() {
     if (row < 0) return;
     QTableWidgetItem *titItem = ui->SR_tablePublications->item(row, 0);
     if (!titItem) return;
-    int id = titItem->data(Qt::UserRole).toInt();
     QString titre = titItem->text();
 
     QMessageBox::StandardButton reply = QMessageBox::question(this, "Confirmer la suppression",
@@ -5528,862 +7038,25 @@ void SmartPub::on_SR_supprimerPublication_clicked() {
     if (reply != QMessageBox::Yes) return;
 
     QSqlDatabase db = Connection::instance()->getDatabase();
-    if (db.isOpen()) {
-        QSqlQuery query(db);
-        query.prepare("DELETE FROM PUBLICATIONS WHERE DOI = :doi");
-        query.bindValue(":doi", titItem->data(Qt::UserRole));
-        if (!query.exec()) {
-            QMessageBox::critical(this, "Erreur", "Échec de la suppression : " + query.lastError().text());
-            return;
-        }
-    }
-    ui->SR_tablePublications->removeRow(row);
-    if (editingPublicationRow == row) editingPublicationRow = -1;
-    else if (editingPublicationRow > row) editingPublicationRow--;
-    ui->SR_btnAjouterPublication->setText("Ajouter");
-    QMessageBox::information(this, "Succès", "Publication supprimée.");
-}
-
-// ============================================================================
-// MODULE FINANCES
-// ============================================================================
-
-void SmartPub::finSetupUI() {
-    ui->finStackedWidget->setCurrentIndex(0);
-    finVueListeActive = true;
-
-    ui->finComboBoxProjet->addItems(
-        {"Projet AI-2024-001", "Projet Quantum-2024-002",
-         "Projet BioTech-2024-003", "Projet CyberSec-2024-004"});
-}
-
-void SmartPub::finConnectSignals() {
-    connect(ui->finBtnVueListe, &QPushButton::clicked, this,
-            &SmartPub::on_finBtnVueListe_clicked);
-    connect(ui->finBtnAjouter, &QPushButton::clicked, this,
-            &SmartPub::on_finBtnAjouter_clicked);
-    connect(ui->finBtnRecherche, &QPushButton::clicked, this,
-            &SmartPub::on_finBtnRecherche_clicked);
-    connect(ui->finBtnTri, &QPushButton::clicked, this,
-            &SmartPub::on_finBtnTri_clicked);
-    connect(ui->finBtnExport, &QPushButton::clicked, this,
-            &SmartPub::on_finBtnExport_clicked);
-    connect(ui->finBtnStatistiques, &QPushButton::clicked, this,
-            &SmartPub::on_finBtnStatistiques_clicked);
-    connect(ui->finBtnAjouterTransaction, &QPushButton::clicked, this,
-            &SmartPub::on_finBtnAjouterTransaction_clicked);
-    connect(ui->finBtnAnnulerAjout, &QPushButton::clicked, this,
-            &SmartPub::on_finBtnAnnulerAjout_clicked);
-    connect(ui->finBtnModifierTable, &QPushButton::clicked, this,
-            &SmartPub::on_finBtnModifierTransaction_clicked);
-    connect(ui->finBtnSupprimerTable, &QPushButton::clicked, this,
-            &SmartPub::on_finBtnSupprimerTransaction_clicked);
-    connect(ui->finLineEditRecherche, &QLineEdit::textChanged, this,
-            &SmartPub::on_finLineEditRecherche_textChanged);
-}
-// background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #3b9cff, stop:1
-// #2dd4bf); background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #2b8cef,
-// stop:1 #1dc4af);
-void SmartPub::finUpdateButtonStyles() {
-    QString activeStyle = R"(
-        QPushButton {
-
-            background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #3b82f6, stop:1 #10b981);
-            color: white;
-            border: none;
-            border-radius: 8px;
-            padding: 8px 16px;
-            font-size: 13px;
-            font-weight: 600;
-        }
-        QPushButton:hover {
-            background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #2563eb, stop:1 #059669);
-        }
-    )";
-
-    QString inactiveStyle = R"(
-        QPushButton {
-            background-color: transparent;
-            color: #64748b;
-            border: none;
-            border-radius: 8px;
-            padding: 8px 16px;
-            font-size: 13px;
-            font-weight: 500;
-        }
-        QPushButton:hover {
-            background-color: #f1f5f9;
-            color: #334155;
-        }
-    )";
-
-    if (ui->finStackedWidget->currentIndex() == 0) {
-        ui->finBtnVueListe->setStyleSheet(activeStyle);
-        ui->finBtnVueListe->setChecked(true);
-        ui->finBtnAjouter->setStyleSheet(inactiveStyle);
-        ui->finBtnAjouter->setChecked(false);
-    } else if (ui->finStackedWidget->currentIndex() == 1) {
-        ui->finBtnVueListe->setStyleSheet(inactiveStyle);
-        ui->finBtnVueListe->setChecked(false);
-        ui->finBtnAjouter->setStyleSheet(activeStyle);
-        ui->finBtnAjouter->setChecked(true);
-    }
-}
-
-void SmartPub::finAjouterDonneesTest() {
-    TransactionData t1;
-    t1.id = 1;
-    t1.projet = "Projet AI-2024-001";
-    t1.type = "Recette";
-    t1.montant = 50000.00;
-    t1.date = "15/01/2024";
-    t1.categorie = "Équipement";
-    t1.statut = "Validée";
-    t1.description = "Achat de serveurs GPU";
-    finTransactionsMap[1] = t1;
-
-    TransactionData t2;
-    t2.id = 2;
-    t2.projet = "Projet Quantum-2024-002";
-    t2.type = "Dépense";
-    t2.montant = 25000.00;
-    t2.date = "20/02/2024";
-    t2.categorie = "Personnel";
-    t2.statut = "En attente";
-    t2.description = "Salaire chercheur post-doc";
-    finTransactionsMap[2] = t2;
-
-    TransactionData t3;
-    t3.id = 3;
-    t3.projet = "Projet BioTech-2024-003";
-    t3.type = "Dépense";
-    t3.montant = 8000.00;
-    t3.date = "10/03/2024";
-    t3.categorie = "Consommables";
-    t3.statut = "Validée";
-    t3.description = "Réactifs de laboratoire";
-    finTransactionsMap[3] = t3;
-
-    finAfficherListeTransactions();
-}
-
-void SmartPub::finAfficherListeTransactions() {
-    ui->finTableTransactions->setRowCount(0);
-    QList<TransactionData> liste = finGetTransactionsFiltreesEtTriees();
-    for (const TransactionData &data : liste) {
-        finAjouterTransactionTable(data);
-    }
-}
-
-QList<TransactionData> SmartPub::finGetTransactionsFiltreesEtTriees() const {
-    QList<TransactionData> liste;
-    QString search = ui->finLineEditRecherche->text().trimmed().toLower();
-
-    for (auto it = finTransactionsMap.constBegin(); it != finTransactionsMap.constEnd(); ++it) {
-        const TransactionData &t = it.value();
-        if (!search.isEmpty()) {
-            if (!t.projet.toLower().contains(search) &&
-                !t.type.toLower().contains(search) &&
-                !t.categorie.toLower().contains(search) &&
-                !t.statut.toLower().contains(search) &&
-                !t.description.toLower().contains(search) &&
-                !QString::number(t.montant, 'f', 2).contains(search))
-                continue;
-        }
-        liste.append(t);
-    }
-
-    std::sort(liste.begin(), liste.end(), [this](const TransactionData &a, const TransactionData &b) {
-        bool less = false;
-        switch (finTriColonne) {
-        case 0: less = a.id < b.id; break;
-        case 1: less = a.projet.compare(b.projet, Qt::CaseInsensitive) < 0; break;
-        case 2: less = a.type.compare(b.type, Qt::CaseInsensitive) < 0; break;
-        case 3: less = a.montant < b.montant; break;
-        case 4: {
-            QDate da = QDate::fromString(a.date, "dd/MM/yyyy");
-            QDate db = QDate::fromString(b.date, "dd/MM/yyyy");
-            less = da < db;
-            break;
-        }
-        case 5: less = a.categorie.compare(b.categorie, Qt::CaseInsensitive) < 0; break;
-        case 6: less = a.statut.compare(b.statut, Qt::CaseInsensitive) < 0; break;
-        default: less = a.id < b.id;
-        }
-        return finTriOrdre == Qt::AscendingOrder ? less : !less;
-    });
-
-    return liste;
-}
-
-void SmartPub::finAjouterTransactionTable(const TransactionData &data) {
-    int row = ui->finTableTransactions->rowCount();
-    ui->finTableTransactions->insertRow(row);
-
-    ui->finTableTransactions->setItem(
-        row, 0, new QTableWidgetItem(QString::number(data.id)));
-    ui->finTableTransactions->setItem(row, 1, new QTableWidgetItem(data.projet));
-    ui->finTableTransactions->setItem(row, 2, new QTableWidgetItem(data.type));
-    ui->finTableTransactions->setItem(
-        row, 3,
-        new QTableWidgetItem(QString::number(data.montant, 'f', 2) + " €"));
-    ui->finTableTransactions->setItem(row, 4, new QTableWidgetItem(data.date));
-    ui->finTableTransactions->setItem(row, 5,
-                                      new QTableWidgetItem(data.categorie));
-    ui->finTableTransactions->setItem(row, 6, new QTableWidgetItem(data.statut));
-}
-
-void SmartPub::finViderFormulaire() {
-    ui->finComboBoxProjet->setCurrentIndex(0);
-    ui->finComboBoxType->setCurrentIndex(0);
-    ui->finLineEditMontant->clear();
-    ui->finDateEdit->setDate(QDate::currentDate());
-    ui->finComboBoxCategorie->setCurrentIndex(0);
-    ui->finComboBoxStatut->setCurrentIndex(0);
-    ui->finTextEditDescription->clear();
-}
-
-void SmartPub::finRemplirFormulaire(const TransactionData &data) {
-    int idxProjet = ui->finComboBoxProjet->findText(data.projet);
-    if (idxProjet >= 0) ui->finComboBoxProjet->setCurrentIndex(idxProjet);
-    else ui->finComboBoxProjet->setCurrentText(data.projet);
-
-    int idxType = ui->finComboBoxType->findText(data.type);
-    if (idxType >= 0) ui->finComboBoxType->setCurrentIndex(idxType);
-    else ui->finComboBoxType->setCurrentText(data.type);
-
-    ui->finLineEditMontant->setText(QString::number(data.montant, 'f', 2));
-
-    QDate d = QDate::fromString(data.date, "dd/MM/yyyy");
-    if (d.isValid()) ui->finDateEdit->setDate(d);
-    else ui->finDateEdit->setDate(QDate::currentDate());
-
-    int idxCat = ui->finComboBoxCategorie->findText(data.categorie);
-    if (idxCat >= 0) ui->finComboBoxCategorie->setCurrentIndex(idxCat);
-    else ui->finComboBoxCategorie->setCurrentText(data.categorie);
-
-    int idxStatut = ui->finComboBoxStatut->findText(data.statut);
-    if (idxStatut >= 0) ui->finComboBoxStatut->setCurrentIndex(idxStatut);
-    else ui->finComboBoxStatut->setCurrentText(data.statut);
-
-    ui->finTextEditDescription->setPlainText(data.description);
-}
-
-void SmartPub::on_finBtnVueListe_clicked() {
-    ui->finStackedWidget->setCurrentIndex(0);
-    finUpdateButtonStyles();
-    finAfficherListeTransactions();
-}
-
-void SmartPub::on_finBtnAjouter_clicked() {
-    if (currentUser.role == UserRole::Guest) {
-        QMessageBox::warning(this, "Accès refusé",
-                             "Les invités ne peuvent pas ajouter de transactions.");
-        return;
-    }
-    finTransactionSelectionnee = 0;  // Mode ajout
-    finViderFormulaire();
-    ui->finFormTitle->setText("Nouvelle transaction");
-    ui->finFormSubtitle->setText("Remplissez les informations pour ajouter une nouvelle transaction");
-    ui->finBtnAjouterTransaction->setText("➕ Ajouter");
-    ui->finStackedWidget->setCurrentIndex(1);
-    finUpdateButtonStyles();
-}
-
-void SmartPub::on_finBtnRecherche_clicked() {
-    finAfficherListeTransactions();
-}
-
-void SmartPub::on_finLineEditRecherche_textChanged(const QString &) {
-    finAfficherListeTransactions();
-}
-
-void SmartPub::on_finBtnTri_clicked() {
-    QMenu *menu = new QMenu(this);
-    menu->setStyleSheet(R"(
-        QMenu {
-            background-color: white;
-            border: 1px solid #e2e8f0;
-            border-radius: 12px;
-            padding: 8px;
-            min-width: 220px;
-        }
-        QMenu::item {
-            padding: 12px 20px;
-            border-radius: 8px;
-            color: #334155;
-            font-size: 14px;
-            font-weight: 500;
-        }
-        QMenu::item:selected {
-            background-color: #eff6ff;
-            color: #3b82f6;
-        }
-    )");
-
-    auto appliquerTri = [this](int col, Qt::SortOrder ordre) {
-        finTriColonne = col;
-        finTriOrdre = ordre;
-        finAfficherListeTransactions();
-    };
-
-    menu->addAction("Trier par Date (récent → ancien)", this, [appliquerTri]() {
-        appliquerTri(4, Qt::DescendingOrder);
-    });
-    menu->addAction("Trier par Date (ancien → récent)", this, [appliquerTri]() {
-        appliquerTri(4, Qt::AscendingOrder);
-    });
-    menu->addAction("Trier par Montant (croissant)", this, [appliquerTri]() {
-        appliquerTri(3, Qt::AscendingOrder);
-    });
-    menu->addAction("Trier par Montant (décroissant)", this, [appliquerTri]() {
-        appliquerTri(3, Qt::DescendingOrder);
-    });
-    menu->addAction("Trier par Projet (A-Z)", this, [appliquerTri]() {
-        appliquerTri(1, Qt::AscendingOrder);
-    });
-    menu->addAction("Trier par Type", this, [appliquerTri]() {
-        appliquerTri(2, Qt::AscendingOrder);
-    });
-
-    menu->exec(QCursor::pos());
-}
-
-void SmartPub::on_finBtnExport_clicked() {
-    QString fileName = QFileDialog::getSaveFileName(
-        this, "Exporter les transactions", QDir::homePath(), "CSV (*.csv)");
-    if (fileName.isEmpty()) return;
-
-    QFile file(fileName);
-    if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
-        QMessageBox::critical(this, "Erreur", "Impossible de créer le fichier.");
-        return;
-    }
-
-    QTextStream out(&file);
-    out.setEncoding(QStringConverter::Utf8);
-    out << "ID;Projet;Type;Montant;Date;Catégorie;Statut;Description\n";
-
-    QList<TransactionData> liste = finGetTransactionsFiltreesEtTriees();
-    for (const TransactionData &t : liste) {
-        QString desc = t.description;
-        desc.replace("\"", "\"\"");
-        out << t.id << ";\"" << t.projet << "\";\"" << t.type << "\";"
-            << QString::number(t.montant, 'f', 2) << ";\"" << t.date << "\";\""
-            << t.categorie << "\";\"" << t.statut << "\";\"" << desc << "\"\n";
-    }
-    file.close();
-    QMessageBox::information(this, "Export", "Transactions exportées avec succès !");
-}
-
-void SmartPub::on_finBtnStatistiques_clicked() {
-    FinStatistiquesDialog *dialog = new FinStatistiquesDialog(finTransactionsMap, this);
-    dialog->setAttribute(Qt::WA_DeleteOnClose);
-    dialog->exec();
-}
-
-void SmartPub::on_finBtnAjouterTransaction_clicked() {
-    if (currentUser.role == UserRole::Guest) {
-        QMessageBox::warning(this, "Accès refusé",
-                             "Les invités ne peuvent pas ajouter de transactions.");
-        return;
-    }
-
-    QString projet = ui->finComboBoxProjet->currentText();
-    QString type = ui->finComboBoxType->currentText();
-    QString montantStr = ui->finLineEditMontant->text();
-    QString date = ui->finDateEdit->date().toString("dd/MM/yyyy");
-    QString categorie = ui->finComboBoxCategorie->currentText();
-    QString statut = ui->finComboBoxStatut->currentText();
-    QString description = ui->finTextEditDescription->toPlainText();
-
-    if (projet.isEmpty() || montantStr.isEmpty()) {
-        QMessageBox::warning(this, "Erreur",
-                             "Veuillez remplir tous les champs obligatoires (*)");
-        return;
-    }
-
-    bool ok;
-    double montant = montantStr.toDouble(&ok);
-    if (!ok) {
-        QMessageBox::warning(this, "Erreur", "Montant invalide");
-        return;
-    }
-
-    TransactionData data;
-    data.projet = projet;
-    data.type = type;
-    data.montant = montant;
-    data.date = date;
-    data.categorie = categorie;
-    data.statut = statut;
-    data.description = description;
-
-    if (finTransactionSelectionnee > 0) {
-        // Mode modification
-        data.id = finTransactionSelectionnee;
-        finTransactionsMap[finTransactionSelectionnee] = data;
-        QMessageBox::information(this, "Succès",
-                                 "Transaction modifiée avec succès !");
-    } else {
-        // Mode ajout
-        int newId =
-            finTransactionsMap.isEmpty() ? 1 : finTransactionsMap.keys().last() + 1;
-        data.id = newId;
-        finTransactionsMap[newId] = data;
-        QMessageBox::information(this, "Succès", "Transaction ajoutée avec succès !");
-    }
-
-    finTransactionSelectionnee = 0;
-    finViderFormulaire();
-    ui->finStackedWidget->setCurrentIndex(0);
-    finUpdateButtonStyles();
-    finAfficherListeTransactions();
-}
-
-void SmartPub::on_finBtnAnnulerAjout_clicked() {
-    finTransactionSelectionnee = 0;
-    finViderFormulaire();
-    ui->finStackedWidget->setCurrentIndex(0);
-    finUpdateButtonStyles();
-}
-
-void SmartPub::on_finBtnModifierTransaction_clicked() {
-    if (currentUser.role == UserRole::Guest) {
-        QMessageBox::warning(
-            this, "Accès refusé",
-            "Les invités ne peuvent pas modifier les transactions.");
-        return;
-    }
-
-    int currentRow = ui->finTableTransactions->currentRow();
-    if (currentRow < 0) {
-        QMessageBox::warning(this, "Erreur",
-                             "Veuillez sélectionner une transaction à modifier");
-        return;
-    }
-
-    QTableWidgetItem *idItem = ui->finTableTransactions->item(currentRow, 0);
-    if (!idItem) return;
-
-    int transactionId = idItem->text().toInt();
-    if (!finTransactionsMap.contains(transactionId)) return;
-
-    finTransactionSelectionnee = transactionId;
-    finRemplirFormulaire(finTransactionsMap[transactionId]);
-    ui->finFormTitle->setText("Modifier la transaction");
-    ui->finFormSubtitle->setText("Modifiez les informations de la transaction");
-    ui->finBtnAjouterTransaction->setText("💾 Enregistrer");
-    ui->finStackedWidget->setCurrentIndex(1);
-    finUpdateButtonStyles();
-}
-
-void SmartPub::on_finBtnSupprimerTransaction_clicked() {
-    if (currentUser.role == UserRole::Guest) {
-        QMessageBox::warning(
-            this, "Accès refusé",
-            "Les invités ne peuvent pas supprimer les transactions.");
-        return;
-    }
-
-    int currentRow = ui->finTableTransactions->currentRow();
-    if (currentRow < 0) {
-        QMessageBox::warning(this, "Erreur",
-                             "Veuillez sélectionner une transaction à supprimer");
-        return;
-    }
-
-    QTableWidgetItem *idItem = ui->finTableTransactions->item(currentRow, 0);
-    if (!idItem) return;
-
-    int transactionId = idItem->text().toInt();
-
-    auto reply = QMessageBox::question(
-        this, "Supprimer", "Confirmer la suppression de cette transaction ?",
-        QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
-    if (reply == QMessageBox::Yes) {
-        finTransactionsMap.remove(transactionId);
-        finAfficherListeTransactions();
-        QMessageBox::information(this, "Succès", "Transaction supprimée");
-    }
-}
-
-// ============================================================================
-// MODULE EVENEMENTS
-// ============================================================================
-
-void SmartPub::evSetupUI() {
-    ui->evTabWidget->setCurrentIndex(0);
-    evEventSelectionne = -1;
-
-    // Configure evTableEvents to stretch and fill available space
-    if (ui->evTableEvents) {
-        ui->evTableEvents->horizontalHeader()->setStretchLastSection(true);
-        ui->evTableEvents->horizontalHeader()->setSectionResizeMode(
-            QHeaderView::Stretch);
-        ui->evTableEvents->verticalHeader()->setSectionResizeMode(
-            QHeaderView::ResizeToContents);
-        ui->evTableEvents->setSizePolicy(QSizePolicy::Expanding,
-                                         QSizePolicy::Expanding);
-    }
-
-    // Configure evTableSearchEvents to stretch and fill available space
-    if (ui->evTableSearchEvents) {
-        ui->evTableSearchEvents->horizontalHeader()->setStretchLastSection(true);
-        ui->evTableSearchEvents->horizontalHeader()->setSectionResizeMode(
-            QHeaderView::Stretch);
-        ui->evTableSearchEvents->verticalHeader()->setSectionResizeMode(
-            QHeaderView::ResizeToContents);
-        ui->evTableSearchEvents->setSizePolicy(QSizePolicy::Expanding,
-                                               QSizePolicy::Expanding);
-    }
-}
-
-void SmartPub::evConnectSignals() {
-    connect(ui->evBtnAjouterEvent, &QPushButton::clicked, this,
-            &SmartPub::on_evBtnAjouterEvent_clicked);
-    connect(ui->evBtnModifierEvent, &QPushButton::clicked, this,
-            &SmartPub::on_evBtnModifierEvent_clicked);
-    connect(ui->evBtnSupprimerEvent, &QPushButton::clicked, this,
-            &SmartPub::on_evBtnSupprimerEvent_clicked);
-    connect(ui->evBtnTrierDate, &QPushButton::clicked, this,
-            &SmartPub::on_evBtnTrierDate_clicked);
-    connect(ui->evBtnRechercheLieu, &QPushButton::clicked, this,
-            &SmartPub::on_evBtnRechercheLieu_clicked);
-    connect(ui->evBtnExportCalendrier, &QPushButton::clicked, this,
-            &SmartPub::on_evBtnExportCalendrier_clicked);
-    connect(ui->evBtnLivreResumes, &QPushButton::clicked, this,
-            &SmartPub::on_evBtnLivreResumes_clicked);
-    connect(ui->evBtnCalculImpact, &QPushButton::clicked, this,
-            &SmartPub::on_evBtnCalculImpact_clicked);
-    connect(ui->evBtnStatsParticipation, &QPushButton::clicked, this,
-            &SmartPub::on_evBtnStatsParticipation_clicked);
-}
-
-void SmartPub::evAjouterDonneesTest() {
-    evEditingCode.clear();
-    evAfficherListeEvents();
-}
-
-void SmartPub::evAfficherListeEvents() {
-    QSqlDatabase db = Connection::instance()->getDatabase();
     if (!db.isOpen()) {
+        QMessageBox::critical(this, QStringLiteral("Erreur"), QStringLiteral("Connexion à la base de données impossible."));
         return;
     }
-
-    evEventsMap.clear();
+    const int idPublication = titItem->data(Qt::UserRole).toInt();
     QSqlQuery query(db);
-    if (!query.exec("SELECT CODE, NOM, LIEU, DATE_EVENT FROM EVENEMENT ORDER BY DATE_EVENT")) {
-        QMessageBox::warning(this, "Erreur", "Impossible de charger les événements : " + query.lastError().text());
-        return;
-    }
-
-    ui->evTableEvents->setRowCount(0);
-    ui->evTableSearchEvents->setRowCount(0);
-
-    while (query.next()) {
-        EventData data;
-        data.code = query.value("CODE").toString();
-        data.nom = query.value("NOM").toString();
-        data.lieu = query.value("LIEU").toString();
-        QVariant dVal = query.value("DATE_EVENT");
-        if (dVal.canConvert<QDate>()) {
-            data.date = dVal.toDate().toString("dd/MM/yyyy");
-        } else {
-            QString dStr = dVal.toString();
-            if (dStr.contains("T")) dStr = dStr.left(10);
-            if (dStr.contains("-") && dStr.length() >= 10) {
-                QDate dt = QDate::fromString(dStr.left(10), "yyyy-MM-dd");
-                if (dt.isValid()) data.date = dt.toString("dd/MM/yyyy");
-                else data.date = dStr;
-            } else {
-                data.date = dStr;
-            }
-        }
-        evEventsMap[data.code] = data;
-        evAjouterEventTable(data);
-        int row = ui->evTableSearchEvents->rowCount();
-        ui->evTableSearchEvents->insertRow(row);
-        ui->evTableSearchEvents->setItem(row, 0, new QTableWidgetItem(data.code));
-        ui->evTableSearchEvents->setItem(row, 1, new QTableWidgetItem(data.nom));
-        ui->evTableSearchEvents->setItem(row, 2, new QTableWidgetItem(data.lieu));
-        ui->evTableSearchEvents->setItem(row, 3, new QTableWidgetItem(data.date));
-    }
-}
-
-void SmartPub::evAjouterEventTable(const EventData &data) {
-    int row = ui->evTableEvents->rowCount();
-    ui->evTableEvents->insertRow(row);
-    ui->evTableEvents->setItem(row, 0, new QTableWidgetItem(data.code));
-    ui->evTableEvents->setItem(row, 1, new QTableWidgetItem(data.nom));
-    ui->evTableEvents->setItem(row, 2, new QTableWidgetItem(data.lieu));
-    ui->evTableEvents->setItem(row, 3, new QTableWidgetItem(data.date));
-}
-
-void SmartPub::evRechercherParLieu() {
-    QString lieu = ui->evLineEditSearchLieu->text().trimmed();
-    if (lieu.isEmpty()) {
-        QMessageBox::warning(this, "Recherche", "Veuillez entrer un lieu");
-        return;
-    }
-
-    QSqlDatabase db = Connection::instance()->getDatabase();
-    if (!db.isOpen()) {
-        return;
-    }
-
-    ui->evTableSearchEvents->setRowCount(0);
-    QSqlQuery query(db);
-    query.prepare("SELECT CODE, NOM, LIEU, DATE_EVENT FROM EVENEMENT WHERE UPPER(LIEU) LIKE UPPER(:lieu) ORDER BY DATE_EVENT");
-    query.bindValue(":lieu", "%" + lieu + "%");
+    query.prepare(QStringLiteral("DELETE FROM PUBLICATION WHERE ID_PUBLICATION = :id"));
+    query.bindValue(QStringLiteral(":id"), idPublication);
     if (!query.exec()) {
-        QMessageBox::warning(this, "Erreur", "Recherche échouée : " + query.lastError().text());
+        QMessageBox::critical(this, QStringLiteral("Erreur"),
+                              QStringLiteral("Échec de la suppression : ") + query.lastError().text());
         return;
     }
-    while (query.next()) {
-        int row = ui->evTableSearchEvents->rowCount();
-        ui->evTableSearchEvents->insertRow(row);
-        QString dateStr = query.value("DATE_EVENT").toString();
-        if (dateStr.contains("T")) dateStr = dateStr.left(10);
-        ui->evTableSearchEvents->setItem(row, 0, new QTableWidgetItem(query.value("CODE").toString()));
-        ui->evTableSearchEvents->setItem(row, 1, new QTableWidgetItem(query.value("NOM").toString()));
-        ui->evTableSearchEvents->setItem(row, 2, new QTableWidgetItem(query.value("LIEU").toString()));
-        ui->evTableSearchEvents->setItem(row, 3, new QTableWidgetItem(dateStr));
-    }
+    editingPublicationRow = -1;
+    ui->SR_btnAjouterPublication->setText(QStringLiteral("Ajouter"));
+    SR_loadSampleData();
+    QMessageBox::information(this, QStringLiteral("Succès"), QStringLiteral("Publication supprimée."));
 }
 
-void SmartPub::on_evBtnAjouterEvent_clicked() {
-    if (currentUser.role == UserRole::Guest) {
-        QMessageBox::warning(this, "Accès refusé",
-                             "Les invités ne peuvent pas ajouter d'événements.");
-        return;
-    }
-
-    QString code = ui->evLineEditID->text().trimmed();
-    QString nom = ui->evLineEditNom->text().trimmed();
-    QString lieu = ui->evLineEditLieu->text().trimmed();
-    QString date = ui->evLineEditDate->text().trimmed();
-
-    if (code.isEmpty() || nom.isEmpty() || lieu.isEmpty() || date.isEmpty()) {
-        QMessageBox::warning(this, "Erreur", "Veuillez remplir tous les champs");
-        return;
-    }
-
-    QSqlDatabase db = Connection::instance()->getDatabase();
-    if (!db.isOpen()) {
-        return;
-    }
-
-    if (!evEditingCode.isEmpty()) {
-        QSqlQuery query(db);
-        query.prepare("UPDATE EVENEMENT SET NOM = :nom, LIEU = :lieu, DATE_EVENT = TO_DATE(:date_event, 'DD/MM/YYYY') WHERE CODE = :code");
-        query.bindValue(":nom", nom);
-        query.bindValue(":lieu", lieu);
-        query.bindValue(":date_event", date);
-        query.bindValue(":code", evEditingCode);
-        if (!query.exec()) {
-            QMessageBox::critical(this, "Erreur", "Échec de la modification : " + query.lastError().text());
-            return;
-        }
-        QMessageBox::information(this, "Succès", "Événement modifié avec succès !");
-        evEditingCode.clear();
-    } else {
-        QSqlQuery query(db);
-        query.prepare("INSERT INTO EVENEMENT (CODE, NOM, LIEU, DATE_EVENT) VALUES (:code, :nom, :lieu, TO_DATE(:date_event, 'DD/MM/YYYY'))");
-        query.bindValue(":code", code);
-        query.bindValue(":nom", nom);
-        query.bindValue(":lieu", lieu);
-        query.bindValue(":date_event", date);
-        if (!query.exec()) {
-            QMessageBox::critical(this, "Erreur", "Échec de l'ajout : " + query.lastError().text());
-            return;
-        }
-        QMessageBox::information(this, "Succès", "Événement ajouté avec succès !");
-    }
-
-    evAfficherListeEvents();
-    ui->evLineEditID->clear();
-    ui->evLineEditNom->clear();
-    ui->evLineEditLieu->clear();
-    ui->evLineEditDate->clear();
-    ui->evLineEditID->setEnabled(true);
-}
-
-void SmartPub::on_evBtnModifierEvent_clicked() {
-    if (currentUser.role == UserRole::Guest) {
-        QMessageBox::warning(this, "Accès refusé",
-                             "Les invités ne peuvent pas modifier les événements.");
-        return;
-    }
-
-    int currentRow = ui->evTableEvents->currentRow();
-    if (currentRow < 0) {
-        QMessageBox::warning(this, "Erreur",
-                             "Veuillez sélectionner un événement à modifier");
-        return;
-    }
-
-    QString code = ui->evTableEvents->item(currentRow, 0)->text();
-    ui->evLineEditID->setText(code);
-    ui->evLineEditNom->setText(ui->evTableEvents->item(currentRow, 1)->text());
-    ui->evLineEditLieu->setText(ui->evTableEvents->item(currentRow, 2)->text());
-    ui->evLineEditDate->setText(ui->evTableEvents->item(currentRow, 3)->text());
-    ui->evLineEditID->setEnabled(false);
-    evEditingCode = code;
-}
-
-void SmartPub::on_evBtnSupprimerEvent_clicked() {
-    if (currentUser.role == UserRole::Guest) {
-        QMessageBox::warning(
-            this, "Accès refusé",
-            "Les invités ne peuvent pas supprimer les événements.");
-        return;
-    }
-
-    int currentRow = ui->evTableEvents->currentRow();
-    if (currentRow < 0) {
-        QMessageBox::warning(this, "Erreur",
-                             "Veuillez sélectionner un événement à supprimer");
-        return;
-    }
-
-    auto reply = QMessageBox::question(
-        this, "Supprimer", "Confirmer la suppression de cet événement ?",
-        QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
-    if (reply == QMessageBox::Yes) {
-        QString code = ui->evTableEvents->item(currentRow, 0)->text();
-        QSqlDatabase db = Connection::instance()->getDatabase();
-        if (!db.isOpen()) {
-            return;
-        }
-        QSqlQuery query(db);
-        query.prepare("DELETE FROM EVENEMENT WHERE CODE = :code");
-        query.bindValue(":code", code);
-        if (!query.exec()) {
-            QMessageBox::critical(this, "Erreur", "Échec de la suppression : " + query.lastError().text());
-            return;
-        }
-        if (evEditingCode == code) {
-            evEditingCode.clear();
-            ui->evLineEditID->clear();
-            ui->evLineEditNom->clear();
-            ui->evLineEditLieu->clear();
-            ui->evLineEditDate->clear();
-            ui->evLineEditID->setEnabled(true);
-        }
-        evAfficherListeEvents();
-        QMessageBox::information(this, "Succès", "Événement supprimé");
-    }
-}
-
-void SmartPub::on_evBtnTrierDate_clicked() {
-    QMessageBox::information(this, "Tri", "Événements triés par date");
-}
-
-void SmartPub::on_evBtnRechercheLieu_clicked() { evRechercherParLieu(); }
-
-void SmartPub::on_evBtnExportCalendrier_clicked() {
-    QString fileName = QFileDialog::getSaveFileName(
-        this, "Exporter le calendrier", QDir::homePath(), "iCalendar (*.ics)");
-    if (!fileName.isEmpty()) {
-        QMessageBox::information(this, "Export",
-                                 "Calendrier exporté avec succès !");
-    }
-}
-
-void SmartPub::on_evBtnLivreResumes_clicked() {
-    QMessageBox::information(this, "Livre des Résumés",
-                             "Génération du livre des résumés - À implémenter");
-}
-
-void SmartPub::on_evBtnCalculImpact_clicked() {
-    QMessageBox::information(this, "Calculateur d'Impact",
-                             "Calcul de l'impact carbone - À implémenter");
-}
-
-void SmartPub::on_evBtnStatsParticipation_clicked() {
-    QDialog dialog(this);
-    dialog.setWindowTitle("Statistiques de participation");
-    dialog.setMinimumSize(600, 450);
-    dialog.resize(700, 500);
-
-    QVBoxLayout *layout = new QVBoxLayout(&dialog);
-
-    // Nombre total de participants (simulé : 50 + hash du code pour variété)
-    int totalParticipants = 0;
-    QMap<QString, int> participantsParDate;
-    for (auto it = evEventsMap.begin(); it != evEventsMap.end(); ++it) {
-        int nb = 50 + qHash(it.value().code) % 100;
-        if (nb < 20) nb = 50;
-        totalParticipants += nb;
-        participantsParDate[it.value().date] += nb;
-    }
-
-    QLabel *labelTotal = new QLabel(QString("Nombre total de participants : <b>%1</b>").arg(totalParticipants));
-    labelTotal->setStyleSheet("font-size: 16px; color: #334155; padding: 10px;");
-    layout->addWidget(labelTotal);
-
-    // Courbe : nombre de participants par date
-    QChartView *chartView = new QChartView(&dialog);
-    chartView->setRenderHint(QPainter::Antialiasing);
-
-    QLineSeries *series = new QLineSeries();
-    series->setName("Participants par date");
-    series->setColor(QColor("#3b82f6"));
-    series->setPen(QPen(QColor("#3b82f6"), 3));
-
-    QStringList datesTriees = participantsParDate.keys();
-    std::sort(datesTriees.begin(), datesTriees.end(), [](const QString &a, const QString &b) {
-        QDate da = QDate::fromString(a, "dd/MM/yyyy");
-        QDate db = QDate::fromString(b, "dd/MM/yyyy");
-        return da < db;
-    });
-
-    int idx = 0;
-    for (const QString &d : datesTriees) {
-        series->append(idx, participantsParDate[d]);
-        idx++;
-    }
-
-    QChart *chart = new QChart();
-    chart->addSeries(series);
-    chart->setTitle("Nombre de participants par date");
-    chart->setAnimationOptions(QChart::SeriesAnimations);
-    chart->setBackgroundBrush(QBrush(QColor("white")));
-
-    QBarCategoryAxis *axisX = new QBarCategoryAxis();
-    axisX->append(datesTriees);
-    chart->addAxis(axisX, Qt::AlignBottom);
-    series->attachAxis(axisX);
-
-    QValueAxis *axisY = new QValueAxis();
-    int maxPart = 0;
-    for (int v : participantsParDate)
-        if (v > maxPart) maxPart = v;
-    axisY->setRange(0, maxPart + 10);
-    axisY->setLabelFormat("%d");
-    chart->addAxis(axisY, Qt::AlignLeft);
-    series->attachAxis(axisY);
-
-    chart->legend()->setVisible(false);
-    chartView->setChart(chart);
-    layout->addWidget(chartView);
-
-    QPushButton *btnFermer = new QPushButton("Fermer");
-    btnFermer->setCursor(Qt::PointingHandCursor);
-    btnFermer->setStyleSheet(
-        "QPushButton { background-color: #3b82f6; color: white; border: none; "
-        "border-radius: 8px; padding: 10px 24px; font-weight: 600; }"
-        "QPushButton:hover { background-color: #2563eb; }");
-    connect(btnFermer, &QPushButton::clicked, &dialog, &QDialog::accept);
-    QHBoxLayout *btnLayout = new QHBoxLayout();
-    btnLayout->addStretch();
-    btnLayout->addWidget(btnFermer);
-    btnLayout->addStretch();
-    layout->addLayout(btnLayout);
-
-    dialog.exec();
-}
 // ==================== MAINWINDOW ====================
 
 int SmartPub::projExtraireProgression(const QString &progressionStr) const
@@ -6561,6 +7234,10 @@ void SmartPub::projUpdateSidebarProfileVisibility()
         profileWidget->setVisible(true);
     }
 }
+
+// ============================================================================
+// MODULE PROJETS
+// ============================================================================
 
 void SmartPub::projSetupUI()
 {
@@ -6781,17 +7458,29 @@ void SmartPub::projSetupSampleData()
 void SmartPub::projSetupComboBoxes()
 {
     ui->comboBoxResponsableForm->clear();
-    ui->comboBoxResponsableForm->addItem("Dr. Ahmed Ben Ali");
-    ui->comboBoxResponsableForm->addItem("Pr. Fatima Zohra");
-    ui->comboBoxResponsableForm->addItem("Dr. Mohamed Salah");
-    ui->comboBoxResponsableForm->addItem("Dr. Sarah Johnson");
-    ui->comboBoxResponsableForm->addItem("Pr. Robert Chen");
+    ui->comboBoxResponsableForm->addItem(QStringLiteral("—"), QVariant());
+
+    QSqlDatabase db = Connection::instance()->getDatabase();
+    if (db.isOpen()) {
+        QSqlQuery q(db);
+        if (q.exec(QStringLiteral("SELECT ID_CHERCHEUR, NOM, PRENOM FROM CHERCHEUR ORDER BY NOM, PRENOM"))) {
+            while (q.next()) {
+                const int cid = q.value(0).toInt();
+                const QString label = QStringLiteral("%1 %2")
+                                          .arg(q.value(1).toString().trimmed(),
+                                               q.value(2).toString().trimmed())
+                                          .trimmed();
+                ui->comboBoxResponsableForm->addItem(label.isEmpty() ? QString::number(cid) : label,
+                                                     QVariant(cid));
+            }
+        }
+    }
 
     ui->comboBoxEtatForm->clear();
-    ui->comboBoxEtatForm->addItem("Planifié");
-    ui->comboBoxEtatForm->addItem("Actif");
-    ui->comboBoxEtatForm->addItem("En pause");
-    ui->comboBoxEtatForm->addItem("Terminé");
+    ui->comboBoxEtatForm->addItem(QStringLiteral("En cours"), QStringLiteral("en_cours"));
+    ui->comboBoxEtatForm->addItem(QStringLiteral("Terminé"), QStringLiteral("termine"));
+    ui->comboBoxEtatForm->addItem(QStringLiteral("Suspendu"), QStringLiteral("suspendu"));
+    ui->comboBoxEtatForm->addItem(QStringLiteral("Annulé"), QStringLiteral("annule"));
 }
 
 
@@ -6842,10 +7531,10 @@ void SmartPub::projAjouterProjetTable(const Projet &projet, int rowIndex)
     respItem->setTextAlignment(Qt::AlignLeft | Qt::AlignVCenter);
     ui->tableWidgetProjets->setItem(row, 5, respItem);
 
-    // État avec couleur
-    QTableWidgetItem *etatItem = new QTableWidgetItem(projet.etat);
+    // État avec couleur (affichage libellé FR, données = codes Oracle)
+    QTableWidgetItem *etatItem = new QTableWidgetItem(projEtatDbToUi(projet.etat));
     etatItem->setTextAlignment(Qt::AlignCenter);
-    etatItem->setForeground(QColor(::getEtatColor(projet.etat)));
+    etatItem->setForeground(QColor(::getEtatColor(projEtatDbToUi(projet.etat))));
     etatItem->setFont(QFont("Segoe UI", 9, QFont::Bold));
     ui->tableWidgetProjets->setItem(row, 6, etatItem);
 
@@ -6889,21 +7578,28 @@ void SmartPub::projChargerProjets()
     QSqlDatabase db = Connection::instance()->getDatabase();
     if (db.isOpen()) {
         QSqlQuery query(db);
-        query.prepare("SELECT ID, CODE, TITRE, DATE_DEBUT, DATE_FIN, "
-                      "RESPONSABLE, ETAT, PROGRESSION, DESCRIPTION "
-                      "FROM PROJET ORDER BY ID");
+        query.prepare(
+            QStringLiteral("SELECT p.CODE_PROJET, p.TITRE, p.DATE_DEBUT, p.DATE_FIN, p.RESPONSABLE, p.ETAT, p.PROGRESSION, "
+                           "TRIM(c.NOM || ' ' || NVL(c.PRENOM, '')) AS RESP_NOM "
+                           "FROM PROJET p LEFT JOIN CHERCHEUR c ON c.ID_CHERCHEUR = p.RESPONSABLE "
+                           "ORDER BY p.CODE_PROJET"));
         if (query.exec()) {
             while (query.next()) {
                 Projet p;
-                p.id          = query.value("ID").toInt();
-                p.code        = query.value("CODE").toString();
-                p.titre       = query.value("TITRE").toString();
-                p.dateDebut   = query.value("DATE_DEBUT").toDate();
-                p.dateFin     = query.value("DATE_FIN").toDate();
-                p.responsable = query.value("RESPONSABLE").toString();
-                p.etat        = query.value("ETAT").toString();
-                p.progression = query.value("PROGRESSION").toString();
-                p.description = query.value("DESCRIPTION").toString();
+                p.id = query.value(QStringLiteral("CODE_PROJET")).toInt();
+                p.code = QString::number(p.id);
+                p.titre = query.value(QStringLiteral("TITRE")).toString();
+                p.dateDebut = query.value(QStringLiteral("DATE_DEBUT")).toDate();
+                p.dateFin = query.value(QStringLiteral("DATE_FIN")).toDate();
+                QVariant rv = query.value(QStringLiteral("RESPONSABLE"));
+                p.responsableId = rv.isNull() ? 0 : rv.toInt();
+                p.responsable = query.value(QStringLiteral("RESP_NOM")).toString();
+                if (p.responsable.isEmpty() && p.responsableId != 0)
+                    p.responsable = QStringLiteral("—");
+                p.etat = query.value(QStringLiteral("ETAT")).toString();
+                double prog = query.value(QStringLiteral("PROGRESSION")).toDouble();
+                p.progression = QStringLiteral("%1%").arg(qRound(prog));
+                p.description.clear();
                 projets.append(p);
             }
             // Mettre à jour nextProjetId
@@ -6927,6 +7623,8 @@ void SmartPub::projChargerProjets()
             projAjouterProjetTable(projets[i], i);
     }
     projAjusterColonnesTable();
+
+    Reminder::notifyEndingSoon(projets);
 }
 
 void SmartPub::projViderTable()
@@ -7132,47 +7830,59 @@ void SmartPub::onEnregistrerFormClicked()
 
     QSqlQuery query(db);
 
+    const double progVal = projProgressionStrToDouble(projet.progression);
+
     if (isEditing) {
-        // ── UPDATE ──
-        query.prepare("UPDATE PROJET SET "
-                      "CODE = :code, TITRE = :titre, DATE_DEBUT = :debut, "
-                      "DATE_FIN = :fin, RESPONSABLE = :resp, ETAT = :etat, "
-                      "PROGRESSION = :prog, DESCRIPTION = :desc "
-                      "WHERE ID = :id");
-        query.bindValue(":code",  projet.code);
-        query.bindValue(":titre", projet.titre);
-        query.bindValue(":debut", projet.dateDebut);
-        query.bindValue(":fin",   projet.dateFin);
-        query.bindValue(":resp",  projet.responsable);
-        query.bindValue(":etat",  projet.etat);
-        query.bindValue(":prog",  projet.progression);
-        query.bindValue(":desc",  projet.description);
-        query.bindValue(":id",    currentProjetId);
+        query.prepare(QStringLiteral("UPDATE PROJET SET "
+                                     "TITRE = :titre, DATE_DEBUT = :debut, DATE_FIN = :fin, "
+                                     "RESPONSABLE = :resp, ETAT = :etat, PROGRESSION = :prog "
+                                     "WHERE CODE_PROJET = :id"));
+        query.bindValue(QStringLiteral(":titre"), projet.titre);
+        query.bindValue(QStringLiteral(":debut"), projet.dateDebut);
+        query.bindValue(QStringLiteral(":fin"), projet.dateFin);
+        if (projet.responsableId > 0)
+            query.bindValue(QStringLiteral(":resp"), projet.responsableId);
+        else
+            query.bindValue(QStringLiteral(":resp"), QVariant());
+        query.bindValue(QStringLiteral(":etat"), projet.etat);
+        query.bindValue(QStringLiteral(":prog"), progVal);
+        query.bindValue(QStringLiteral(":id"), currentProjetId);
 
         if (query.exec()) {
-            QMessageBox::information(this, "Modification", "Projet modifié avec succès.");
+            QMessageBox::information(this, QStringLiteral("Modification"),
+                                       QStringLiteral("Projet modifié avec succès."));
         } else {
-            QMessageBox::critical(this, "Erreur", "Erreur modification: " + query.lastError().text());
+            QMessageBox::critical(this, QStringLiteral("Erreur"),
+                                  QStringLiteral("Erreur modification: ") + query.lastError().text());
             return;
         }
     } else {
-        // ── INSERT ──
-        query.prepare("INSERT INTO PROJET (CODE, TITRE, DATE_DEBUT, DATE_FIN, "
-                      "RESPONSABLE, ETAT, PROGRESSION, DESCRIPTION) "
-                      "VALUES (:code, :titre, :debut, :fin, :resp, :etat, :prog, :desc)");
-        query.bindValue(":code",  projet.code);
-        query.bindValue(":titre", projet.titre);
-        query.bindValue(":debut", projet.dateDebut);
-        query.bindValue(":fin",   projet.dateFin);
-        query.bindValue(":resp",  projet.responsable);
-        query.bindValue(":etat",  projet.etat);
-        query.bindValue(":prog",  projet.progression);
-        query.bindValue(":desc",  projet.description);
+        if (projet.code.isEmpty()) {
+            query.prepare(QStringLiteral("INSERT INTO PROJET (TITRE, DATE_DEBUT, DATE_FIN, "
+                                         "RESPONSABLE, ETAT, PROGRESSION) "
+                                         "VALUES (:titre, :debut, :fin, :resp, :etat, :prog)"));
+        } else {
+            query.prepare(QStringLiteral("INSERT INTO PROJET (CODE_PROJET, TITRE, DATE_DEBUT, DATE_FIN, "
+                                         "RESPONSABLE, ETAT, PROGRESSION) "
+                                         "VALUES (:code, :titre, :debut, :fin, :resp, :etat, :prog)"));
+            query.bindValue(QStringLiteral(":code"), projet.code.toInt());
+        }
+        query.bindValue(QStringLiteral(":titre"), projet.titre);
+        query.bindValue(QStringLiteral(":debut"), projet.dateDebut);
+        query.bindValue(QStringLiteral(":fin"), projet.dateFin);
+        if (projet.responsableId > 0)
+            query.bindValue(QStringLiteral(":resp"), projet.responsableId);
+        else
+            query.bindValue(QStringLiteral(":resp"), QVariant());
+        query.bindValue(QStringLiteral(":etat"), projet.etat);
+        query.bindValue(QStringLiteral(":prog"), progVal);
 
         if (query.exec()) {
-            QMessageBox::information(this, "Ajout", "Nouveau projet ajouté avec succès.");
+            QMessageBox::information(this, QStringLiteral("Ajout"),
+                                     QStringLiteral("Nouveau projet ajouté avec succès."));
         } else {
-            QMessageBox::critical(this, "Erreur", "Erreur ajout: " + query.lastError().text());
+            QMessageBox::critical(this, QStringLiteral("Erreur"),
+                                  QStringLiteral("Erreur ajout: ") + query.lastError().text());
             return;
         }
     }
@@ -7199,8 +7909,8 @@ void SmartPub::projMettreAJourProjetTable(int row, const Projet &projet)
     ui->tableWidgetProjets->item(row, 5)->setText(projet.responsable);
 
     QTableWidgetItem *etatItem = ui->tableWidgetProjets->item(row, 6);
-    etatItem->setText(projet.etat);
-    etatItem->setForeground(QColor(::getEtatColor(projet.etat)));
+    etatItem->setText(projEtatDbToUi(projet.etat));
+    etatItem->setForeground(QColor(::getEtatColor(projEtatDbToUi(projet.etat))));
 
     QTableWidgetItem *progItem = ui->tableWidgetProjets->item(row, 7);
     progItem->setText(projet.progression);
@@ -7230,8 +7940,8 @@ void SmartPub::onSupprimerProjetClicked()
         }
 
         QSqlQuery query(db);
-        query.prepare("DELETE FROM PROJET WHERE ID = :id");
-        query.bindValue(":id", projetId);
+        query.prepare(QStringLiteral("DELETE FROM PROJET WHERE CODE_PROJET = :id"));
+        query.bindValue(QStringLiteral(":id"), projetId);
 
         if (query.exec()) {
             QMessageBox::information(this, "Suppression", "Projet supprimé avec succès.");
@@ -7523,11 +8233,17 @@ void SmartPub::projRemplirFormulaire(const Projet &projet)
     ui->dateEditDebutForm->setDate(projet.dateDebut);
     ui->dateEditFinForm->setDate(projet.dateFin);
 
-    int respIndex = ui->comboBoxResponsableForm->findText(projet.responsable);
-    if (respIndex != -1) ui->comboBoxResponsableForm->setCurrentIndex(respIndex);
+    int respIndex = ui->comboBoxResponsableForm->findData(QVariant(projet.responsableId));
+    if (respIndex >= 0)
+        ui->comboBoxResponsableForm->setCurrentIndex(respIndex);
+    else
+        ui->comboBoxResponsableForm->setCurrentIndex(0);
 
-    int etatIndex = ui->comboBoxEtatForm->findText(projet.etat);
-    if (etatIndex != -1) ui->comboBoxEtatForm->setCurrentIndex(etatIndex);
+    int etatIndex = ui->comboBoxEtatForm->findData(projet.etat);
+    if (etatIndex >= 0)
+        ui->comboBoxEtatForm->setCurrentIndex(etatIndex);
+    else
+        ui->comboBoxEtatForm->setCurrentIndex(0);
 
     ui->textEditDescriptionForm->setText(projet.description);
 }
@@ -7548,24 +8264,47 @@ Projet SmartPub::projGetProjetFromForm() const
     Projet projet;
     if (isEditing) {
         projet.id = currentProjetId;
+        for (const Projet &p : projets) {
+            if (p.id == currentProjetId) {
+                projet.progression = p.progression;
+                break;
+            }
+        }
     }
-    projet.code = ui->lineEditCodeForm->text();
+    if (projet.progression.isEmpty())
+        projet.progression = QStringLiteral("0%");
+
+    projet.code = ui->lineEditCodeForm->text().trimmed();
     projet.titre = ui->lineEditTitreForm->text();
     projet.dateDebut = ui->dateEditDebutForm->date();
     projet.dateFin = ui->dateEditFinForm->date();
     projet.responsable = ui->comboBoxResponsableForm->currentText();
-    projet.etat = ui->comboBoxEtatForm->currentText();
-    projet.progression = "0%";
+    projet.responsableId = ui->comboBoxResponsableForm->currentData().toInt();
+    projet.etat = ui->comboBoxEtatForm->currentData().toString();
+    if (projet.etat.isEmpty())
+        projet.etat = QStringLiteral("en_cours");
     projet.description = ui->textEditDescriptionForm->toPlainText();
     return projet;
 }
 
 bool SmartPub::projValiderFormulaire() const
 {
-    if (ui->lineEditCodeForm->text().isEmpty()) {
-        QMessageBox::warning(const_cast<SmartPub*>(this), "Validation", "Le code du projet est requis");
+    const QString codeTxt = ui->lineEditCodeForm->text().trimmed();
+    if (isEditing && codeTxt.isEmpty()) {
+        QMessageBox::warning(const_cast<SmartPub *>(this), QStringLiteral("Validation"),
+                             QStringLiteral("Le code du projet est requis"));
         ui->lineEditCodeForm->setFocus();
         return false;
+    }
+    if (!codeTxt.isEmpty()) {
+        bool ok = false;
+        codeTxt.toInt(&ok);
+        if (!ok) {
+            QMessageBox::warning(const_cast<SmartPub *>(this), QStringLiteral("Validation"),
+                                 QStringLiteral("Le code projet doit être un nombre entier"));
+            ui->lineEditCodeForm->setFocus();
+            return false;
+        }
     }
 
     if (ui->lineEditTitreForm->text().isEmpty()) {
@@ -7618,7 +8357,7 @@ QString SmartPub::projCalculerStatutProjet(const Projet &projet) const
     int progression = projExtraireProgression(projet.progression);
     int joursRestants = QDate::currentDate().daysTo(projet.dateFin);
 
-    if (projet.etat == "Terminé") return "Sain";
+    if (projet.etat == QLatin1String("termine")) return QStringLiteral("Sain");
 
     if (joursRestants < 0) {
         return "Critique";
@@ -7646,7 +8385,7 @@ QVector<QString> SmartPub::projGenererAlertes(const Projet &projet) const
 {
     QVector<QString> alertes;
 
-    if (projet.etat == "Terminé") return alertes;
+    if (projet.etat == QLatin1String("termine")) return alertes;
 
     int joursRestants = QDate::currentDate().daysTo(projet.dateFin);
 
@@ -7674,7 +8413,7 @@ double SmartPub::projCalculerProgressionMoyenne() const
     double total = 0;
     int count = 0;
     for (const auto &p : projets) {
-        if (p.etat != "Terminé" && p.etat != "Planifié") {
+        if (p.etat != QLatin1String("termine") && p.etat != QLatin1String("annule")) {
             total += projExtraireProgression(p.progression);
             count++;
         }
@@ -7686,7 +8425,7 @@ int SmartPub::projCompterProjetsEnRetard() const
 {
     int count = 0;
     for (const auto &p : projets) {
-        if (p.etat != "Terminé" && QDate::currentDate() > p.dateFin) {
+        if (p.etat != QLatin1String("termine") && QDate::currentDate() > p.dateFin) {
             count++;
         }
     }
@@ -8028,4 +8767,1003 @@ void SmartPub::on_exporterClicked()
     if (!fileName.isEmpty()) {
         QMessageBox::information(this, "Exportation", "Projets exportés avec succès dans:\n" + fileName);
     }
+}
+
+// ============================================================================
+// MODULE LABORATOIRES
+// ============================================================================
+
+void SmartPub::labSetupUI()
+{
+    // Créer la page laboratoires et l'ajouter au stackedWidgetModules (index 5)
+    labPage = new QWidget();
+    labPage->setObjectName("labPage");
+    labPage->setStyleSheet("QWidget#labPage { background-color: #f8fafc; }");
+
+    QVBoxLayout *pageLayout = new QVBoxLayout(labPage);
+    pageLayout->setSpacing(0);
+    pageLayout->setContentsMargins(0, 0, 0, 0);
+
+    // ---- HEADER ----
+    QFrame *headerFrame = new QFrame();
+    headerFrame->setObjectName("labHeaderFrame");
+    headerFrame->setFixedHeight(90);
+    headerFrame->setStyleSheet(
+        "QFrame#labHeaderFrame {"
+        "    background: qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 #3b82f6,stop:1 #10b981);"
+        "    border: none;"
+        "}");
+    QHBoxLayout *headerLayout = new QHBoxLayout(headerFrame);
+    headerLayout->setContentsMargins(30, 0, 30, 0);
+
+    QLabel *titleLabel = new QLabel("🧪  Gestion des Laboratoires");
+    titleLabel->setStyleSheet("color:white;font-size:26px;font-weight:bold;");
+    headerLayout->addWidget(titleLabel);
+    headerLayout->addStretch();
+
+    labTotalLabel = new QLabel("0 laboratoires");
+    labTotalLabel->setObjectName("labTotalLabel");
+    labTotalLabel->setStyleSheet(
+        "color:white;font-size:14px;background:rgba(255,255,255,0.2);"
+        "border-radius:12px;padding:6px 16px;");
+    headerLayout->addWidget(labTotalLabel);
+    pageLayout->addWidget(headerFrame);
+
+    // ---- TOOLBAR ----
+    QFrame *toolbarFrame = new QFrame();
+    toolbarFrame->setObjectName("labToolbarFrame");
+    toolbarFrame->setFixedHeight(70);
+    toolbarFrame->setStyleSheet(
+        "QFrame#labToolbarFrame {"
+        "    background-color:white;"
+        "    border-bottom:1px solid #e2e8f0;"
+        "}");
+    QHBoxLayout *toolbarLayout = new QHBoxLayout(toolbarFrame);
+    toolbarLayout->setContentsMargins(20, 0, 20, 0);
+    toolbarLayout->setSpacing(10);
+
+    // CRUD buttons
+    labBtnAjouter = new QPushButton("➕  Ajouter");
+    labBtnAjouter->setObjectName("labBtnAjouter");
+    labBtnAjouter->setFixedHeight(44);
+    labBtnAjouter->setCursor(Qt::PointingHandCursor);
+    labBtnAjouter->setStyleSheet(
+        "QPushButton{background:qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 #3b82f6,stop:1 #10b981);"
+        "color:white;border:none;border-radius:10px;padding:0 20px;font-size:13px;font-weight:600;}"
+        "QPushButton:hover{background:qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 #2563eb,stop:1 #059669);}");
+    toolbarLayout->addWidget(labBtnAjouter);
+
+    labBtnModifier = new QPushButton("✏️  Modifier");
+    labBtnModifier->setObjectName("labBtnModifier");
+    labBtnModifier->setFixedHeight(44);
+    labBtnModifier->setEnabled(false);
+    labBtnModifier->setCursor(Qt::PointingHandCursor);
+    labBtnModifier->setStyleSheet(
+        "QPushButton{background-color:#f1f5f9;color:#475569;border:1.5px solid #e2e8f0;"
+        "border-radius:10px;padding:0 16px;font-size:13px;font-weight:600;}"
+        "QPushButton:hover{background-color:#e2e8f0;}"
+        "QPushButton:disabled{color:#cbd5e1;}");
+    toolbarLayout->addWidget(labBtnModifier);
+
+    labBtnSupprimer = new QPushButton("🗑️  Supprimer");
+    labBtnSupprimer->setObjectName("labBtnSupprimer");
+    labBtnSupprimer->setFixedHeight(44);
+    labBtnSupprimer->setEnabled(false);
+    labBtnSupprimer->setCursor(Qt::PointingHandCursor);
+    labBtnSupprimer->setStyleSheet(
+        "QPushButton{background-color:transparent;color:#ef4444;border:1.5px solid #fca5a5;"
+        "border-radius:10px;padding:0 16px;font-size:13px;font-weight:600;}"
+        "QPushButton:hover{background-color:#fef2f2;}"
+        "QPushButton:disabled{color:#fca5a5;border-color:#fecaca;}");
+    toolbarLayout->addWidget(labBtnSupprimer);
+
+    // Séparateur
+    QFrame *sep1 = new QFrame(); sep1->setFrameShape(QFrame::VLine);
+    sep1->setStyleSheet("color:#e2e8f0;"); sep1->setFixedWidth(1);
+    toolbarLayout->addWidget(sep1);
+
+    // Boutons IA / Stats / Exporter / Trier
+    QPushButton *btnStats = new QPushButton("📊  Statistiques");
+    btnStats->setObjectName("labBtnStatistiques");
+    btnStats->setFixedHeight(44);
+    btnStats->setCursor(Qt::PointingHandCursor);
+    btnStats->setStyleSheet(
+        "QPushButton{background-color:white;color:#3b82f6;border:1.5px solid #bfdbfe;"
+        "border-radius:10px;padding:0 14px;font-size:13px;font-weight:600;}"
+        "QPushButton:hover{background-color:#eff6ff;}");
+    toolbarLayout->addWidget(btnStats);
+
+    QPushButton *btnOptim = new QPushButton("🤝  Optimiseur");
+    btnOptim->setObjectName("labBtnOptimiseur");
+    btnOptim->setFixedHeight(44);
+    btnOptim->setCursor(Qt::PointingHandCursor);
+    btnOptim->setStyleSheet(
+        "QPushButton{background-color:white;color:#10b981;border:1.5px solid #a7f3d0;"
+        "border-radius:10px;padding:0 14px;font-size:13px;font-weight:600;}"
+        "QPushButton:hover{background-color:#ecfdf5;}");
+    toolbarLayout->addWidget(btnOptim);
+
+    QPushButton *btnPred = new QPushButton("🔮  Prédicteur");
+    btnPred->setObjectName("labBtnPredicteur");
+    btnPred->setFixedHeight(44);
+    btnPred->setCursor(Qt::PointingHandCursor);
+    btnPred->setStyleSheet(
+        "QPushButton{background-color:white;color:#8b5cf6;border:1.5px solid #ddd6fe;"
+        "border-radius:10px;padding:0 14px;font-size:13px;font-weight:600;}"
+        "QPushButton:hover{background-color:#f5f3ff;}");
+    toolbarLayout->addWidget(btnPred);
+
+    toolbarLayout->addStretch();
+
+    // Barre de recherche
+    labSearchEdit = new QLineEdit();
+    labSearchEdit->setObjectName("labSearchEdit");
+    labSearchEdit->setPlaceholderText("🔍  Rechercher un laboratoire…");
+    labSearchEdit->setFixedHeight(44);
+    labSearchEdit->setMinimumWidth(250);
+    labSearchEdit->setStyleSheet(
+        "QLineEdit{background-color:#f8fafc;border:1.5px solid #e2e8f0;"
+        "border-radius:10px;padding:0 14px;font-size:13px;color:#334155;}"
+        "QLineEdit:focus{border-color:#3b82f6;background-color:white;}");
+    toolbarLayout->addWidget(labSearchEdit);
+
+    QPushButton *btnExporter = new QPushButton("📤  Exporter");
+    btnExporter->setObjectName("labBtnExporter");
+    btnExporter->setFixedHeight(44);
+    btnExporter->setCursor(Qt::PointingHandCursor);
+    btnExporter->setStyleSheet(
+        "QPushButton{background-color:#f8fafc;color:#64748b;border:1.5px solid #e2e8f0;"
+        "border-radius:10px;padding:0 14px;font-size:13px;font-weight:500;}"
+        "QPushButton:hover{background-color:#f1f5f9;}");
+    toolbarLayout->addWidget(btnExporter);
+
+    QPushButton *btnTrier = new QPushButton("⇅  Trier");
+    btnTrier->setObjectName("labBtnTrier");
+    btnTrier->setFixedHeight(44);
+    btnTrier->setCursor(Qt::PointingHandCursor);
+    btnTrier->setStyleSheet(
+        "QPushButton{background-color:#f8fafc;color:#64748b;border:1.5px solid #e2e8f0;"
+        "border-radius:10px;padding:0 14px;font-size:13px;font-weight:500;}"
+        "QPushButton:hover{background-color:#f1f5f9;}");
+    toolbarLayout->addWidget(btnTrier);
+
+    pageLayout->addWidget(toolbarFrame);
+
+    // ---- BODY: Table + Formulaire côte à côte ----
+    QHBoxLayout *bodyLayout = new QHBoxLayout();
+    bodyLayout->setSpacing(0);
+    bodyLayout->setContentsMargins(20, 16, 20, 16);
+
+    // TABLE
+    labTable = new QTableWidget();
+    labTable->setObjectName("labTable");
+    labTable->setColumnCount(7);
+    labTable->setHorizontalHeaderLabels({"ID", "Nom", "Thématique", "Budget (€)", "Capacité", "Statut", "Directeur"});
+    labTable->horizontalHeader()->setStretchLastSection(true);
+    labTable->horizontalHeader()->setSectionResizeMode(1, QHeaderView::Stretch);
+    labTable->setSelectionBehavior(QAbstractItemView::SelectRows);
+    labTable->setSelectionMode(QAbstractItemView::SingleSelection);
+    labTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    labTable->setAlternatingRowColors(true);
+    labTable->verticalHeader()->setDefaultSectionSize(52);
+    labTable->verticalHeader()->setVisible(false);
+    labTable->setColumnWidth(0, 55);
+    labTable->setColumnWidth(2, 170);
+    labTable->setColumnWidth(3, 115);
+    labTable->setColumnWidth(4, 90);
+    labTable->setColumnWidth(5, 130);
+    labTable->setStyleSheet(R"(
+        QTableWidget {
+            background-color: white;
+            border: 1px solid #e2e8f0;
+            border-radius: 12px;
+            gridline-color: #f1f5f9;
+            font-size: 13px;
+            color: #334155;
+        }
+        QTableWidget::item {
+            padding: 8px 12px;
+        }
+        QTableWidget::item:selected {
+            background-color: #eff6ff;
+            color: #1d4ed8;
+        }
+        QHeaderView::section {
+            background-color: #f8fafc;
+            color: #64748b;
+            font-weight: 600;
+            font-size: 12px;
+            padding: 10px 12px;
+            border: none;
+            border-bottom: 1px solid #e2e8f0;
+        }
+        QTableWidget::item:alternate {
+            background-color: #f8fafc;
+        }
+    )");
+    bodyLayout->addWidget(labTable, 1);
+
+    // FORMULAIRE (caché par défaut)
+    labFormFrame = new QFrame();
+    labFormFrame->setObjectName("labFormFrame");
+    labFormFrame->setFixedWidth(360);
+    labFormFrame->setVisible(false);
+    labFormFrame->setStyleSheet(
+        "QFrame#labFormFrame {"
+        "    background-color:white;"
+        "    border:1px solid #e2e8f0;"
+        "    border-radius:12px;"
+        "    margin-left:16px;"
+        "}");
+    QVBoxLayout *formLayout = new QVBoxLayout(labFormFrame);
+    formLayout->setContentsMargins(20, 20, 20, 20);
+    formLayout->setSpacing(12);
+
+    QLabel *formTitle = new QLabel("📋  Laboratoire");
+    formTitle->setObjectName("labFormTitle");
+    formTitle->setStyleSheet("font-size:17px;font-weight:bold;color:#1e3a5f;margin-bottom:4px;");
+    formLayout->addWidget(formTitle);
+
+    QFrame *formSep = new QFrame(); formSep->setFrameShape(QFrame::HLine);
+    formSep->setStyleSheet("color:#e2e8f0;"); formLayout->addWidget(formSep);
+
+    auto makeLabel = [](const QString &txt) {
+        QLabel *l = new QLabel(txt);
+        l->setStyleSheet("font-size:12px;font-weight:600;color:#64748b;margin-top:4px;");
+        return l;
+    };
+    auto makeInput = []() {
+        QLineEdit *e = new QLineEdit();
+        e->setFixedHeight(40);
+        e->setStyleSheet(
+            "QLineEdit{background:#f8fafc;border:1.5px solid #e2e8f0;border-radius:8px;"
+            "padding:0 12px;font-size:13px;color:#334155;}"
+            "QLineEdit:focus{border-color:#3b82f6;background:white;}");
+        return e;
+    };
+
+    formLayout->addWidget(makeLabel("Nom du laboratoire *"));
+    labFormNom = makeInput();
+    labFormNom->setPlaceholderText("Ex: Lab IA Avancée");
+    formLayout->addWidget(labFormNom);
+
+    formLayout->addWidget(makeLabel("Thématique *"));
+    labFormThematique = new QComboBox();
+    labFormThematique->addItems({"Intelligence Artificielle", "Biotechnologie",
+        "Nanotechnologie", "Énergies Renouvelables", "Robotique",
+        "Chimie", "Physique Quantique", "Sciences de Données", "Autre"});
+    labFormThematique->setFixedHeight(40);
+    labFormThematique->setStyleSheet(
+        "QComboBox{background:#f8fafc;border:1.5px solid #e2e8f0;border-radius:8px;"
+        "padding:0 12px;font-size:13px;color:#334155;}"
+        "QComboBox:focus{border-color:#3b82f6;background:white;}"
+        "QComboBox::drop-down{border:none;width:26px;}");
+    formLayout->addWidget(labFormThematique);
+
+    formLayout->addWidget(makeLabel("Budget annuel (€)"));
+    labFormBudget = makeInput();
+    labFormBudget->setPlaceholderText("Ex: 250000");
+    formLayout->addWidget(labFormBudget);
+
+    formLayout->addWidget(makeLabel("Capacité (chercheurs)"));
+    labFormCapacite = new QSpinBox();
+    labFormCapacite->setRange(1, 500);
+    labFormCapacite->setValue(10);
+    labFormCapacite->setFixedHeight(40);
+    labFormCapacite->setStyleSheet(
+        "QSpinBox{background:#f8fafc;border:1.5px solid #e2e8f0;border-radius:8px;"
+        "padding:0 12px;font-size:13px;color:#334155;}"
+        "QSpinBox:focus{border-color:#3b82f6;background:white;}");
+    formLayout->addWidget(labFormCapacite);
+
+    formLayout->addWidget(makeLabel("Statut *"));
+    labFormStatut = new QComboBox();
+    labFormStatut->addItems({"Actif", "En Construction", "En Rénovation", "Inactif"});
+    labFormStatut->setFixedHeight(40);
+    labFormStatut->setStyleSheet(
+        "QComboBox{background:#f8fafc;border:1.5px solid #e2e8f0;border-radius:8px;"
+        "padding:0 12px;font-size:13px;color:#334155;}"
+        "QComboBox:focus{border-color:#3b82f6;background:white;}"
+        "QComboBox::drop-down{border:none;width:26px;}");
+    formLayout->addWidget(labFormStatut);
+
+    formLayout->addWidget(makeLabel("Équipements (séparés par virgule)"));
+    labFormEquipements = makeInput();
+    labFormEquipements->setPlaceholderText("Ex: Microscope, Spectromètre…");
+    formLayout->addWidget(labFormEquipements);
+
+    formLayout->addWidget(makeLabel("Directeur de recherche"));
+    labFormDirecteur = makeInput();
+    labFormDirecteur->setPlaceholderText("Ex: Dr. Dupont");
+    formLayout->addWidget(labFormDirecteur);
+
+    formLayout->addStretch();
+
+    QHBoxLayout *formBtnsLayout = new QHBoxLayout();
+    formBtnsLayout->setSpacing(10);
+    QPushButton *btnAnnulerForm = new QPushButton("Annuler");
+    btnAnnulerForm->setObjectName("labBtnAnnulerForm");
+    btnAnnulerForm->setFixedHeight(42);
+    btnAnnulerForm->setCursor(Qt::PointingHandCursor);
+    btnAnnulerForm->setStyleSheet(
+        "QPushButton{background-color:#f1f5f9;color:#475569;border:1.5px solid #e2e8f0;"
+        "border-radius:8px;font-size:13px;font-weight:600;}"
+        "QPushButton:hover{background-color:#e2e8f0;}");
+    QPushButton *btnConfirmerForm = new QPushButton("💾  Enregistrer");
+    btnConfirmerForm->setObjectName("labBtnConfirmerForm");
+    btnConfirmerForm->setFixedHeight(42);
+    btnConfirmerForm->setCursor(Qt::PointingHandCursor);
+    btnConfirmerForm->setStyleSheet(
+        "QPushButton{background:qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 #3b82f6,stop:1 #10b981);"
+        "color:white;border:none;border-radius:8px;font-size:13px;font-weight:600;}"
+        "QPushButton:hover{background:qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 #2563eb,stop:1 #059669);}");
+    formBtnsLayout->addWidget(btnAnnulerForm);
+    formBtnsLayout->addWidget(btnConfirmerForm);
+    formLayout->addLayout(formBtnsLayout);
+
+    bodyLayout->addWidget(labFormFrame);
+    pageLayout->addLayout(bodyLayout);
+
+    // Ajouter la page au stackedWidgetModules (index 5)
+    ui->stackedWidgetModules->addWidget(labPage);
+}
+
+void SmartPub::labConnectSignals()
+{
+    connect(labBtnAjouter, &QPushButton::clicked, this, &SmartPub::on_labBtnAjouter_clicked);
+    connect(labBtnModifier, &QPushButton::clicked, this, &SmartPub::on_labBtnModifier_clicked);
+    connect(labBtnSupprimer, &QPushButton::clicked, this, &SmartPub::on_labBtnSupprimer_clicked);
+    connect(labSearchEdit, &QLineEdit::textChanged, this, &SmartPub::on_labSearchChanged);
+    connect(labTable, &QTableWidget::itemSelectionChanged, this, &SmartPub::on_labTableSelectionChanged);
+
+    QPushButton *btnStats     = labPage->findChild<QPushButton*>("labBtnStatistiques");
+    QPushButton *btnOptim     = labPage->findChild<QPushButton*>("labBtnOptimiseur");
+    QPushButton *btnPred      = labPage->findChild<QPushButton*>("labBtnPredicteur");
+    QPushButton *btnExporter  = labPage->findChild<QPushButton*>("labBtnExporter");
+    QPushButton *btnTrier     = labPage->findChild<QPushButton*>("labBtnTrier");
+    QPushButton *btnConfirmer = labFormFrame->findChild<QPushButton*>("labBtnConfirmerForm");
+    QPushButton *btnAnnuler   = labFormFrame->findChild<QPushButton*>("labBtnAnnulerForm");
+
+    if (btnStats)    connect(btnStats,    &QPushButton::clicked, this, &SmartPub::on_labBtnStatistiques_clicked);
+    if (btnOptim)    connect(btnOptim,    &QPushButton::clicked, this, &SmartPub::on_labBtnOptimiseur_clicked);
+    if (btnPred)     connect(btnPred,     &QPushButton::clicked, this, &SmartPub::on_labBtnPredicteur_clicked);
+    if (btnExporter) connect(btnExporter, &QPushButton::clicked, this, &SmartPub::on_labBtnExporter_clicked);
+    if (btnTrier)    connect(btnTrier,    &QPushButton::clicked, this, &SmartPub::on_labBtnTrier_clicked);
+    if (btnConfirmer)connect(btnConfirmer,&QPushButton::clicked, this, &SmartPub::on_labBtnConfirmerForm_clicked);
+    if (btnAnnuler)  connect(btnAnnuler,  &QPushButton::clicked, this, &SmartPub::on_labBtnAnnulerForm_clicked);
+}
+
+// ---------- Chargement des données (DB + fallback mock) ----------
+void SmartPub::labChargerDonnees()
+{
+    labDataMap.clear();
+    labNextId = 1;
+
+    QSqlDatabase db = Connection::instance()->getDatabase();
+    if (db.isOpen()) {
+        QSqlQuery q(db);
+        if (q.exec("SELECT ID_LABORATOIRE, NOM, THEMATIQUE, DISPONIBILITE, ADRESSE, CODE_PROJET FROM LABORATOIRE ORDER BY ID_LABORATOIRE")) {
+            while (q.next()) {
+                LaboratoryData lab;
+                lab.id         = q.value("ID_LABORATOIRE").toInt();
+                lab.nom        = q.value("NOM").toString();
+                lab.thematique = q.value("THEMATIQUE").toString();
+                lab.statut     = q.value("DISPONIBILITE").toString() == "disponible" ? "Actif" : "Inactif";
+                lab.adresse    = q.value("ADRESSE").toString();
+                lab.budget     = 0;
+                lab.capacite   = 0;
+                lab.equipements.clear();
+                lab.directeur.clear();
+                labDataMap.insert(lab.id, lab);
+                if (lab.id >= labNextId) labNextId = lab.id + 1;
+            }
+            if (!labDataMap.isEmpty()) {
+                labAfficherListe();
+                return;
+            }
+        }
+    }
+
+    labAfficherListe();
+}
+
+void SmartPub::labAfficherListe()
+{
+    QList<LaboratoryData> all = labDataMap.values();
+    labAfficherListe(all);
+}
+
+void SmartPub::labAfficherListe(const QList<LaboratoryData> &labs)
+{
+    labTable->setRowCount(0);
+    for (const LaboratoryData &lab : labs) {
+        int row = labTable->rowCount();
+        labTable->insertRow(row);
+        labTable->setItem(row, 0, new QTableWidgetItem(QString::number(lab.id)));
+        labTable->setItem(row, 1, new QTableWidgetItem(lab.nom));
+        labTable->setItem(row, 2, new QTableWidgetItem(lab.thematique));
+        labTable->setItem(row, 3, new QTableWidgetItem(lab.budget > 0 ? QString("%1 €").arg(lab.budget, 0, 'f', 0) : "N/A"));
+        labTable->setItem(row, 4, new QTableWidgetItem(lab.capacite > 0 ? QString::number(lab.capacite) : "N/A"));
+
+        // Badge statut coloré
+        QTableWidgetItem *statutItem = new QTableWidgetItem(lab.statut);
+        if (lab.statut == "Actif")             statutItem->setForeground(QColor("#10b981"));
+        else if (lab.statut == "En Construction") statutItem->setForeground(QColor("#f59e0b"));
+        else if (lab.statut == "En Rénovation")   statutItem->setForeground(QColor("#3b82f6"));
+        else                                       statutItem->setForeground(QColor("#ef4444"));
+        labTable->setItem(row, 5, statutItem);
+
+        labTable->setItem(row, 6, new QTableWidgetItem(lab.directeur.isEmpty() ? "—" : lab.directeur));
+
+        // Stocker l'id dans UserRole
+        labTable->item(row, 0)->setData(Qt::UserRole, lab.id);
+    }
+
+    if (labTotalLabel)
+        labTotalLabel->setText(QString::number(labs.size()) + " laboratoire" + (labs.size() > 1 ? "s" : ""));
+}
+
+void SmartPub::labViderFormulaire()
+{
+    if (labFormNom)        labFormNom->clear();
+    if (labFormThematique) labFormThematique->setCurrentIndex(0);
+    if (labFormBudget)     labFormBudget->clear();
+    if (labFormCapacite)   labFormCapacite->setValue(10);
+    if (labFormStatut)     labFormStatut->setCurrentIndex(0);
+    if (labFormEquipements)labFormEquipements->clear();
+    if (labFormDirecteur)  labFormDirecteur->clear();
+}
+
+void SmartPub::labRemplirFormulaire(const LaboratoryData &lab)
+{
+    if (labFormNom)        labFormNom->setText(lab.nom);
+    if (labFormThematique) labFormThematique->setCurrentText(lab.thematique);
+    if (labFormBudget)     labFormBudget->setText(lab.budget > 0 ? QString::number(lab.budget, 'f', 2) : "");
+    if (labFormCapacite)   labFormCapacite->setValue(lab.capacite > 0 ? lab.capacite : 1);
+    if (labFormStatut)     labFormStatut->setCurrentText(lab.statut);
+    if (labFormEquipements)labFormEquipements->setText(lab.equipements);
+    if (labFormDirecteur)  labFormDirecteur->setText(lab.directeur);
+}
+
+LaboratoryData SmartPub::labGetFormData() const
+{
+    LaboratoryData lab;
+    lab.nom        = labFormNom        ? labFormNom->text().trimmed()        : "";
+    lab.thematique = labFormThematique ? labFormThematique->currentText()    : "";
+    lab.budget     = labFormBudget     ? labFormBudget->text().toDouble()    : 0.0;
+    lab.capacite   = labFormCapacite   ? labFormCapacite->value()            : 1;
+    lab.statut     = labFormStatut     ? labFormStatut->currentText()        : "Actif";
+    lab.equipements= labFormEquipements? labFormEquipements->text().trimmed(): "";
+    lab.directeur  = labFormDirecteur  ? labFormDirecteur->text().trimmed()  : "";
+    return lab;
+}
+
+bool SmartPub::labValiderFormulaire() const
+{
+    if (!labFormNom || labFormNom->text().trimmed().isEmpty()) {
+        QMessageBox::warning(nullptr, "Validation", "Le nom du laboratoire est obligatoire.");
+        return false;
+    }
+    if (labFormBudget && !labFormBudget->text().isEmpty()) {
+        bool ok; double v = labFormBudget->text().toDouble(&ok);
+        if (!ok || v < 0) {
+            QMessageBox::warning(nullptr, "Validation", "Le budget doit être un nombre positif.");
+            return false;
+        }
+    }
+    return true;
+}
+
+void SmartPub::labMontrerFormulaire(bool isEdit)
+{
+    if (!labFormFrame) return;
+    QLabel *title = labFormFrame->findChild<QLabel*>("labFormTitle");
+    if (title) title->setText(isEdit ? "✏️  Modifier le laboratoire" : "➕  Nouveau laboratoire");
+    labFormFrame->setVisible(true);
+}
+
+void SmartPub::labCacherFormulaire()
+{
+    if (labFormFrame) labFormFrame->setVisible(false);
+}
+
+void SmartPub::labSetTableRowBackground(QTableWidget *table, int row, const QColor &color)
+{
+    if (!table) return;
+    for (int col = 0; col < table->columnCount(); ++col) {
+        QTableWidgetItem *item = table->item(row, col);
+        if (item) item->setBackground(color);
+    }
+}
+
+// ---------- Slots ----------
+void SmartPub::on_labBtnAjouter_clicked()
+{
+    if (currentUser.role == UserRole::Guest) {
+        QMessageBox::warning(this, "Accès refusé", "Les invités ne peuvent pas ajouter de laboratoires.");
+        return;
+    }
+    labEditingId = -1;
+    labViderFormulaire();
+    labMontrerFormulaire(false);
+}
+
+void SmartPub::on_labBtnModifier_clicked()
+{
+    if (currentUser.role == UserRole::Guest) {
+        QMessageBox::warning(this, "Accès refusé", "Les invités ne peuvent pas modifier de laboratoires.");
+        return;
+    }
+    int row = labTable->currentRow();
+    if (row < 0) return;
+    int id = labTable->item(row, 0)->data(Qt::UserRole).toInt();
+    if (!labDataMap.contains(id)) return;
+    labEditingId = id;
+    labRemplirFormulaire(labDataMap[id]);
+    labMontrerFormulaire(true);
+}
+
+void SmartPub::on_labBtnSupprimer_clicked()
+{
+    if (currentUser.role == UserRole::Guest) {
+        QMessageBox::warning(this, "Accès refusé", "Les invités ne peuvent pas supprimer de laboratoires.");
+        return;
+    }
+    int row = labTable->currentRow();
+    if (row < 0) return;
+    int id = labTable->item(row, 0)->data(Qt::UserRole).toInt();
+    if (!labDataMap.contains(id)) return;
+
+    QString nom = labDataMap[id].nom;
+    auto reply = QMessageBox::question(this, "Confirmation",
+        QString("Supprimer le laboratoire\n« %1 » ?").arg(nom),
+        QMessageBox::Yes | QMessageBox::No);
+    if (reply != QMessageBox::Yes) return;
+
+    QSqlDatabase db = Connection::instance()->getDatabase();
+    if (db.isOpen()) {
+        QSqlQuery q(db);
+        q.prepare("DELETE FROM LABORATOIRE WHERE ID_LABORATOIRE = :id");
+        q.bindValue(":id", id);
+        q.exec();
+    }
+
+    labDataMap.remove(id);
+    labCacherFormulaire();
+    labAfficherListe();
+    QMessageBox::information(this, "Succès", "Laboratoire supprimé avec succès !");
+}
+
+void SmartPub::on_labBtnConfirmerForm_clicked()
+{
+    if (!labValiderFormulaire()) return;
+
+    LaboratoryData lab = labGetFormData();
+
+    if (labEditingId == -1) {
+        // AJOUT
+        lab.id = labNextId;
+        QSqlDatabase db = Connection::instance()->getDatabase();
+        if (db.isOpen()) {
+            QSqlQuery q(db);
+            q.prepare("INSERT INTO LABORATOIRE(NOM, THEMATIQUE, DISPONIBILITE, ADRESSE) "
+                      "VALUES(:nom, :them, :dispo, :adr)");
+            q.bindValue(":nom",  lab.nom);
+            q.bindValue(":them", lab.thematique);
+            q.bindValue(":dispo", lab.statut == "Actif" ? "disponible" : "indisponible");
+            q.bindValue(":adr",  lab.adresse.isEmpty() ? QString() : lab.adresse);
+            if (q.exec()) {
+                // Récupérer l'id généré par la séquence
+                QSqlQuery qid(db);
+                if (qid.exec("SELECT SEQ_LABORATOIRE.CURRVAL FROM DUAL")) {
+                    qid.next();
+                    lab.id = qid.value(0).toInt();
+                }
+            }
+        }
+        if (lab.id == labNextId) labNextId++;
+        labDataMap.insert(lab.id, lab);
+        QMessageBox::information(this, "Succès", "Laboratoire ajouté avec succès !");
+    } else {
+        // MODIFICATION
+        lab.id = labEditingId;
+        QSqlDatabase db = Connection::instance()->getDatabase();
+        if (db.isOpen()) {
+            QSqlQuery q(db);
+            q.prepare("UPDATE LABORATOIRE SET NOM=:nom, THEMATIQUE=:them, DISPONIBILITE=:dispo, ADRESSE=:adr WHERE ID_LABORATOIRE=:id");
+            q.bindValue(":nom",  lab.nom);
+            q.bindValue(":them", lab.thematique);
+            q.bindValue(":dispo", lab.statut == "Actif" ? "disponible" : "indisponible");
+            q.bindValue(":adr",  lab.adresse.isEmpty() ? QString() : lab.adresse);
+            q.bindValue(":id",   lab.id);
+            q.exec();
+        }
+        labDataMap[lab.id] = lab;
+        QMessageBox::information(this, "Succès", "Laboratoire modifié avec succès !");
+    }
+
+    labEditingId = -1;
+    labCacherFormulaire();
+    labAfficherListe();
+}
+
+void SmartPub::on_labBtnAnnulerForm_clicked()
+{
+    labEditingId = -1;
+    labViderFormulaire();
+    labCacherFormulaire();
+}
+
+void SmartPub::on_labTableSelectionChanged()
+{
+    bool sel = !labTable->selectedItems().isEmpty();
+    if (labBtnModifier)  labBtnModifier->setEnabled(sel);
+    if (labBtnSupprimer) labBtnSupprimer->setEnabled(sel);
+}
+
+void SmartPub::on_labSearchChanged(const QString &text)
+{
+    if (text.trimmed().isEmpty()) {
+        labAfficherListe();
+        return;
+    }
+    QList<LaboratoryData> filtered;
+    for (const LaboratoryData &lab : labDataMap) {
+        if (lab.nom.contains(text, Qt::CaseInsensitive)
+         || lab.thematique.contains(text, Qt::CaseInsensitive)
+         || lab.directeur.contains(text, Qt::CaseInsensitive)) {
+            filtered.append(lab);
+        }
+    }
+    labAfficherListe(filtered);
+}
+
+void SmartPub::on_labBtnStatistiques_clicked()
+{
+    labMontrerStatistiques();
+}
+
+void SmartPub::on_labBtnOptimiseur_clicked()
+{
+    labOptimiseurCollab();
+}
+
+void SmartPub::on_labBtnPredicteur_clicked()
+{
+    labPredicteurBesoins();
+}
+
+void SmartPub::on_labBtnExporter_clicked()
+{
+    labExporter();
+}
+
+void SmartPub::on_labBtnTrier_clicked()
+{
+    labTrier();
+}
+
+// ---------- Statistiques ----------
+void SmartPub::labMontrerStatistiques()
+{
+    QDialog *dlg = new QDialog(this);
+    dlg->setWindowTitle("📊  Statistiques des Laboratoires");
+    dlg->setMinimumSize(900, 680);
+    dlg->setAttribute(Qt::WA_DeleteOnClose);
+    dlg->setStyleSheet("QDialog{background-color:#f8fafc;} QLabel{color:#334155;}");
+
+    QVBoxLayout *mainLayout = new QVBoxLayout(dlg);
+    mainLayout->setSpacing(16);
+    mainLayout->setContentsMargins(24, 24, 24, 16);
+
+    // Titre
+    QLabel *title = new QLabel("📊  Statistiques Globales des Laboratoires");
+    title->setStyleSheet("font-size:20px;font-weight:bold;color:#1e3a5f;");
+    mainLayout->addWidget(title);
+
+    // Calculs
+    double totalBudget = 0; int totalCap = 0;
+    QMap<QString, int> byThematic; QMap<QString, double> budgetByThematic;
+    for (const LaboratoryData &lab : labDataMap) {
+        totalBudget += lab.budget; totalCap += lab.capacite;
+        byThematic[lab.thematique]++;
+        budgetByThematic[lab.thematique] += lab.budget;
+    }
+    int count = labDataMap.size();
+    double avgBudget = count > 0 ? totalBudget / count : 0;
+    double avgCap    = count > 0 ? (double)totalCap / count : 0;
+
+    // Cartes stats
+    QHBoxLayout *cardsLayout = new QHBoxLayout();
+    cardsLayout->setSpacing(12);
+    auto makeCard = [](const QString &title_, const QString &val, const QString &color) {
+        QFrame *card = new QFrame();
+        card->setStyleSheet(QString("QFrame{background:%1;border-radius:12px;}").arg(color));
+        QVBoxLayout *cl = new QVBoxLayout(card); cl->setContentsMargins(16,14,16,14); cl->setSpacing(4);
+        QLabel *t = new QLabel(title_); t->setStyleSheet("color:white;font-size:12px;font-weight:600;");
+        QLabel *v = new QLabel(val);    v->setStyleSheet("color:white;font-size:22px;font-weight:bold;");
+        cl->addWidget(t); cl->addWidget(v); return card;
+    };
+    cardsLayout->addWidget(makeCard("Laboratoires",   QString::number(count), "#3b82f6"));
+    cardsLayout->addWidget(makeCard("Budget Total",   QString("%1 €").arg(totalBudget, 0, 'f', 0), "#10b981"));
+    cardsLayout->addWidget(makeCard("Capacité Totale",QString("%1 chercheurs").arg(totalCap), "#f59e0b"));
+    cardsLayout->addWidget(makeCard("Budget Moyen",   QString("%1 €").arg(avgBudget, 0, 'f', 0), "#8b5cf6"));
+    cardsLayout->addWidget(makeCard("Capacité Moy.",  QString("%1").arg(avgCap, 0, 'f', 1), "#ef4444"));
+    mainLayout->addLayout(cardsLayout);
+
+    // Graphiques
+    QHBoxLayout *chartsLayout = new QHBoxLayout(); chartsLayout->setSpacing(16);
+
+    // Pie chart thématiques
+    QPieSeries *pie = new QPieSeries();
+    for (auto it = byThematic.begin(); it != byThematic.end(); ++it) {
+        QPieSlice *s = pie->append(it.key(), it.value());
+        s->setLabelVisible(true);
+        s->setLabel(QString("%1: %2").arg(it.key()).arg(it.value()));
+    }
+    QChart *pieChart = new QChart(); pieChart->addSeries(pie);
+    pieChart->setTitle("Répartition par Thématique");
+    pieChart->legend()->setAlignment(Qt::AlignBottom);
+    pieChart->setBackgroundBrush(QBrush(Qt::white));
+    QChartView *pieView = new QChartView(pieChart);
+    pieView->setRenderHint(QPainter::Antialiasing);
+    pieView->setMinimumSize(380, 280);
+    pieView->setStyleSheet("background:white;border-radius:12px;border:1px solid #e2e8f0;");
+    chartsLayout->addWidget(pieView);
+
+    // Bar chart budgets
+    QBarSet *bset = new QBarSet("Budget (€)");
+    QStringList cats;
+    for (auto it = budgetByThematic.begin(); it != budgetByThematic.end(); ++it) {
+        *bset << it.value(); cats << it.key();
+    }
+    QBarSeries *bar = new QBarSeries(); bar->append(bset);
+    QChart *barChart = new QChart(); barChart->addSeries(bar);
+    barChart->setTitle("Budget par Thématique"); barChart->setAnimationOptions(QChart::SeriesAnimations);
+    barChart->setBackgroundBrush(QBrush(Qt::white));
+    QBarCategoryAxis *axX = new QBarCategoryAxis(); axX->append(cats);
+    barChart->addAxis(axX, Qt::AlignBottom); bar->attachAxis(axX);
+    QValueAxis *axY = new QValueAxis(); axY->setTitleText("Budget (€)");
+    barChart->addAxis(axY, Qt::AlignLeft); bar->attachAxis(axY);
+    barChart->legend()->setVisible(false);
+    QChartView *barView = new QChartView(barChart);
+    barView->setRenderHint(QPainter::Antialiasing);
+    barView->setMinimumSize(380, 280);
+    barView->setStyleSheet("background:white;border-radius:12px;border:1px solid #e2e8f0;");
+    chartsLayout->addWidget(barView);
+    mainLayout->addLayout(chartsLayout);
+
+    QPushButton *closeBtn = new QPushButton("Fermer");
+    closeBtn->setFixedHeight(42); closeBtn->setCursor(Qt::PointingHandCursor);
+    closeBtn->setStyleSheet(
+        "QPushButton{background:qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 #3b82f6,stop:1 #10b981);"
+        "color:white;border:none;border-radius:8px;font-size:13px;font-weight:600;padding:0 24px;}"
+        "QPushButton:hover{background:qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 #2563eb,stop:1 #059669);}");
+    connect(closeBtn, &QPushButton::clicked, dlg, &QDialog::accept);
+    QHBoxLayout *btnRow = new QHBoxLayout(); btnRow->addStretch(); btnRow->addWidget(closeBtn);
+    mainLayout->addLayout(btnRow);
+
+    dlg->exec();
+}
+
+// ---------- Optimiseur de Collaboration ----------
+void SmartPub::labOptimiseurCollab()
+{
+    QDialog *dlg = new QDialog(this);
+    dlg->setWindowTitle("🤝  Optimiseur de Collaboration");
+    dlg->setMinimumSize(900, 600);
+    dlg->setAttribute(Qt::WA_DeleteOnClose);
+    dlg->setStyleSheet("QDialog{background-color:white;} QLabel{color:#1f2937;}");
+
+    QVBoxLayout *layout = new QVBoxLayout(dlg);
+    layout->setContentsMargins(24, 24, 24, 16); layout->setSpacing(14);
+
+    QLabel *title = new QLabel("🤝  Analyse des Synergies Inter-Laboratoires");
+    title->setStyleSheet("font-size:18px;font-weight:bold;color:#1e3a5f;");
+    layout->addWidget(title);
+
+    QTableWidget *table = new QTableWidget();
+    table->setColumnCount(6);
+    table->setHorizontalHeaderLabels({"Laboratoire 1","Laboratoire 2","Synergie","Score","Économies","Recommandation"});
+    table->horizontalHeader()->setStretchLastSection(true);
+    table->setAlternatingRowColors(true);
+    table->verticalHeader()->setDefaultSectionSize(52);
+    table->setStyleSheet("QTableWidget{color:#1f2937;background:white;gridline-color:#e5e7eb;border:1px solid #e2e8f0;border-radius:10px;}"
+                         "QTableWidget::item{padding:8px;color:#1f2937;}"
+                         "QHeaderView::section{background:#f3f4f6;color:#374151;padding:10px;border:none;border-bottom:1px solid #e5e7eb;font-weight:600;}");
+
+    QList<LaboratoryData> labs = labDataMap.values();
+    int synFound = 0; double totalSav = 0;
+
+    for (int i = 0; i < labs.size(); i++) {
+        for (int j = i + 1; j < labs.size(); j++) {
+            const LaboratoryData &l1 = labs[i]; const LaboratoryData &l2 = labs[j];
+            if (l1.thematique == l2.thematique && (l1.statut == "Actif" || l2.statut == "Actif")) {
+                double sav = (l1.budget + l2.budget) * 0.15;
+                totalSav += sav; synFound++;
+                int row = table->rowCount(); table->insertRow(row);
+                table->setItem(row, 0, new QTableWidgetItem(l1.nom));
+                table->setItem(row, 1, new QTableWidgetItem(l2.nom));
+                table->setItem(row, 2, new QTableWidgetItem("🎯 Thématique commune"));
+                table->setItem(row, 3, new QTableWidgetItem("⭐⭐⭐⭐⭐"));
+                table->setItem(row, 4, new QTableWidgetItem(QString("%1 €").arg(sav, 0, 'f', 0)));
+                table->setItem(row, 5, new QTableWidgetItem("Partage de ressources, projets conjoints"));
+                labSetTableRowBackground(table, row, QColor(220, 252, 231));
+            }
+        }
+    }
+
+    if (synFound == 0) {
+        QLabel *noSyn = new QLabel("ℹ️  Aucune synergie détectée. Ajoutez plusieurs laboratoires avec des thématiques similaires.");
+        noSyn->setWordWrap(true);
+        noSyn->setStyleSheet("color:#6b7280;font-size:14px;padding:20px;background:#f9fafb;border-radius:8px;");
+        layout->addWidget(noSyn);
+    } else {
+        layout->addWidget(table);
+        QLabel *summary = new QLabel(QString(
+            "<span style='color:#1e40af;font-weight:600;'>📊 %1 synergie(s) détectée(s)</span> — "
+            "Économies potentielles : <span style='color:#059669;font-weight:600;'>%2 €</span>")
+            .arg(synFound).arg(totalSav, 0, 'f', 0));
+        summary->setTextFormat(Qt::RichText);
+        summary->setStyleSheet("padding:10px;background:#eff6ff;border-radius:8px;font-size:13px;");
+        layout->addWidget(summary);
+    }
+
+    QPushButton *closeBtn = new QPushButton("Fermer");
+    closeBtn->setFixedHeight(40); closeBtn->setCursor(Qt::PointingHandCursor);
+    closeBtn->setStyleSheet("QPushButton{background:#6b7280;color:white;border:none;border-radius:8px;padding:0 20px;font-weight:600;}QPushButton:hover{background:#4b5563;}");
+    connect(closeBtn, &QPushButton::clicked, dlg, &QDialog::accept);
+    QHBoxLayout *btnRow = new QHBoxLayout(); btnRow->addStretch(); btnRow->addWidget(closeBtn);
+    layout->addLayout(btnRow);
+    dlg->exec();
+}
+
+// ---------- Prédicteur de Besoins ----------
+void SmartPub::labPredicteurBesoins()
+{
+    QDialog *dlg = new QDialog(this);
+    dlg->setWindowTitle("🔮  Prédicteur de Besoins");
+    dlg->setMinimumSize(920, 640);
+    dlg->setAttribute(Qt::WA_DeleteOnClose);
+    dlg->setStyleSheet("QDialog{background-color:white;} QLabel{color:#1f2937;}");
+
+    QVBoxLayout *layout = new QVBoxLayout(dlg);
+    layout->setContentsMargins(24, 24, 24, 16); layout->setSpacing(14);
+
+    QLabel *title = new QLabel("🔮  Prédicteur de Besoins & Alertes Intelligentes");
+    title->setStyleSheet("font-size:18px;font-weight:bold;color:#1e3a5f;");
+    layout->addWidget(title);
+
+    QTableWidget *table = new QTableWidget();
+    table->setColumnCount(5);
+    table->setHorizontalHeaderLabels({"Laboratoire","Type d'Alerte","Priorité","Délai","Action Recommandée"});
+    table->horizontalHeader()->setStretchLastSection(true);
+    table->setAlternatingRowColors(true);
+    table->verticalHeader()->setDefaultSectionSize(56);
+    table->setStyleSheet("QTableWidget{color:#1f2937;background:white;gridline-color:#e5e7eb;border:1px solid #e2e8f0;border-radius:10px;}"
+                         "QTableWidget::item{padding:10px;color:#1f2937;}"
+                         "QHeaderView::section{background:#f3f4f6;color:#374151;padding:10px;border:none;border-bottom:1px solid #e5e7eb;font-weight:600;}");
+
+    int crit = 0, warn = 0;
+    for (const LaboratoryData &lab : labDataMap) {
+        if (lab.capacite > 22 && lab.statut == "Actif") {
+            int row = table->rowCount(); table->insertRow(row);
+            table->setItem(row,0,new QTableWidgetItem(lab.nom));
+            table->setItem(row,1,new QTableWidgetItem("⚠️ Saturation capacité"));
+            table->setItem(row,2,new QTableWidgetItem("🔴 CRITIQUE"));
+            table->setItem(row,3,new QTableWidgetItem("2-3 mois"));
+            table->setItem(row,4,new QTableWidgetItem("Augmenter la capacité de 20% ou créer une annexe"));
+            labSetTableRowBackground(table, row, QColor(254, 226, 226)); crit++;
+        } else if (lab.capacite > 18 && lab.statut == "Actif") {
+            int row = table->rowCount(); table->insertRow(row);
+            table->setItem(row,0,new QTableWidgetItem(lab.nom));
+            table->setItem(row,1,new QTableWidgetItem("⚡ Capacité élevée"));
+            table->setItem(row,2,new QTableWidgetItem("🟡 ATTENTION"));
+            table->setItem(row,3,new QTableWidgetItem("4-6 mois"));
+            table->setItem(row,4,new QTableWidgetItem("Planifier extension, optimiser l'espace"));
+            labSetTableRowBackground(table, row, QColor(254, 243, 199)); warn++;
+        }
+        if (lab.budget > 300000) {
+            int row = table->rowCount(); table->insertRow(row);
+            table->setItem(row,0,new QTableWidgetItem(lab.nom));
+            table->setItem(row,1,new QTableWidgetItem("💰 Budget élevé"));
+            table->setItem(row,2,new QTableWidgetItem("🔵 INFO"));
+            table->setItem(row,3,new QTableWidgetItem("Continu"));
+            table->setItem(row,4,new QTableWidgetItem("Audit financier, recherche de synergies budgétaires"));
+            labSetTableRowBackground(table, row, QColor(219, 234, 254));
+        }
+        if (lab.statut == "En Construction" || lab.statut == "En Rénovation") {
+            int row = table->rowCount(); table->insertRow(row);
+            table->setItem(row,0,new QTableWidgetItem(lab.nom));
+            table->setItem(row,1,new QTableWidgetItem("🔧 Laboratoire indisponible"));
+            table->setItem(row,2,new QTableWidgetItem("🟠 SUIVI"));
+            table->setItem(row,3,new QTableWidgetItem("Variable"));
+            table->setItem(row,4,new QTableWidgetItem("Suivre l'avancement, prévoir ouverture"));
+            labSetTableRowBackground(table, row, QColor(255, 237, 213));
+        }
+    }
+
+    if (table->rowCount() == 0) {
+        QLabel *ok = new QLabel("✅  Aucune alerte détectée. Tous les laboratoires sont dans des conditions optimales !");
+        ok->setWordWrap(true);
+        ok->setStyleSheet("color:#059669;font-size:14px;padding:20px;background:#ecfdf5;border-radius:8px;");
+        layout->addWidget(ok);
+    } else {
+        layout->addWidget(table);
+        QString summary = QString("🔴 %1 critique(s)  —  🟡 %2 avertissement(s)").arg(crit).arg(warn);
+        QLabel *sumLabel = new QLabel(summary);
+        sumLabel->setStyleSheet("padding:10px;background:#fef9ec;border-radius:8px;font-size:13px;font-weight:600;color:#92400e;");
+        layout->addWidget(sumLabel);
+    }
+
+    QPushButton *closeBtn = new QPushButton("Fermer");
+    closeBtn->setFixedHeight(40); closeBtn->setCursor(Qt::PointingHandCursor);
+    closeBtn->setStyleSheet("QPushButton{background:#6b7280;color:white;border:none;border-radius:8px;padding:0 20px;font-weight:600;}QPushButton:hover{background:#4b5563;}");
+    connect(closeBtn, &QPushButton::clicked, dlg, &QDialog::accept);
+    QHBoxLayout *btnRow = new QHBoxLayout(); btnRow->addStretch(); btnRow->addWidget(closeBtn);
+    layout->addLayout(btnRow);
+    dlg->exec();
+}
+
+// ---------- Export CSV ----------
+void SmartPub::labExporter()
+{
+    QString fileName = QFileDialog::getSaveFileName(this, "Exporter les Laboratoires", "", "Fichiers CSV (*.csv)");
+    if (fileName.isEmpty()) return;
+    QFile file(fileName);
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        QMessageBox::critical(this, "Erreur", "Impossible de créer le fichier : " + fileName);
+        return;
+    }
+    QTextStream out(&file);
+    out << "ID,Nom,Thématique,Budget(€),Capacité,Statut,Directeur,Équipements\n";
+    for (const LaboratoryData &lab : labDataMap) {
+        out << lab.id << ","
+            << "\"" << lab.nom << "\","
+            << "\"" << lab.thematique << "\","
+            << lab.budget << ","
+            << lab.capacite << ","
+            << "\"" << lab.statut << "\","
+            << "\"" << lab.directeur << "\","
+            << "\"" << lab.equipements << "\"\n";
+    }
+    file.close();
+    QMessageBox::information(this, "Export Réussi", "Données exportées avec succès :\n" + fileName);
+}
+
+// ---------- Tri ----------
+void SmartPub::labTrier()
+{
+    QMenu *menu = new QMenu(this);
+    menu->setStyleSheet(R"(
+        QMenu{background:white;border:1px solid #e2e8f0;border-radius:10px;padding:6px;}
+        QMenu::item{padding:10px 20px;border-radius:6px;color:#334155;font-size:13px;}
+        QMenu::item:selected{background:#eff6ff;color:#1d4ed8;}
+    )");
+    menu->addAction("⬆️  Nom (A → Z)", this, [this](){
+        QList<LaboratoryData> sorted = labDataMap.values();
+        std::sort(sorted.begin(), sorted.end(), [](const LaboratoryData &a, const LaboratoryData &b){ return a.nom < b.nom; });
+        labAfficherListe(sorted);
+    });
+    menu->addAction("⬇️  Nom (Z → A)", this, [this](){
+        QList<LaboratoryData> sorted = labDataMap.values();
+        std::sort(sorted.begin(), sorted.end(), [](const LaboratoryData &a, const LaboratoryData &b){ return a.nom > b.nom; });
+        labAfficherListe(sorted);
+    });
+    menu->addAction("💰  Budget (croissant)", this, [this](){
+        QList<LaboratoryData> sorted = labDataMap.values();
+        std::sort(sorted.begin(), sorted.end(), [](const LaboratoryData &a, const LaboratoryData &b){ return a.budget < b.budget; });
+        labAfficherListe(sorted);
+    });
+    menu->addAction("💰  Budget (décroissant)", this, [this](){
+        QList<LaboratoryData> sorted = labDataMap.values();
+        std::sort(sorted.begin(), sorted.end(), [](const LaboratoryData &a, const LaboratoryData &b){ return a.budget > b.budget; });
+        labAfficherListe(sorted);
+    });
+    menu->addAction("🧪  Thématique (A → Z)", this, [this](){
+        QList<LaboratoryData> sorted = labDataMap.values();
+        std::sort(sorted.begin(), sorted.end(), [](const LaboratoryData &a, const LaboratoryData &b){ return a.thematique < b.thematique; });
+        labAfficherListe(sorted);
+    });
+    menu->popup(QCursor::pos());
 }

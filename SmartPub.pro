@@ -1,4 +1,4 @@
-QT += core gui widgets charts
+QT += core gui widgets charts printsupport
 QT += sql
 greaterThan(QT_MAJOR_VERSION, 4): QT += widgets
 
@@ -11,11 +11,29 @@ CONFIG += c++17
 SOURCES += \
     connection.cpp \
     main.cpp \
-    smartpub.cpp
+    smartpub.cpp \
+    ai_service.cpp \
+    reminder.cpp \
+    finance.cpp \
+    evenement.cpp \
+    publicationauth.cpp \
+    promotionengine.cpp \
+    matchmakingengine.cpp
 
 HEADERS += \
     connection.h \
-    smartpub.h
+    smartpub.h \
+    ai_service.h \
+    reminder.h \
+    publicationauth.h \
+    promotionengine.h \
+    matchmakingengine.h \
+    chercheur.h \
+    publication.h \
+    projet.h \
+    evenement.h \
+    laboratoire.h \
+    finance.h
 
 FORMS += \
     smartpub.ui
