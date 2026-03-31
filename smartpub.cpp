@@ -4162,6 +4162,9 @@ void SmartPub::cherchAfficherListeChercheurs() {
         return;
     }
 
+    // --- MODIFICATION : stocker l'ordre des ID récupérés ---
+    QList<int> orderedIds;
+
     while (query.next()) {
         int id = query.value("ID_CHERCHEUR").toInt();
         ChercheurData data;
@@ -4177,6 +4180,7 @@ void SmartPub::cherchAfficherListeChercheurs() {
         data.carriere = "";
         data.age = 0;
         cherchChercheursMap[id] = data;
+        orderedIds.append(id);   // <--- ordre SQL préservé
     }
 
     cherchEnrichirDonneesDepuisOracle();
@@ -4200,10 +4204,9 @@ void SmartPub::cherchAfficherListeChercheurs() {
             gridLayout->setContentsMargins(24, 24, 24, 24);
         }
 
-        for (auto it = cherchChercheursMap.begin(); it != cherchChercheursMap.end();
-             ++it) {
-            int id = it.key();
-            auto data = it.value();
+        // --- MODIFICATION : itérer sur orderedIds au lieu de la map ---
+        for (int id : orderedIds) {
+            auto data = cherchChercheursMap.value(id);
             cherchAjouterChercheurCard(id, data.nom, data.prenom, data.grade,
                                        data.email, data.photoPath);
         }
@@ -4227,10 +4230,9 @@ void SmartPub::cherchAfficherListeChercheurs() {
             listLayout->setAlignment(Qt::AlignTop);
         }
 
-        for (auto it = cherchChercheursMap.begin(); it != cherchChercheursMap.end();
-             ++it) {
-            int id = it.key();
-            auto data = it.value();
+        // --- MODIFICATION : itérer sur orderedIds au lieu de la map ---
+        for (int id : orderedIds) {
+            auto data = cherchChercheursMap.value(id);
             cherchAjouterChercheurListItem(id, data.nom, data.prenom, data.grade,
                                            data.email, data.photoPath);
         }
