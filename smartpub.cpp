@@ -4,11 +4,8 @@
 #include "publicationauth.h"
 #include "promotionengine.h"
 #include "matchmakingengine.h"
-<<<<<<< HEAD
 #include "ai_service.h"
 #include "reminder.h"
-=======
->>>>>>> 6e05745b67fc1f6812746e031777202ee10efaa6
 #include <algorithm>
 #include <QTableWidgetItem>
 #include <QApplication>
@@ -58,8 +55,6 @@ static double projProgressionStrToDouble(const QString &s) {
     if (!ok)
         return 0.0;
     return qBound(0.0, v, 100.0);
-<<<<<<< HEAD
-=======
 }
 
 static QString finTypeDbToUi(const QString &db) {
@@ -100,7 +95,6 @@ static QString finTypeUiToDb(const QString &ui) {
     if (u.contains(QStringLiteral("Dépense"), Qt::CaseInsensitive) || u.contains(QStringLiteral("Depense"), Qt::CaseInsensitive))
         return QStringLiteral("achat");
     return QStringLiteral("autre");
->>>>>>> 6e05745b67fc1f6812746e031777202ee10efaa6
 }
 
 static QString getProgressionColor(int valeur) {
@@ -7084,8 +7078,6 @@ void SmartPub::on_SR_supprimerPublication_clicked() {
     if (reply != QMessageBox::Yes) return;
 
     QSqlDatabase db = Connection::instance()->getDatabase();
-<<<<<<< HEAD
-=======
     if (!db.isOpen()) {
         QMessageBox::critical(this, QStringLiteral("Erreur"), QStringLiteral("Connexion à la base de données impossible."));
         return;
@@ -7827,17 +7819,9 @@ void SmartPub::evAjouterDonneesTest() {
 
 void SmartPub::evAfficherListeEvents() {
     QSqlDatabase db = Connection::instance()->getDatabase();
->>>>>>> 6e05745b67fc1f6812746e031777202ee10efaa6
     if (!db.isOpen()) {
-        QMessageBox::critical(this, QStringLiteral("Erreur"), QStringLiteral("Connexion à la base de données impossible."));
         return;
     }
-<<<<<<< HEAD
-    const int idPublication = titItem->data(Qt::UserRole).toInt();
-    QSqlQuery query(db);
-    query.prepare(QStringLiteral("DELETE FROM PUBLICATION WHERE ID_PUBLICATION = :id"));
-    query.bindValue(QStringLiteral(":id"), idPublication);
-=======
 
     QSignalBlocker b1(ui->evTableEvents);
     QSignalBlocker b2(ui->evTableSearchEvents);
@@ -7926,20 +7910,10 @@ void SmartPub::evRechercherParLieu() {
     QSqlQuery query(db);
     query.prepare("SELECT CODE_EVENEMENT, NOM, LIEU, DATE_EVENEMENT FROM EVENEMENT WHERE UPPER(LIEU) LIKE UPPER(:lieu) ORDER BY DATE_EVENEMENT");
     query.bindValue(":lieu", "%" + lieu + "%");
->>>>>>> 6e05745b67fc1f6812746e031777202ee10efaa6
     if (!query.exec()) {
-        QMessageBox::critical(this, QStringLiteral("Erreur"),
-                              QStringLiteral("Échec de la suppression : ") + query.lastError().text());
+        QMessageBox::warning(this, "Erreur", "Recherche échouée : " + query.lastError().text());
         return;
     }
-<<<<<<< HEAD
-    editingPublicationRow = -1;
-    ui->SR_btnAjouterPublication->setText(QStringLiteral("Ajouter"));
-    SR_loadSampleData();
-    QMessageBox::information(this, QStringLiteral("Succès"), QStringLiteral("Publication supprimée."));
-}
-
-=======
     while (query.next()) {
         int row = ui->evTableSearchEvents->rowCount();
         ui->evTableSearchEvents->insertRow(row);
@@ -8257,7 +8231,6 @@ void SmartPub::on_evBtnStatsParticipation_clicked() {
 
     dialog.exec();
 }
->>>>>>> 6e05745b67fc1f6812746e031777202ee10efaa6
 // ==================== MAINWINDOW ====================
 
 int SmartPub::projExtraireProgression(const QString &progressionStr) const
