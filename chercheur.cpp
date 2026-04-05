@@ -1,4 +1,4 @@
-﻿#include "smartpub.h"
+#include "smartpub.h"
 #include "ui_smartpub.h"
 #include "connection.h"
 #include "publicationauth.h"
@@ -21,6 +21,12 @@
 #include <QTimer>
 #include <QVBoxLayout>
 #include <QComboBox>
+// Réseau
+#include <QNetworkReply>
+#include <QNetworkRequest>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QUrlQuery>
 
 static QPixmap makeCircularPixmap(const QPixmap &src, int size) {
     if (src.isNull() || size <= 0)
@@ -166,9 +172,6 @@ void SmartPub::cherchConnectSignals() {
     connect(ui->cherchBtnForgotOk, &QPushButton::clicked, this,
             &SmartPub::on_cherchBtnForgotOk_clicked);
 
-    //     ui->cherchUserProfileFrame->setCursor(Qt::PointingHandCursor);
-    //     ui->cherchUserProfileFrame->installEventFilter(this);
-
     connect(ui->cherchBtnVueListe, &QPushButton::clicked, this,
             &SmartPub::on_cherchBtnVueListe_clicked);
     connect(ui->cherchBtnAjouter, &QPushButton::clicked, this,
@@ -190,13 +193,13 @@ void SmartPub::cherchConnectSignals() {
     connect(ui->cherchLineEditRecherche, &QLineEdit::textChanged, this,
             &SmartPub::on_cherchLineEditRecherche_textChanged);
 
-
+    // ── CIN live-validation ───────────────────────────────────────────────────
     connect(ui->cherchLineEditCIN, &QLineEdit::textChanged, this, [this](const QString &) {
         if (!cherchErrCinLabel)
             return;
         static const QRegularExpression cinRx(QStringLiteral(R"(^\d{8}$)"));
         const QString t = ui->cherchLineEditCIN->text().trimmed();
-
+        Q_UNUSED(t)
     });
     connect(ui->cherchLineEditCIN, &QLineEdit::editingFinished, this, [this]() {
         cherchTouchedCin = true;
@@ -207,6 +210,7 @@ void SmartPub::cherchConnectSignals() {
                 cherchTouchedGrade = true;
             });
 
+    // ── Écouteurs d'événements sur les champs ───────────────────────────────
     ui->cherchLineEditNom->installEventFilter(this);
     ui->cherchLineEditPrenom->installEventFilter(this);
     ui->cherchLineEditCIN->installEventFilter(this);
@@ -215,6 +219,69 @@ void SmartPub::cherchConnectSignals() {
 
     connect(ui->cherchLineEditForgotEmail, &QLineEdit::textChanged, this, [this](const QString &) {
         ui->cherchLineEditForgotEmail->setStyleSheet(QString());
+    });
+
+    // ── Vérification délivrabilité email — initialisation du gestionnaire réseau ──
+    cherchNetworkManager = new QNetworkAccessManager(this);
+    connect(cherchNetworkManager, &QNetworkAccessManager::finished,
+            this, &SmartPub::on_cherchEmailVerificationReply);
+
+    // Débounce sur le champ email du formulaire d'ajout (1500 ms)
+    cherchEmailDebounceTimer = new QTimer(this);
+    cherchEmailDebounceTimer->setSingleShot(true);
+    cherchEmailDebounceTimer->setInterval(1500);
+
+    connect(cherchEmailDebounceTimer, &QTimer::timeout, this, [this]() {
+        const QString email = ui->cherchLineEditEmail->text().trimmed();
+        // Vérifier d'abord le format avant d'appeler l'API
+        static const QRegularExpression emailRegex(
+            QStringLiteral(R"(^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$)"));
+        if (email.isEmpty() || !emailRegex.match(email).hasMatch()) {
+            // Format invalide : ne pas lancer la requête API
+            cherchEmailDeliverabilityOk = false;
+            cherchEmailCheckPending     = false;
+            cherchLastVerifiedEmail     = QString();
+            if (cherchErrEmailLabel) {
+                if (email.isEmpty()) {
+                    cherchErrEmailLabel->setText("");
+                    cherchErrEmailLabel->setVisible(false);
+                } else {
+                    cherchErrEmailLabel->setText(
+                        "  ⚠️ Format invalide — exemple@domaine.com");
+                    cherchErrEmailLabel->setStyleSheet(
+                        "color: #f59e0b; font-size: 12px; "
+                        "background: #fffbeb; border: 1px solid #fde68a; "
+                        "border-radius: 8px; padding: 4px 10px;");
+                    cherchErrEmailLabel->setVisible(true);
+                }
+            }
+            return;
+        }
+        // Format OK — lancer la vérification délivrabilité
+        cherchVerifyEmailDeliverability(email);
+    });
+
+    // Dès que l'utilisateur tape dans le champ email, démarrer le timer
+    connect(ui->cherchLineEditEmail, &QLineEdit::textChanged, this, [this](const QString &text) {
+        // Réinitialiser l'état de vérification à chaque frappe
+        cherchEmailDeliverabilityOk = false;
+        cherchEmailCheckPending     = true;
+        cherchLastVerifiedEmail     = QString();
+        if (cherchErrEmailLabel) {
+            if (text.trimmed().isEmpty()) {
+                cherchErrEmailLabel->setText("");
+                cherchErrEmailLabel->setVisible(false);
+            } else {
+                cherchErrEmailLabel->setText(
+                    "  🔍 Vérification en cours\u2026");
+                cherchErrEmailLabel->setStyleSheet(
+                    "color: #3b82f6; font-size: 12px; "
+                    "background: #eff6ff; border: 1px solid #bfdbfe; "
+                    "border-radius: 8px; padding: 4px 10px;");
+                cherchErrEmailLabel->setVisible(true);
+            }
+        }
+        cherchEmailDebounceTimer->start();
     });
 }
 
@@ -552,6 +619,44 @@ void SmartPub::cherchApplyModernStyle() {
         ui->cherchLineEditCIN->setStyleSheet(cherchInputStyle);
     if (ui->cherchLineEditEmail)
         ui->cherchLineEditEmail->setStyleSheet(cherchInputStyle);
+
+    // ── Créer le label d'état email (délivrabilité) ─────────────────────────
+    // Le label est inséré dynamiquement dans le même QVBoxLayout que le champ email
+    if (ui->cherchLineEditEmail && !cherchErrEmailLabel) {
+        QVBoxLayout *emailVLayout = nullptr;
+        QWidget *parentWidget = ui->cherchLineEditEmail->parentWidget();
+        if (parentWidget) {
+            // On remonte jusqu'à trouver un layout contenant le champ
+            QLayout *layout = parentWidget->layout();
+            if (layout && layout->indexOf(ui->cherchLineEditEmail) >= 0) {
+                emailVLayout = qobject_cast<QVBoxLayout*>(layout);
+            }
+        }
+        // Fallback : utiliser le layout principal du formulaire
+        if (!emailVLayout) {
+            emailVLayout = ui->cherchFormFrame->findChild<QVBoxLayout*>("verticalLayoutEmail");
+        }
+        // Création du label
+        cherchErrEmailLabel = new QLabel(ui->cherchFormFrame);
+        cherchErrEmailLabel->setObjectName("cherchErrEmailLabel");
+        cherchErrEmailLabel->setText(QString());
+        cherchErrEmailLabel->setVisible(false);
+        cherchErrEmailLabel->setWordWrap(true);
+        cherchErrEmailLabel->setStyleSheet(
+            "font-size: 12px; background: transparent; border: none; padding: 4px 0;");
+        if (emailVLayout) {
+            int idx = emailVLayout->indexOf(ui->cherchLineEditEmail);
+            if (idx >= 0)
+                emailVLayout->insertWidget(idx + 1, cherchErrEmailLabel);
+            else
+                emailVLayout->addWidget(cherchErrEmailLabel);
+        } else {
+            // Dernier recours : empiler sous le champ (moins propre)
+            QVBoxLayout *fallback = new QVBoxLayout(ui->cherchLineEditEmail->parentWidget());
+            fallback->addWidget(ui->cherchLineEditEmail);
+            fallback->addWidget(cherchErrEmailLabel);
+        }
+    }
 
     // === VALIDATEURS DE SAISIE (contrôle dès la frappe) ===
     // Nom & prénom : uniquement lettres (accentuées autorisées), espaces, apostrophes, tirets
@@ -2090,6 +2195,28 @@ void SmartPub::on_cherchBtnAjouterChercheur_clicked() {
         return;
     }
 
+    // ── Vérification délivrabilité (AbstractAPI) ──────────────────────────────
+    // Si le timer est encore actif (l'utilisateur vient de finir de taper)
+    if (cherchEmailDebounceTimer && cherchEmailDebounceTimer->isActive()) {
+        cherchEmailDebounceTimer->stop();
+        cherchVerifyEmailDeliverability(email); // On force le lancement immédiat
+    }
+
+    // Si la réponse de l'API n'est pas encore arrivée
+    if (cherchEmailCheckPending) {
+        QMessageBox::warning(this, "Patience",
+                             "La vérification de l'adresse email est en cours auprès du serveur.\n"
+                             "Veuillez attendre le message de confirmation (✅) sous le champ email.");
+        return;
+    }
+
+    // Si l'API a répondu mais que l'email est mauvais
+    if (!cherchEmailDeliverabilityOk) {
+        QMessageBox::critical(this, "Email Invalide",
+                              "L'adresse email fournie n'est pas délivrable. Veuillez la corriger.");
+        return;
+    }
+
     // Validation format CIN : exactement 8 chiffres
     static const QRegularExpression cinRegex(QStringLiteral(R"(^\d{8}$)"));
     if (!cinRegex.match(cin).hasMatch()) {
@@ -2229,6 +2356,7 @@ void SmartPub::on_cherchModifierChercheur(int id) {
         QMessageBox::critical(this, "Erreur", "Connexion à la base de données impossible.");
         return;
     }
+
     QSqlQuery query(db);
     query.prepare("SELECT ID_CHERCHEUR, NOM, PRENOM, EMAIL, GRADE, CIN, PHOTO_PROFIL FROM CHERCHEUR WHERE ID_CHERCHEUR = :id");
     query.bindValue(":id", id);
@@ -2236,6 +2364,7 @@ void SmartPub::on_cherchModifierChercheur(int id) {
         QMessageBox::warning(this, "Erreur", "Chercheur introuvable.");
         return;
     }
+
     ChercheurData data;
     data.nom = query.value("NOM").toString();
     data.prenom = query.value("PRENOM").toString();
@@ -2246,8 +2375,7 @@ void SmartPub::on_cherchModifierChercheur(int id) {
     if (data.photoPath.isEmpty()) data.photoPath = ":/avatar.png";
 
     QDialog dialog(this);
-    dialog.setWindowTitle(
-        QString("Modifier - %1 %2").arg(data.prenom).arg(data.nom));
+    dialog.setWindowTitle(QString("Modifier - %1 %2").arg(data.prenom).arg(data.nom));
     dialog.setMinimumSize(520, 620);
     dialog.setMaximumSize(600, 780);
     dialog.resize(520, 700);
@@ -2256,12 +2384,10 @@ void SmartPub::on_cherchModifierChercheur(int id) {
     const QString labelStyle = "color: #334155; font-size: 13px; font-weight: 600; background: transparent; border: none;";
     const QString inputStyle = "padding: 10px 12px; border-radius: 10px; border: 2px solid #e2e8f0; font-size: 13px; color: #1e293b; background-color: white;";
 
-    // Layout principal du dialogue
     QVBoxLayout *dialogMainLayout = new QVBoxLayout(&dialog);
     dialogMainLayout->setSpacing(0);
     dialogMainLayout->setContentsMargins(0, 0, 0, 0);
 
-    // Titre fixe en haut
     QFrame *titleFrame = new QFrame();
     titleFrame->setStyleSheet("background-color: white; border-bottom: 1px solid #e2e8f0;");
     titleFrame->setFixedHeight(60);
@@ -2272,7 +2398,6 @@ void SmartPub::on_cherchModifierChercheur(int id) {
     titleHL->addWidget(titleLbl);
     dialogMainLayout->addWidget(titleFrame);
 
-    // Zone scrollable
     QScrollArea *scrollArea = new QScrollArea();
     scrollArea->setWidgetResizable(true);
     scrollArea->setFrameShape(QFrame::NoFrame);
@@ -2320,7 +2445,7 @@ void SmartPub::on_cherchModifierChercheur(int id) {
     photoRow->addLayout(photoCol);
     layout->addLayout(photoRow);
 
-    // Nom + Prénom sur la même ligne
+    // Nom + Prénom
     QHBoxLayout *nomPrenomRow = new QHBoxLayout();
     nomPrenomRow->setSpacing(12);
     QVBoxLayout *colNom = new QVBoxLayout();
@@ -2329,7 +2454,6 @@ void SmartPub::on_cherchModifierChercheur(int id) {
     colNom->addWidget(lblNom);
     QLineEdit *editNom = new QLineEdit(data.nom);
     editNom->setStyleSheet(inputStyle);
-    // même logique de saisie que dans le formulaire d'ajout : lettres uniquement
     QRegularExpression dlgNameRegex(QStringLiteral("^[A-Za-zÀ-ÖØ-öø-ÿ\\s'-]*$"));
     auto *dlgNameValidator = new QRegularExpressionValidator(dlgNameRegex, &dialog);
     editNom->setValidator(dlgNameValidator);
@@ -2346,7 +2470,7 @@ void SmartPub::on_cherchModifierChercheur(int id) {
     nomPrenomRow->addLayout(colPrenom, 1);
     layout->addLayout(nomPrenomRow);
 
-    // Email + CIN sur la même ligne
+    // Email + CIN
     QHBoxLayout *emailCinRow = new QHBoxLayout();
     emailCinRow->setSpacing(12);
     QVBoxLayout *colEmail = new QVBoxLayout();
@@ -2356,7 +2480,17 @@ void SmartPub::on_cherchModifierChercheur(int id) {
     QLineEdit *editEmail = new QLineEdit(data.email);
     editEmail->setStyleSheet(inputStyle);
     colEmail->addWidget(editEmail);
+    // Label d'erreur email
+    QLabel *errEmailLabelModif = new QLabel();
+    errEmailLabelModif->setObjectName("cherchErrEmailLabelModif");
+    errEmailLabelModif->setText(QString());
+    errEmailLabelModif->setVisible(false);
+    errEmailLabelModif->setWordWrap(true);
+    errEmailLabelModif->setStyleSheet(
+        "font-size: 12px; background: transparent; border: none; padding: 4px 0;");
+    colEmail->addWidget(errEmailLabelModif);
     emailCinRow->addLayout(colEmail, 3);
+
     QVBoxLayout *colCIN = new QVBoxLayout();
     QLabel *lblCIN = new QLabel("CIN :");
     lblCIN->setStyleSheet(labelStyle);
@@ -2365,7 +2499,6 @@ void SmartPub::on_cherchModifierChercheur(int id) {
     editCIN->setStyleSheet(inputStyle);
     editCIN->setPlaceholderText("8 chiffres");
     editCIN->setMaxLength(8);
-    // CIN : uniquement chiffres, max 8, contrôle au clavier
     QRegularExpression dlgCinRegex(QStringLiteral("^\\d{0,8}$"));
     auto *dlgCinValidator = new QRegularExpressionValidator(dlgCinRegex, &dialog);
     editCIN->setValidator(dlgCinValidator);
@@ -2395,8 +2528,7 @@ void SmartPub::on_cherchModifierChercheur(int id) {
     comboGrade->setCurrentText(data.grade);
     layout->addWidget(comboGrade);
 
-    // ── Champ Projets ────────────────────────────────────────────────────────
-    // Charger les projets déjà affectés à ce chercheur
+    // Projets (inchangé)
     QList<int> projetsAffectes;
     {
         QSqlQuery qProj(db);
@@ -2406,7 +2538,6 @@ void SmartPub::on_cherchModifierChercheur(int id) {
             while (qProj.next())
                 projetsAffectes.append(qProj.value(0).toInt());
     }
-    // Tous les projets disponibles
     QList<QPair<int,QString>> tousLesProjets;
     {
         QSqlQuery qAll(db);
@@ -2419,7 +2550,6 @@ void SmartPub::on_cherchModifierChercheur(int id) {
     lblProjets->setStyleSheet(labelStyle);
     layout->addWidget(lblProjets);
 
-    // Bouton déclencheur — même style que comboGrade
     QPushButton *btnProjetsModif = new QPushButton(scrollContent);
     btnProjetsModif->setCursor(Qt::PointingHandCursor);
     btnProjetsModif->setStyleSheet(R"(
@@ -2436,13 +2566,11 @@ void SmartPub::on_cherchModifierChercheur(int id) {
         QPushButton:hover { border-color: #cbd5e1; }
         QPushButton:pressed { border-color: #3b82f6; background-color: #eff6ff; }
     )");
-    btnProjetsModif->setText(
-        projetsAffectes.isEmpty()
-            ? "▼  Sélectionner des projets…"
-            : QString("▼  %1 projet(s) affecté(s)").arg(projetsAffectes.size()));
+    btnProjetsModif->setText(projetsAffectes.isEmpty()
+                                 ? "▼  Sélectionner des projets…"
+                                 : QString("▼  %1 projet(s) affecté(s)").arg(projetsAffectes.size()));
     layout->addWidget(btnProjetsModif);
 
-    // ListWidget inline (masqué par défaut)
     QListWidget *listProjetsModif = new QListWidget(scrollContent);
     listProjetsModif->setSelectionMode(QAbstractItemView::MultiSelection);
     listProjetsModif->setFixedHeight(160);
@@ -2468,10 +2596,8 @@ void SmartPub::on_cherchModifierChercheur(int id) {
         }
         QListWidget::item:hover { background-color: #f8fafc; }
     )");
-    // Peupler et pré-sélectionner
     for (auto &p : tousLesProjets) {
-        QListWidgetItem *item = new QListWidgetItem(
-            QString("[%1]  %2").arg(p.first).arg(p.second));
+        QListWidgetItem *item = new QListWidgetItem(QString("[%1]  %2").arg(p.first).arg(p.second));
         item->setData(Qt::UserRole, p.first);
         listProjetsModif->addItem(item);
         if (projetsAffectes.contains(p.first))
@@ -2479,7 +2605,6 @@ void SmartPub::on_cherchModifierChercheur(int id) {
     }
     layout->addWidget(listProjetsModif);
 
-    // Limiter à 5 sélections
     connect(listProjetsModif, &QListWidget::itemSelectionChanged,
             &dialog, [listProjetsModif]() {
                 QList<QListWidgetItem*> sel = listProjetsModif->selectedItems();
@@ -2487,12 +2612,10 @@ void SmartPub::on_cherchModifierChercheur(int id) {
                     bool b = listProjetsModif->blockSignals(true);
                     sel.last()->setSelected(false);
                     listProjetsModif->blockSignals(b);
-                    QToolTip::showText(QCursor::pos(),
-                                       "Maximum 5 projets autorisés", listProjetsModif);
+                    QToolTip::showText(QCursor::pos(), "Maximum 5 projets autorisés", listProjetsModif);
                 }
             });
 
-    // Bouton valider projets
     QPushButton *btnValiderModif = new QPushButton("✔  Valider la sélection");
     btnValiderModif->setCursor(Qt::PointingHandCursor);
     btnValiderModif->setVisible(false);
@@ -2511,7 +2634,6 @@ void SmartPub::on_cherchModifierChercheur(int id) {
     )");
     layout->addWidget(btnValiderModif);
 
-    // Label résumé projets
     QLabel *lblProjetsSelec = new QLabel(scrollContent);
     lblProjetsSelec->setWordWrap(true);
     if (projetsAffectes.isEmpty()) {
@@ -2525,28 +2647,21 @@ void SmartPub::on_cherchModifierChercheur(int id) {
                 if (p.first == pid) { titresCourants << QString("[%1] %2").arg(p.first).arg(p.second); break; }
         lblProjetsSelec->setText("✔  " + titresCourants.join("  |  "));
         lblProjetsSelec->setStyleSheet(
-            "color: #10b981; font-size: 12px; font-weight: 600; "
-            "background: transparent; border: none;");
+            "color: #10b981; font-size: 12px; font-weight: 600; background: transparent; border: none;");
     }
     layout->addWidget(lblProjetsSelec);
 
-    // Toggle liste
     connect(btnProjetsModif, &QPushButton::clicked, &dialog,
             [listProjetsModif, btnValiderModif, btnProjetsModif, scrollArea]() {
                 bool visible = listProjetsModif->isVisible();
                 listProjetsModif->setVisible(!visible);
                 btnValiderModif->setVisible(!visible);
-                btnProjetsModif->setText(visible
-                                             ? "▼  Sélectionner des projets…"
-                                             : "▲  Fermer la liste");
-                // Faire défiler jusqu'au bas pour montrer la liste
+                btnProjetsModif->setText(visible ? "▼  Sélectionner des projets…" : "▲  Fermer la liste");
                 if (!visible)
-                    QTimer::singleShot(50, scrollArea,
-                                       [scrollArea](){ scrollArea->verticalScrollBar()->setValue(
-                                                            scrollArea->verticalScrollBar()->maximum()); });
+                    QTimer::singleShot(50, scrollArea, [scrollArea](){ scrollArea->verticalScrollBar()->setValue(
+                                                                            scrollArea->verticalScrollBar()->maximum()); });
             });
 
-    // Valider sélection
     connect(btnValiderModif, &QPushButton::clicked, &dialog,
             [listProjetsModif, btnValiderModif, btnProjetsModif, lblProjetsSelec]() {
                 listProjetsModif->setVisible(false);
@@ -2558,21 +2673,18 @@ void SmartPub::on_cherchModifierChercheur(int id) {
                     lblProjetsSelec->setStyleSheet(
                         "color: #94a3b8; font-size: 12px; background: transparent; border: none;");
                 } else {
-                    btnProjetsModif->setText(
-                        QString("▼  %1 projet(s) sélectionné(s)").arg(sel.size()));
+                    btnProjetsModif->setText(QString("▼  %1 projet(s) sélectionné(s)").arg(sel.size()));
                     QStringList t;
                     for (auto *it : sel) t << it->text();
                     lblProjetsSelec->setText("✔  " + t.join("  |  "));
                     lblProjetsSelec->setStyleSheet(
-                        "color: #10b981; font-size: 12px; font-weight: 600; "
-                        "background: transparent; border: none;");
+                        "color: #10b981; font-size: 12px; font-weight: 600; background: transparent; border: none;");
                 }
             });
 
     scrollArea->setWidget(scrollContent);
     dialogMainLayout->addWidget(scrollArea, 1);
 
-    // Footer fixe avec bouton Sauvegarder
     QFrame *footerFrame = new QFrame();
     footerFrame->setStyleSheet("background-color: white; border-top: 1px solid #e2e8f0;");
     footerFrame->setFixedHeight(62);
@@ -2584,19 +2696,150 @@ void SmartPub::on_cherchModifierChercheur(int id) {
     btnSave->setCursor(Qt::PointingHandCursor);
     btnSave->setStyleSheet(R"(
         QPushButton {
-            background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+            background: qlineargradient(x1:0,y1:0,x2:1,y2:0,
                 stop:0 #3b82f6, stop:1 #10b981);
             color: white; border: none; border-radius: 10px;
             padding: 0 32px; font-size: 14px; font-weight: 600;
         }
         QPushButton:hover {
-            background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+            background: qlineargradient(x1:0,y1:0,x2:1,y2:0,
                 stop:0 #2563eb, stop:1 #059669);
         }
     )");
-    connect(btnSave, &QPushButton::clicked, &dialog, &QDialog::accept);
     footerHL->addWidget(btnSave);
     dialogMainLayout->addWidget(footerFrame);
+
+    // ========== VÉRIFICATION EMAIL API (ADAPTÉE REPUTATION) ==========
+    bool emailDeliverableModif = true; // Par défaut true si l'email n'est pas changé
+    bool emailCheckPendingModif = false;
+    QString lastVerifiedEmailModif = data.email; // L'email actuel est considéré comme vérifié
+
+    QTimer *emailDebounceTimerModif = new QTimer(&dialog);
+    emailDebounceTimerModif->setSingleShot(true);
+    emailDebounceTimerModif->setInterval(1000);
+
+
+
+    auto verifyEmailModif = [&](const QString &email) {
+        if (!cherchNetworkManager) return;
+
+        // Si l'email est le même que celui d'origine, on ne re-vérifie pas
+        if (email == data.email) {
+            emailDeliverableModif = true;
+            emailCheckPendingModif = false;
+            errEmailLabelModif->setVisible(false);
+            return;
+        }
+
+        emailCheckPendingModif = true;
+        emailDeliverableModif = false;
+        lastVerifiedEmailModif = email;
+
+        errEmailLabelModif->setText("  🔍 Analyse de réputation en cours…");
+        errEmailLabelModif->setStyleSheet(
+            "color: #3b82f6; font-size: 12px; background: #eff6ff; border: 1px solid #bfdbfe; "
+            "border-radius: 8px; padding: 4px 10px;");
+        errEmailLabelModif->setVisible(true);
+
+        // NOUVELLE URL (Reputation API)
+        QString apiKey = "2b9bff7449d243b28938b55d44c905ed";
+        QUrl url("https://emailreputation.abstractapi.com/v1/");
+        QUrlQuery query;
+        query.addQueryItem("api_key", apiKey);
+        query.addQueryItem("email", email);
+        url.setQuery(query);
+
+        QNetworkRequest request(url);
+        request.setAttribute(QNetworkRequest::User, email);
+        QNetworkReply *reply = cherchNetworkManager->get(request);
+
+        connect(reply, &QNetworkReply::finished, &dialog, [&, reply]() {
+            reply->deleteLater();
+            const QString reqEmail = reply->request().attribute(QNetworkRequest::User).toString();
+            if (reqEmail != editEmail->text().trimmed()) return;
+
+            emailCheckPendingModif = false;
+
+            if (reply->error() != QNetworkReply::NoError) {
+                emailDeliverableModif = true; // On laisse passer en cas d'erreur serveur
+                errEmailLabelModif->setText("  ⚠️ Service indisponible (vérification ignorée)");
+                return;
+            }
+
+            QByteArray raw = reply->readAll();
+            QJsonObject obj = QJsonDocument::fromJson(raw).object();
+
+            // Extraction du score et du statut (Format Reputation API)
+            QJsonObject deliverabilityObj = obj["email_deliverability"].toObject();
+            QString status = deliverabilityObj["status"].toString();
+
+            QJsonObject qualityObj = obj["email_quality"].toObject();
+            int score = qualityObj["score"].toDouble() * 100;
+
+            if (status == "deliverable" || score > 60) {
+                emailDeliverableModif = true;
+                errEmailLabelModif->setText(QString("  ✅ Email valide (Confiance: %1%)").arg(score));
+                errEmailLabelModif->setStyleSheet(
+                    "color: #059669; font-size: 12px; background: #d1fae5; border: 1px solid #6ee7b7; "
+                    "border-radius: 8px; padding: 4px 10px;");
+            } else {
+                emailDeliverableModif = false;
+                errEmailLabelModif->setText(QString("  ❌ Email suspect ou inexistant (Score: %1%)").arg(score));
+                errEmailLabelModif->setStyleSheet(
+                    "color: #dc2626; font-size: 12px; background: #fee2e2; border: 1px solid #fca5a5; "
+                    "border-radius: 8px; padding: 4px 10px;");
+            }
+        });
+    };
+
+
+    // 1. Connexion du changement de texte au timer
+    connect(editEmail, &QLineEdit::textChanged, &dialog, [&](const QString &text) { // Le & ici capture tout par référence
+        emailDeliverableModif = false;
+        emailCheckPendingModif = true;
+
+        if (text.trimmed().isEmpty()) {
+            errEmailLabelModif->setVisible(false);
+            emailDebounceTimerModif->stop();
+            return;
+        }
+        emailDebounceTimerModif->start();
+    });
+
+    // 2. Connexion du Timer à la fonction de vérification
+    // C'EST ICI QUE L'ERREUR SE PRODUISAIT : Ajoutez "verifyEmailModif" ou "&" dans les crochets
+    connect(emailDebounceTimerModif, &QTimer::timeout, &dialog, [&]() {
+        verifyEmailModif(editEmail->text().trimmed());
+    });
+
+
+    // Gestion du bouton Sauvegarder avec forçage de la vérification
+    btnSave->disconnect();
+    connect(btnSave, &QPushButton::clicked, &dialog, [&]() {
+        QString currentEmail = editEmail->text().trimmed();
+
+        // 1. Si l'utilisateur clique pendant que le timer attend
+        if (emailDebounceTimerModif->isActive()) {
+            emailDebounceTimerModif->stop();
+            verifyEmailModif(currentEmail);
+        }
+
+        // 2. Si on attend encore la réponse de l'API
+        if (emailCheckPendingModif) {
+            QMessageBox::information(this, "Vérification en cours",
+                                     "Veuillez patienter pendant la validation de l'adresse email...");
+            return;
+        }
+
+        // 3. Si l'email a été refusé par l'API
+        if (!emailDeliverableModif && currentEmail != data.email) {
+            QMessageBox::warning(this, "Email Invalide",
+                                 "L'adresse email saisie n'est pas valide. Veuillez la corriger.");
+            return;
+        }
+
+        dialog.accept();
+    });
 
     if (dialog.exec() == QDialog::Accepted) {
         QString newNom    = editNom->text().trimmed();
@@ -2605,14 +2848,12 @@ void SmartPub::on_cherchModifierChercheur(int id) {
         QString newCIN    = editCIN->text().trimmed();
         QString newGrade  = comboGrade->currentText().trimmed();
 
-        // Vérification champs obligatoires
         if (newNom.isEmpty() || newPrenom.isEmpty() || newEmail.isEmpty()
             || newCIN.isEmpty() || newGrade.isEmpty()) {
             QMessageBox::warning(this, "Erreur", "Tous les champs sont obligatoires.");
             return;
         }
 
-        // Validation nom et prénom (uniquement caractères alphabétiques)
         static const QRegularExpression nameRegex(
             QStringLiteral(R"(^[A-Za-zÀ-ÖØ-öø-ÿ\s'-]+$)"));
         if (!nameRegex.match(newNom).hasMatch() ||
@@ -2622,7 +2863,6 @@ void SmartPub::on_cherchModifierChercheur(int id) {
             return;
         }
 
-        // Validation format email
         static const QRegularExpression emailRegex(
             QStringLiteral(R"(^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$)"));
         if (!emailRegex.match(newEmail).hasMatch()) {
@@ -2632,7 +2872,6 @@ void SmartPub::on_cherchModifierChercheur(int id) {
             return;
         }
 
-        // Validation format CIN : exactement 8 chiffres
         static const QRegularExpression cinRegex(QStringLiteral(R"(^\d{8}$)"));
         if (!cinRegex.match(newCIN).hasMatch()) {
             QMessageBox::warning(this, "Erreur",
@@ -2640,7 +2879,6 @@ void SmartPub::on_cherchModifierChercheur(int id) {
             return;
         }
 
-        // Unicité email (exclure le chercheur courant)
         {
             QSqlQuery chkQuery(db);
             chkQuery.prepare("SELECT COUNT(*) FROM CHERCHEUR "
@@ -2654,7 +2892,6 @@ void SmartPub::on_cherchModifierChercheur(int id) {
             }
         }
 
-        // Unicité CIN (exclure le chercheur courant)
         {
             QSqlQuery chkQuery(db);
             chkQuery.prepare("SELECT COUNT(*) FROM CHERCHEUR "
@@ -2693,14 +2930,11 @@ void SmartPub::on_cherchModifierChercheur(int id) {
             return;
         }
 
-        // ── Mettre à jour les contributions dans CONTRIBUER ───────────────────
-        // 1) Supprimer toutes les contributions existantes
         QSqlQuery delContrib(db);
         delContrib.prepare("DELETE FROM CONTRIBUER WHERE ID_CHERCHEUR = :id");
         delContrib.bindValue(":id", id);
         delContrib.exec();
 
-        // 2) Réinsérer les projets nouvellement sélectionnés
         QList<QListWidgetItem*> selItems = listProjetsModif->selectedItems();
         for (QListWidgetItem *item : selItems) {
             int codeProjet = item->data(Qt::UserRole).toInt();
@@ -2714,6 +2948,7 @@ void SmartPub::on_cherchModifierChercheur(int id) {
         }
 
         cherchAfficherListeChercheurs();
+        QMessageBox::information(this, "Succès", "Chercheur modifié avec succès !");
     }
 }
 
@@ -3199,4 +3434,171 @@ void SmartPub::handleChercheursNavigation() {
     ui->cherchBtnAjouter->setStyleSheet(tabInactive);
 
     cherchAfficherListeChercheurs();
+}
+
+// ============================================================================
+// VÉRIFICATION DÉLIVRABILITÉ EMAIL — AbstractAPI
+// Clé : 5c897de7e4ae42bda2566ecfdc30f0f7
+// ============================================================================
+void SmartPub::cherchVerifyEmailDeliverability(const QString &email) {
+    if (email.isEmpty()) {
+        cherchEmailCheckPending = false;
+        return;
+    }
+
+    cherchEmailCheckPending = true; // On indique que c'est en cours
+    cherchLastVerifiedEmail = email;
+
+    if (cherchErrEmailLabel) {
+        cherchErrEmailLabel->setText("⏳ Vérification en cours...");
+        cherchErrEmailLabel->setVisible(true);
+    }
+
+    QString apiKey = "2b9bff7449d243b28938b55d44c905ed";
+    QString urlString = QString("https://emailreputation.abstractapi.com/v1/?api_key=%1&email=%2")
+                            .arg(apiKey).arg(email);
+
+    QNetworkRequest request((QUrl(urlString)));
+    QNetworkReply *reply = cherchNetworkManager->get(request);
+
+    connect(reply, &QNetworkReply::finished, this, [this, reply, email]() {
+        // IMPORTANT : La vérification n'est plus en attente
+        cherchEmailCheckPending = false;
+
+        if (reply->error() == QNetworkReply::NoError) {
+            QJsonObject jsonObj = QJsonDocument::fromJson(reply->readAll()).object();
+            QJsonObject deliverabilityObj = jsonObj["email_deliverability"].toObject();
+            QString status = deliverabilityObj["status"].toString();
+
+            if (status == "deliverable") {
+                cherchErrEmailLabel->setText("✅ Email valide");
+                cherchEmailDeliverabilityOk = true;
+            } else {
+                cherchErrEmailLabel->setText("❌ Email invalide");
+                cherchEmailDeliverabilityOk = false;
+            }
+        } else {
+            cherchErrEmailLabel->setText("⚠️ Erreur réseau");
+            // En cas d'erreur réseau, on peut décider de laisser passer (true)
+            // ou de bloquer (false). À vous de choisir :
+            cherchEmailDeliverabilityOk = false;
+        }
+        reply->deleteLater();
+    });
+}
+
+void SmartPub::on_cherchEmailVerificationReply(QNetworkReply *reply)
+{
+    reply->deleteLater();
+
+    const QString requestedEmail = reply->request().attribute(QNetworkRequest::User).toString();
+    const QString currentEmail = ui->cherchLineEditEmail->text().trimmed();
+    if (requestedEmail != currentEmail) return;
+
+    cherchEmailCheckPending = false;
+
+    const QString inputBase =
+        "QLineEdit { background-color: #f8fafc; border: 2px solid %1; border-radius: 10px; "
+        "padding: 12px 16px; font-size: 14px; color: #334155; }"
+        "QLineEdit:focus { background-color: %2; border: 2px solid %1; }";
+
+    if (reply->error() != QNetworkReply::NoError) {
+        qWarning() << "[EmailVerif] Erreur réseau :" << reply->errorString();
+        cherchEmailDeliverabilityOk = true; // fallback
+        if (cherchErrEmailLabel) {
+            cherchErrEmailLabel->setText("  ⚠️ Service indisponible — format OK");
+            cherchErrEmailLabel->setStyleSheet(
+                "color: #f59e0b; font-size: 12px; background: #fffbeb; border: 1px solid #fde68a; "
+                "border-radius: 8px; padding: 4px 10px;");
+            cherchErrEmailLabel->setVisible(true);
+        }
+        ui->cherchLineEditEmail->setStyleSheet(inputBase.arg("#f59e0b", "#fffbeb"));
+        return;
+    }
+
+    int httpCode = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+    if (httpCode != 200) {
+        qWarning() << "[EmailVerif] HTTP error:" << httpCode;
+        cherchEmailDeliverabilityOk = true;
+        if (cherchErrEmailLabel) {
+            cherchErrEmailLabel->setText(QString("  ⚠️ API code %1 — format OK").arg(httpCode));
+            cherchErrEmailLabel->setStyleSheet(
+                "color: #f59e0b; font-size: 12px; background: #fffbeb; border: 1px solid #fde68a; "
+                "border-radius: 8px; padding: 4px 10px;");
+            cherchErrEmailLabel->setVisible(true);
+        }
+        ui->cherchLineEditEmail->setStyleSheet(inputBase.arg("#f59e0b", "#fffbeb"));
+        return;
+    }
+
+    QByteArray rawData = reply->readAll();
+    qDebug() << "[EmailVerif] Réponse brute :" << rawData;
+    QJsonParseError parseError;
+    QJsonDocument doc = QJsonDocument::fromJson(rawData, &parseError);
+    if (parseError.error != QJsonParseError::NoError || !doc.isObject()) {
+        qWarning() << "[EmailVerif] JSON invalide :" << parseError.errorString();
+        cherchEmailDeliverabilityOk = true;
+        if (cherchErrEmailLabel) {
+            cherchErrEmailLabel->setText("  ⚠️ Réponse inattendue — format OK");
+            cherchErrEmailLabel->setStyleSheet(
+                "color: #f59e0b; font-size: 12px; background: #fffbeb; border: 1px solid #fde68a; "
+                "border-radius: 8px; padding: 4px 10px;");
+            cherchErrEmailLabel->setVisible(true);
+        }
+        return;
+    }
+
+    QJsonObject obj = doc.object();
+    QString deliverability = obj.value("deliverability").toString().toUpper();
+    bool isValidFormat = obj.value("is_valid_format").toObject().value("value").toBool(false);
+    bool isMxFound = obj.value("is_mx_found").toObject().value("value").toBool(false);
+    bool isSmtpValid = obj.value("is_smtp_valid").toObject().value("value").toBool(false);
+    bool isDisposable = obj.value("is_disposable_email").toObject().value("value").toBool(false);
+
+    qDebug() << "[EmailVerif]" << requestedEmail
+             << "deliverability:" << deliverability
+             << "mx:" << isMxFound << "smtp:" << isSmtpValid
+             << "disposable:" << isDisposable;
+
+    if (deliverability == "DELIVERABLE" && isValidFormat && isMxFound) {
+        cherchEmailDeliverabilityOk = true;
+        QString label = "✅ Email vérifié — délivrable";
+        if (isDisposable) label = "⚠️ Email jetable — accepté mais déconseillé";
+        if (cherchErrEmailLabel) {
+            cherchErrEmailLabel->setText("  " + label);
+            cherchErrEmailLabel->setStyleSheet(
+                "color: #059669; font-size: 12px; background: #d1fae5; border: 1px solid #6ee7b7; "
+                "border-radius: 8px; padding: 4px 10px;");
+            cherchErrEmailLabel->setVisible(true);
+        }
+        ui->cherchLineEditEmail->setStyleSheet(inputBase.arg("#10b981", "#f0fdf4"));
+    }
+    else if (deliverability == "RISKY") {
+        cherchEmailDeliverabilityOk = true;
+        if (cherchErrEmailLabel) {
+            cherchErrEmailLabel->setText("  ⚠️ Email accepté (risqué) — vérifiez manuellement");
+            cherchErrEmailLabel->setStyleSheet(
+                "color: #d97706; font-size: 12px; background: #fef3c7; border: 1px solid #fcd34d; "
+                "border-radius: 8px; padding: 4px 10px;");
+            cherchErrEmailLabel->setVisible(true);
+        }
+        ui->cherchLineEditEmail->setStyleSheet(inputBase.arg("#f59e0b", "#fffbeb"));
+    }
+    else {
+        cherchEmailDeliverabilityOk = false;
+        QString reason;
+        if (!isValidFormat) reason = "format invalide";
+        else if (!isMxFound) reason = "domaine introuvable (pas de serveur mail)";
+        else if (!isSmtpValid) reason = "boîte inexistante";
+        else reason = "non délivrable";
+        if (cherchErrEmailLabel) {
+            cherchErrEmailLabel->setText("  ❌ Email refusé : " + reason);
+            cherchErrEmailLabel->setStyleSheet(
+                "color: #dc2626; font-size: 12px; background: #fee2e2; border: 1px solid #fca5a5; "
+                "border-radius: 8px; padding: 4px 10px;");
+            cherchErrEmailLabel->setVisible(true);
+        }
+        ui->cherchLineEditEmail->setStyleSheet(inputBase.arg("#ef4444", "#fff1f2"));
+    }
+
 }
