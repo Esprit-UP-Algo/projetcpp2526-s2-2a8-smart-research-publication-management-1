@@ -1126,24 +1126,6 @@ bool SmartPub::eventFilter(QObject *obj, QEvent *event) {
         } else if (obj == ui->comboBoxResponsableForm) {
             projTouchedResponsable = true;
             projValidateResponsable(false);
-        } else if (obj == ui->cherchLineEditNom) {
-            cherchTouchedNom = true;
-            cherchValidateNom(false);
-        } else if (obj == ui->cherchLineEditPrenom) {
-            cherchTouchedPrenom = true;
-            cherchValidatePrenom(false);
-        } else if (obj == ui->cherchLineEditCIN) {
-            cherchTouchedCin = true;
-            cherchValidateCin(false);
-        } else if (obj == ui->cherchLineEditEmail) {
-            if (cherchEmailDebounceTimer)
-                cherchEmailDebounceTimer->stop();
-            cherchTouchedEmail = true;
-            if (cherchValidateEmailFormat(false))
-                cherchValidateEmailUniqueForAdd(false);
-        } else if (obj == ui->cherchComboBoxGrade) {
-            cherchTouchedGrade = true;
-            cherchValidateGrade(false);
         }
     }
 
@@ -1343,46 +1325,6 @@ void SmartPub::on_btnLaboratoires_clicked() { handleLaboratoiresNavigation(); }
 // SLOTS UI — délégation vers handle* (logique métier dans les modules *.cpp)
 // ============================================================================
 
-void SmartPub::on_cherchBtnMotDePasseOublie_clicked() {
-    handleCherchBtnMotDePasseOublieClicked();
-}
-void SmartPub::on_cherchBtnRetourLogin_clicked() {
-    handleCherchBtnRetourLoginClicked();
-}
-void SmartPub::on_cherchBtnForgotOk_clicked() {
-    handleCherchBtnForgotOkClicked();
-}
-void SmartPub::on_cherchBtnLogin_clicked() { handleCherchBtnLoginClicked(); }
-void SmartPub::on_cherchBtnVueListe_clicked() { handleCherchBtnVueListeClicked(); }
-void SmartPub::on_cherchBtnAjouter_clicked() { handleCherchBtnAjouterClicked(); }
-void SmartPub::on_cherchBtnToggleVue_clicked() { handleCherchBtnToggleVueClicked(); }
-void SmartPub::on_cherchBtnRecherche_clicked() { handleCherchBtnRechercheClicked(); }
-void SmartPub::on_cherchBtnTri_clicked() { handleCherchBtnTriClicked(); }
-void SmartPub::on_cherchBtnExport_clicked() { handleCherchBtnExportClicked(); }
-void SmartPub::on_cherchBtnStatistiques_clicked() {
-    handleCherchBtnStatistiquesClicked();
-}
-void SmartPub::on_cherchBtnUploadPhoto_clicked() {
-    handleCherchBtnUploadPhotoClicked();
-}
-void SmartPub::on_cherchBtnAjouterChercheur_clicked() {
-    handleCherchBtnAjouterChercheurClicked();
-}
-void SmartPub::on_cherchBtnAnnulerAjout_clicked() {
-    handleCherchBtnAnnulerAjoutClicked();
-}
-void SmartPub::on_cherchModifierChercheur(int id) {
-    handleCherchModifierChercheur(id);
-}
-void SmartPub::on_cherchSupprimerChercheur(int id) {
-    handleCherchSupprimerChercheur(id);
-}
-void SmartPub::on_cherchVoirDetailsChercheur(int id) {
-    handleCherchVoirDetailsChercheur(id);
-}
-void SmartPub::on_cherchLineEditRecherche_textChanged(const QString &text) {
-    handleCherchLineEditRechercheTextChanged(text);
-}
 
 void SmartPub::on_SR_btnVueListe_clicked() { handleSRBtnVueListeClicked(); }
 void SmartPub::on_SR_btnAjouter_clicked() { handleSRBtnAjouterClicked(); }

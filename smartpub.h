@@ -332,6 +332,7 @@ private:
     void cherchAjouterDonneesTest();
     QString cherchDeterminerCarriere(int projetsCount, const QString &grade);
     void handleChercheursNavigation();
+    bool   cherchValiderNomPrenom(const QString &nom, const QString &prenom);
 
     // === MODULE PUBLICATIONS ===
     void SR_setupUI();
@@ -555,6 +556,7 @@ private:
     QMap<int, ChercheurData> cherchChercheursMap;
     QString cherchOrderByClause;
     QString cherchWhereClause;
+    QString cherchCurrentPhotoPath;
 
     // === VARIABLES MODULE FINANCES ===
     bool finVueListeActive;
