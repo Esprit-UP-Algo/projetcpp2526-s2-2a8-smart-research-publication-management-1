@@ -13,6 +13,7 @@ QVector<AIService::Recommandation> AIService::genererRecommandations(const QVect
         if (desc.contains("quantique")) hasQuantum = true;
         if (desc.contains("energie") || desc.contains("solaire")) hasEnergy = true;
     }
+    (void)hasBio;
 
     if (hasAI) {
         Recommandation rec;

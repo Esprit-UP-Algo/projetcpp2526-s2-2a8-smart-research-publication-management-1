@@ -12,8 +12,14 @@ SOURCES += \
     connection.cpp \
     main.cpp \
     smartpub.cpp \
+    chercheur.cpp \
+    publication.cpp \
+    laboratoire.cpp \
+    projet.cpp \
     ai_service.cpp \
     reminder.cpp \
+    finance.cpp \
+    evenement.cpp \
     publicationauth.cpp \
     promotionengine.cpp \
     matchmakingengine.cpp

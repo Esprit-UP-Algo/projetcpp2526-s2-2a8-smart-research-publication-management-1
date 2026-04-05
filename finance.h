@@ -18,7 +18,7 @@ QT_END_NAMESPACE
 
 struct TransactionData {
     int id;
-    QString idProjet; // CODE_PROJET (FK FINANCE.ID_PROJET), vide si aucun
+    QString idProjet; // ID_PROJET (clé étrangère numérique), vide si aucun
     QString projet;
     QString type;
     double montant;

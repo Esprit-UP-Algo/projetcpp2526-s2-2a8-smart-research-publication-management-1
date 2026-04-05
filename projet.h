@@ -124,4 +124,9 @@ private:
     QChartView *chartTemporelView;
 };
 
+QString projEtatDbToUi(const QString &db);
+QString projEtatColor(const QString &etatUi);
+QString projProgressionColor(int valeur);
+QString projProgressionColorFromString(const QString &progression);
+
 #endif // PROJET_H

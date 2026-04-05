@@ -53,7 +53,7 @@ static bool ontDejaCollabore(QSqlDatabase &db, int idA, int idB)
     QSqlQuery q(db);
     q.prepare(
         QStringLiteral("SELECT COUNT(*) FROM CONTRIBUER c1 "
-                       "INNER JOIN CONTRIBUER c2 ON c1.CODE_PROJET = c2.CODE_PROJET "
+                       "INNER JOIN CONTRIBUER c2 ON c1.ID_PROJET = c2.ID_PROJET "
                        "WHERE c1.ID_CHERCHEUR = :a AND c2.ID_CHERCHEUR = :b"));
     q.bindValue(QStringLiteral(":a"), idA);
     q.bindValue(QStringLiteral(":b"), idB);

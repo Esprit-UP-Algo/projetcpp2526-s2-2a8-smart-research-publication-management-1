@@ -173,7 +173,7 @@ protected:
     bool eventFilter(QObject *obj, QEvent *event) override;
 
 private slots:
-    // === NAVIGATION PRINCIPALE (Sidebar Unique) ===
+    // === NAVIGATION PRINCIPALE (Sidebar) — délégué via handle*Navigation() ===
     void on_btnPublications_clicked();
     void on_btnChercheurs_clicked();
     void on_btnLaboratoires_clicked();
@@ -280,26 +280,6 @@ private slots:
     void on_filtresClicked();
     void on_exporterClicked();
 
-    // Additional slots for projet module
-    void onNavigationButtonClicked();
-    void onCrudButtonClicked();
-    void onRechercheTextChanged(const QString &text);
-    void onAnnulerFormClicked();
-    void onEnregistrerFormClicked();
-    void onSupprimerProjetClicked();
-    void onTableSelectionChanged();
-    void onTableDoubleClicked(int row, int column);
-    void onTriDateDebutClicked();
-    void onTriDateFinClicked();
-    void onTriEtatClicked();
-    void onTriProgressionClicked();
-    void onStatistiquesClicked();
-    void onSanteProjetClicked();
-    void onOptimiserChargeClicked();
-    void onIARecommanderClicked();
-    void onFiltresClicked();
-    void onExporterClicked();
-
 private:
     // === SETUP ===
     void showLogin();
@@ -315,6 +295,18 @@ private:
 
     // === MODULE CHERCHEURS ===
     void cherchSetupUI();
+    void cherchSetupFormValidationWidgets();
+    void cherchClearAddFormErrors();
+    void cherchShowLineFieldError(QLineEdit *field, QLabel *errLabel, const QString &msg);
+    void cherchHideLineFieldError(QLineEdit *field, QLabel *errLabel);
+    void cherchShowComboFieldError(QComboBox *cb, QLabel *errLabel, const QString &msg);
+    void cherchHideComboFieldError(QComboBox *cb, QLabel *errLabel);
+    bool cherchValidateNom(bool forSubmit);
+    bool cherchValidatePrenom(bool forSubmit);
+    bool cherchValidateCin(bool forSubmit);
+    bool cherchValidateEmailFormat(bool forSubmit);
+    bool cherchValidateEmailUniqueForAdd(bool forSubmit);
+    bool cherchValidateGrade(bool forSubmit);
     void cherchConnectSignals();
     void cherchApplyModernStyle();
     void cherchShowLoginView();
@@ -339,6 +331,7 @@ private:
     void cherchAfficherStatistiques();
     void cherchAjouterDonneesTest();
     QString cherchDeterminerCarriere(int projetsCount, const QString &grade);
+    void handleChercheursNavigation();
 
     // === MODULE PUBLICATIONS ===
     void SR_setupUI();
@@ -347,6 +340,7 @@ private:
     void SR_updateButtonStyles();
     void SR_addButtonsToRow(int row);
     void SR_refreshStatsForCurrentView();
+    void handlePublicationsNavigation();
 
     // === MODULE FINANCES ===
     void finSetupUI();
@@ -360,6 +354,7 @@ private:
     void finViderFormulaire();
     void finRemplirFormulaire(const TransactionData &data);
     QList<TransactionData> finGetTransactionsFiltreesEtTriees() const;
+    void handleFinancesNavigation();
 
     // === MODULE EVENEMENTS ===
     void evSetupUI();
@@ -368,6 +363,7 @@ private:
     void evAfficherListeEvents();
     void evAjouterEventTable(const EventData &data);
     void evRechercherParLieu();
+    void handleEvenementsNavigation();
 
     // === MODULE LABORATOIRES ===
     void labSetupUI();
@@ -387,6 +383,7 @@ private:
     void labExporter();
     void labTrier();
     void labSetTableRowBackground(QTableWidget *table, int row, const QColor &color);
+    void handleLaboratoiresNavigation();
 
     // === MODULE PROJETS (Ton travail) ===
     void projSetupUI();
@@ -406,7 +403,19 @@ private:
     void projRemplirFormulaire(const Projet &projet);
     void projViderFormulaire();
     Projet projGetProjetFromForm() const;
-    bool projValiderFormulaire() const;
+    bool projValiderFormulaire();
+    bool projValidateCode(bool forSubmit);
+    bool projValidateTitre(bool forSubmit);
+    bool projValidateResponsable(bool forSubmit);
+    bool projValidateDates(bool forSubmit);
+    void projSetupFormValidationWidgets();
+    void projClearProjectFormErrors();
+    void projShowLineFieldError(QLineEdit *field, QLabel *errLabel, const QString &msg);
+    void projHideLineFieldError(QLineEdit *field, QLabel *errLabel);
+    void projShowComboFieldError(QComboBox *cb, QLabel *errLabel, const QString &msg);
+    void projHideComboFieldError(QComboBox *cb, QLabel *errLabel);
+    void projShowDateOrderError(const QString &msg);
+    void projHideDateOrderError();
     void projFiltrerTable(const QString &text);
     void projAppliquerFiltres();
     void projMettreAJourStats();
@@ -426,6 +435,95 @@ private:
     int projCompterProjetsEnRetard() const;
     void projAjusterColonnesTable();
     void projUpdateSidebarProfileVisibility();
+    void handleProjetsNavigation();
+
+    // --- Handlers métier (impl. dans les *.cpp modules ; slots UI dans smartpub.cpp) ---
+    void handleCherchBtnMotDePasseOublieClicked();
+    void handleCherchBtnRetourLoginClicked();
+    void handleCherchBtnForgotOkClicked();
+    void handleCherchBtnLoginClicked();
+    void handleCherchBtnVueListeClicked();
+    void handleCherchBtnAjouterClicked();
+    void handleCherchBtnToggleVueClicked();
+    void handleCherchBtnRechercheClicked();
+    void handleCherchBtnTriClicked();
+    void handleCherchBtnExportClicked();
+    void handleCherchBtnStatistiquesClicked();
+    void handleCherchBtnUploadPhotoClicked();
+    void handleCherchBtnAjouterChercheurClicked();
+    void handleCherchBtnAnnulerAjoutClicked();
+    void handleCherchModifierChercheur(int id);
+    void handleCherchSupprimerChercheur(int id);
+    void handleCherchVoirDetailsChercheur(int id);
+    void handleCherchLineEditRechercheTextChanged(const QString &text);
+
+    void handleSRBtnVueListeClicked();
+    void handleSRBtnAjouterClicked();
+    void handleSRBtnRechercheClicked();
+    void handleSRBtnTriClicked();
+    void handleSRBtnExportClicked();
+    void handleSRBtnStatistiquesClicked();
+    void handleSRBtnAjouterPublicationClicked();
+    void handleSRBtnAnnulerAjoutClicked();
+    void handleSRModifierPublicationClicked();
+    void handleSRSupprimerPublicationClicked();
+    void handleSRApplyFilterListe();
+    void handleSRReinitFilterListe();
+
+    void handleFinBtnVueListeClicked();
+    void handleFinBtnAjouterClicked();
+    void handleFinBtnRechercheClicked();
+    void handleFinBtnTriClicked();
+    void handleFinBtnExportClicked();
+    void handleFinBtnStatistiquesClicked();
+    void handleFinBtnAjouterTransactionClicked();
+    void handleFinBtnAnnulerAjoutClicked();
+    void handleFinBtnModifierTransactionClicked();
+    void handleFinBtnSupprimerTransactionClicked();
+    void handleFinLineEditRechercheTextChanged(const QString &text);
+
+    void handleEvBtnAjouterEventClicked();
+    void handleEvBtnModifierEventClicked();
+    void handleEvBtnSupprimerEventClicked();
+    void handleEvBtnTrierDateClicked();
+    void handleEvBtnRechercheLieuClicked();
+    void handleEvBtnExportCalendrierClicked();
+    void handleEvBtnLivreResumesClicked();
+    void handleEvBtnCalculImpactClicked();
+    void handleEvBtnStatsParticipationClicked();
+
+    void handleLabBtnAjouterClicked();
+    void handleLabBtnModifierClicked();
+    void handleLabBtnSupprimerClicked();
+    void handleLabBtnConfirmerFormClicked();
+    void handleLabBtnAnnulerFormClicked();
+    void handleLabBtnStatistiquesClicked();
+    void handleLabBtnOptimiseurClicked();
+    void handleLabBtnPredicteurClicked();
+    void handleLabBtnExporterClicked();
+    void handleLabBtnTrierClicked();
+    void handleLabTableSelectionChanged();
+    void handleLabSearchChanged(const QString &text);
+
+    void handleProjetListeProjets();
+    void handleProjetAjouterProjet();
+    void handleProjetModifierProjet();
+    void handleProjetSupprimerProjet();
+    void handleProjetRechercheChanged(const QString &text);
+    void handleProjetAnnulerForm();
+    void handleProjetEnregistrerForm();
+    void handleProjetTableSelectionChanged();
+    void handleProjetTableDoubleClicked(int row, int column);
+    void handleProjetTriDateDebut();
+    void handleProjetTriDateFin();
+    void handleProjetTriEtat();
+    void handleProjetTriProgression();
+    void handleProjetStatistiques();
+    void handleProjetSante();
+    void handleProjetOptimiserCharge();
+    void handleProjetIARecommander();
+    void handleProjetFiltres();
+    void handleProjetExporter();
 
     Ui::SmartPub *ui;
 
@@ -473,7 +571,6 @@ private:
     // === VARIABLES MODULE PROJETS ===
     QVector<Projet> projets;
     QVector<Projet> projetsFiltres;
-    int nextProjetId;
     int currentProjetId;
     bool isEditing;
     int currentSortColumn;
@@ -518,6 +615,31 @@ private:
     QMap<int, LaboratoryData> labDataMap;
     int            labNextId;
     int            labEditingId; // -1 = ajout, sinon id en cours d'édition
+
+    // === Validation inline formulaire projets ===
+    QLabel *projErrCodeLabel = nullptr;
+    QLabel *projErrTitreLabel = nullptr;
+    QLabel *projErrDateLabel = nullptr;
+    QLabel *projErrResponsableLabel = nullptr;
+    bool projTouchedCode = false;
+    bool projTouchedTitre = false;
+    bool projTouchedResponsable = false;
+    bool projTouchedDates = false;
+    QTimer *projTitreDebounceTimer = nullptr;
+    QTimer *projCodeDebounceTimer = nullptr;
+
+    // === Validation inline formulaire chercheurs (ajout) ===
+    QLabel *cherchErrNomLabel = nullptr;
+    QLabel *cherchErrPrenomLabel = nullptr;
+    QLabel *cherchErrCinLabel = nullptr;
+    QLabel *cherchErrEmailLabel = nullptr;
+    QLabel *cherchErrGradeLabel = nullptr;
+    bool cherchTouchedNom = false;
+    bool cherchTouchedPrenom = false;
+    bool cherchTouchedCin = false;
+    bool cherchTouchedEmail = false;
+    bool cherchTouchedGrade = false;
+    QTimer *cherchEmailDebounceTimer = nullptr;
 };
 
 #endif // SMARTPUB_H

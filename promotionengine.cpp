@@ -32,7 +32,7 @@ ChercheurPromotionProfile PromotionEngine::loadProfile(QSqlDatabase &db, int idC
     if (q.exec() && q.next())
         p.nbPublications = q.value(0).toInt();
 
-    q.prepare(QStringLiteral("SELECT COUNT(DISTINCT CODE_PROJET) FROM CONTRIBUER WHERE ID_CHERCHEUR = :id"));
+    q.prepare(QStringLiteral("SELECT COUNT(DISTINCT ID_PROJET) FROM CONTRIBUER WHERE ID_CHERCHEUR = :id"));
     q.bindValue(QStringLiteral(":id"), idChercheur);
     if (q.exec() && q.next())
         p.nbProjetsContrib = q.value(0).toInt();
@@ -46,7 +46,9 @@ ChercheurPromotionProfile PromotionEngine::loadProfile(QSqlDatabase &db, int idC
             refDebut = v.toDate();
     }
     if (!refDebut.isValid()) {
-        q.prepare(QStringLiteral("SELECT MIN(DATE_DEBUT_CONTRIB) FROM CONTRIBUER WHERE ID_CHERCHEUR = :id"));
+        q.prepare(QStringLiteral(
+            "SELECT MIN(p.DATE_DEBUT) FROM CONTRIBUER c "
+            "INNER JOIN PROJET p ON p.ID_PROJET = c.ID_PROJET WHERE c.ID_CHERCHEUR = :id"));
         q.bindValue(QStringLiteral(":id"), idChercheur);
         if (q.exec() && q.next()) {
             QVariant v = q.value(0);

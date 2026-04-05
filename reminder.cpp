@@ -1,3 +1,7 @@
+// Rappels sur les échéances de projets. Les relances par e-mail s’appuient sur
+// CHERCHEUR.EMAIL (normalisé trim + lower côté saisie). PROJET.RESPONSABLE = ID_CHERCHEUR uniquement ;
+// l’e-mail du responsable est lu via la table CHERCHEUR, pas via currentText() du combo.
+
 #include "reminder.h"
 
 #include <QDebug>
