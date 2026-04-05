@@ -18,3 +18,4 @@ struct LaboratoryData {
 };
 
 #endif // LABORATOIRE_H
+//
