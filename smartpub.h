@@ -67,6 +67,13 @@
 #include <QPainter>
 #include <QPageSize>
 #include <QPageLayout>
+// Network (vérification délivrabilité email)
+#include <QNetworkAccessManager>
+#include <QNetworkReply>
+#include <QNetworkRequest>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QUrl>
 
 QT_BEGIN_NAMESPACE
 class QPieSeries;
@@ -205,6 +212,8 @@ private slots:
     void on_cherchBtnForgotOk_clicked();
     void on_cherchBtnToggleVue_clicked();
     // on_cherchBtnExportDetails_clicked → remplacée par lambda dans on_cherchVoirDetailsChercheur
+    // === Vérification délivrabilité email (AbstractAPI) ===
+    void on_cherchEmailVerificationReply(QNetworkReply *reply);
 
     // === MODULE PUBLICATIONS ===
     void on_SR_btnVueListe_clicked();
@@ -309,6 +318,8 @@ private:
     bool cherchValidateGrade(bool forSubmit);
     void cherchConnectSignals();
     void cherchApplyModernStyle();
+    // Vérification délivrabilité email via AbstractAPI
+    void cherchVerifyEmailDeliverability(const QString &email);
     void cherchShowLoginView();
     void cherchShowMainView();
     void cherchCheckLogin();
@@ -332,6 +343,7 @@ private:
     void cherchAjouterDonneesTest();
     QString cherchDeterminerCarriere(int projetsCount, const QString &grade);
     void handleChercheursNavigation();
+    bool   cherchValiderNomPrenom(const QString &nom, const QString &prenom);
 
     // === MODULE PUBLICATIONS ===
     void SR_setupUI();
@@ -555,6 +567,12 @@ private:
     QMap<int, ChercheurData> cherchChercheursMap;
     QString cherchOrderByClause;
     QString cherchWhereClause;
+    QString cherchCurrentPhotoPath;
+    // Réseau — vérification délivrabilité email
+    QNetworkAccessManager *cherchNetworkManager = nullptr;
+    bool    cherchEmailDeliverabilityOk  = false;
+    bool    cherchEmailCheckPending      = false;
+    QString cherchLastVerifiedEmail;
 
     // === VARIABLES MODULE FINANCES ===
     bool finVueListeActive;

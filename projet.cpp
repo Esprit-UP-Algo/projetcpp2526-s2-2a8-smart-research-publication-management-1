@@ -730,7 +730,21 @@ ProjetDetailsDialog::ProjetDetailsDialog(const Projet &projet, QWidget *parent)
     setMinimumSize(700, 600);
     resize(750, 650);
 
-    setStyleSheet("QDialog { background-color: #1e1e1e; }");
+    // Style Qt clair — suppression de background-color: #1e1e1e (champs noirs)
+    setStyleSheet(
+        "QDialog { background-color: #f8fafc; }"
+        "QLabel  { color: #1e293b; }"
+        "QGroupBox {"
+        "    font-weight: bold; font-size: 14px;"
+        "    border: 1px solid #e2e8f0; border-radius: 10px;"
+        "    margin-top: 12px; padding-top: 12px;"
+        "    background-color: white;"
+        "}"
+        "QGroupBox::title {"
+        "    subcontrol-origin: margin; left: 14px; padding: 0 8px;"
+        "    color: #3b82f6;"
+        "}"
+        );
 
     QVBoxLayout *mainLayout = new QVBoxLayout(this);
     mainLayout->setSpacing(20);
@@ -755,29 +769,12 @@ ProjetDetailsDialog::ProjetDetailsDialog(const Projet &projet, QWidget *parent)
 
     QFrame *line = new QFrame();
     line->setFrameShape(QFrame::HLine);
-    line->setStyleSheet("background-color: #3a3a3a; border: none;");
+    line->setStyleSheet("background-color: #e2e8f0; border: none;");
     line->setFixedHeight(2);
     mainLayout->addWidget(line);
 
     QGroupBox *infoGroup = new QGroupBox("Informations du Projet");
-    infoGroup->setStyleSheet(
-        "QGroupBox {"
-        "    font-weight: bold;"
-        "    font-size: 14px;"
-        "    border: 2px solid #3a3a3a;"
-        "    border-radius: 12px;"
-        "    margin-top: 15px;"
-        "    padding-top: 15px;"
-        "    background-color: #2d2d2d;"
-        "    color: #ffffff;"
-        "}"
-        "QGroupBox::title {"
-        "    subcontrol-origin: margin;"
-        "    left: 15px;"
-        "    padding: 0 10px;"
-        "    color: #4a9eff;"
-        "}"
-        );
+    infoGroup->setStyleSheet(QString()); // hérité du dialog
 
     QGridLayout *infoLayout = new QGridLayout(infoGroup);
     infoLayout->setSpacing(15);
@@ -785,8 +782,8 @@ ProjetDetailsDialog::ProjetDetailsDialog(const Projet &projet, QWidget *parent)
     infoLayout->setColumnStretch(1, 1);
     infoLayout->setColumnStretch(3, 1);
 
-    QString labelStyle = "color: #b0b0b0; font-size: 13px;";
-    QString valueStyle = "color: #ffffff; font-size: 13px; font-weight: 600;";
+    QString labelStyle = "color: #64748b; font-size: 13px;";
+    QString valueStyle = "color: #1e293b; font-size: 13px; font-weight: 600;";
 
     QLabel *codeLabelInfo = new QLabel("Code:");
     codeLabelInfo->setStyleSheet(labelStyle);
@@ -801,7 +798,7 @@ ProjetDetailsDialog::ProjetDetailsDialog(const Projet &projet, QWidget *parent)
     infoLayout->addWidget(respLabelInfo, 0, 2);
 
     QLabel *respValue = new QLabel(projet.responsable);
-    respValue->setStyleSheet("color: #4a9eff; font-size: 13px; font-weight: 600;");
+    respValue->setStyleSheet("color: #3b82f6; font-size: 13px; font-weight: 600;");
     infoLayout->addWidget(respValue, 0, 3);
 
     QLabel *debutLabel = new QLabel("Début:");
@@ -856,7 +853,7 @@ ProjetDetailsDialog::ProjetDetailsDialog(const Projet &projet, QWidget *parent)
                                    "QProgressBar {"
                                    "    border: none;"
                                    "    border-radius: 10px;"
-                                   "    background-color: #3a3a3a;"
+                                   "    background-color: #e2e8f0;"
                                    "    text-align: center;"
                                    "}"
                                    "QProgressBar::chunk {"
@@ -866,7 +863,7 @@ ProjetDetailsDialog::ProjetDetailsDialog(const Projet &projet, QWidget *parent)
                                    ).arg(projProgressionColor(progValue)));
 
     QLabel *progText = new QLabel(projet.progression);
-    progText->setStyleSheet("color: #ffffff; font-weight: bold; font-size: 13px;");
+    progText->setStyleSheet("color: #1e293b; font-weight: bold; font-size: 13px;");
     progText->setFixedWidth(45);
 
     progLayout->addWidget(progressBar, 1);
@@ -876,24 +873,7 @@ ProjetDetailsDialog::ProjetDetailsDialog(const Projet &projet, QWidget *parent)
     mainLayout->addWidget(infoGroup);
 
     QGroupBox *descGroup = new QGroupBox("Description");
-    descGroup->setStyleSheet(
-        "QGroupBox {"
-        "    font-weight: bold;"
-        "    font-size: 14px;"
-        "    border: 2px solid #3a3a3a;"
-        "    border-radius: 12px;"
-        "    margin-top: 15px;"
-        "    padding-top: 15px;"
-        "    background-color: #2d2d2d;"
-        "    color: #ffffff;"
-        "}"
-        "QGroupBox::title {"
-        "    subcontrol-origin: margin;"
-        "    left: 15px;"
-        "    padding: 0 10px;"
-        "    color: #4a9eff;"
-        "}"
-        );
+    descGroup->setStyleSheet(QString()); // hérité du dialog
 
     QVBoxLayout *descLayout = new QVBoxLayout(descGroup);
     descLayout->setContentsMargins(15, 20, 15, 15);
@@ -902,11 +882,11 @@ ProjetDetailsDialog::ProjetDetailsDialog(const Projet &projet, QWidget *parent)
     descBrowser->setPlainText(projet.description.isEmpty() ? "Aucune description disponible." : projet.description);
     descBrowser->setStyleSheet(
         "QTextBrowser {"
-        "    border: 1px solid #3a3a3a;"
+        "    border: 1px solid #e2e8f0;"
         "    border-radius: 8px;"
         "    padding: 15px;"
-        "    background-color: #1e1e1e;"
-        "    color: #e0e0e0;"
+        "    background-color: #f8fafc;"
+        "    color: #334155;"
         "    font-size: 14px;"
         "    line-height: 1.6;"
         "}"
@@ -925,7 +905,7 @@ ProjetDetailsDialog::ProjetDetailsDialog(const Projet &projet, QWidget *parent)
     closeButton->setCursor(Qt::PointingHandCursor);
     closeButton->setStyleSheet(
         "QPushButton {"
-        "    background-color: #4a9eff;"
+        "    background-color: #3b82f6;"
         "    color: white;"
         "    border: none;"
         "    border-radius: 8px;"
@@ -933,7 +913,7 @@ ProjetDetailsDialog::ProjetDetailsDialog(const Projet &projet, QWidget *parent)
         "    font-weight: bold;"
         "}"
         "QPushButton:hover {"
-        "    background-color: #3a8eef;"
+        "    background-color: #2563eb;"
         "}"
         );
     connect(closeButton, &QPushButton::clicked, this, &QDialog::accept);
@@ -1642,35 +1622,12 @@ static bool projetTitreValide(const QString &titreBrut, QString *msg = nullptr)
             *msg = QStringLiteral("Le titre du projet est obligatoire.");
         return false;
     }
-    if (t.at(0).isDigit()) {
+    // Regex ^[A-Za-z].* : doit commencer par une lettre (maj ou min)
+    // Autorise : "Projet1", "Smart Lab" — interdit : "123projet", "!abc"
+    static const QRegularExpression rxTitre(QStringLiteral("^[A-Za-z].*"));
+    if (!rxTitre.match(t).hasMatch()) {
         if (msg)
-            *msg = QStringLiteral("Le titre ne doit pas commencer par un chiffre.");
-        return false;
-    }
-    bool onlyDigits = true;
-    for (QChar c : t) {
-        if (!c.isDigit()) {
-            onlyDigits = false;
-            break;
-        }
-    }
-    if (onlyDigits) {
-        if (msg)
-            *msg = QStringLiteral("Le titre ne peut pas être un nombre seul.");
-        return false;
-    }
-    bool hasLetter = false;
-    bool hasLower = false;
-    for (QChar c : t) {
-        if (c.isLetter()) {
-            hasLetter = true;
-            if (c.isLower())
-                hasLower = true;
-        }
-    }
-    if (hasLetter && !hasLower) {
-        if (msg)
-            *msg = QStringLiteral("Le titre ne doit pas être entièrement en MAJUSCULES.");
+            *msg = QStringLiteral("Le titre doit commencer par une lettre (ex: Projet1, Smart Lab).");
         return false;
     }
     return true;
@@ -2870,36 +2827,35 @@ void SmartPub::handleProjetTriProgression()
 
 void SmartPub::projSortProjetsBy(int column, Qt::SortOrder order)
 {
-    switch (column) {
-    case 2:
-        std::sort(projets.begin(), projets.end(),
-                  [order](const Projet &a, const Projet &b) {
-                      return order == Qt::AscendingOrder ? a.dateDebut < b.dateDebut : a.dateDebut > b.dateDebut;
-                  });
-        break;
-    case 3:
-        std::sort(projets.begin(), projets.end(),
-                  [order](const Projet &a, const Projet &b) {
-                      return order == Qt::AscendingOrder ? a.dateFin < b.dateFin : a.dateFin > b.dateFin;
-                  });
-        break;
-    case 5:
-        std::sort(projets.begin(), projets.end(),
-                  [order](const Projet &a, const Projet &b) {
-                      return order == Qt::AscendingOrder ? a.etat < b.etat : a.etat > b.etat;
-                  });
-        break;
-    case 6:
-        std::sort(projets.begin(), projets.end(),
-                  [order](const Projet &a, const Projet &b) {
-                      int progA = a.progression.left(a.progression.indexOf('%')).toInt();
-                      int progB = b.progression.left(b.progression.indexOf('%')).toInt();
-                      return order == Qt::AscendingOrder ? progA < progB : progA > progB;
-                  });
-        break;
-    }
+    // Comparateur générique — utilisé pour projets ET projetsFiltres
+    auto cmp = [column, order](const Projet &a, const Projet &b) -> bool {
+        switch (column) {
+        case 2:
+            return order == Qt::AscendingOrder ? a.dateDebut < b.dateDebut : a.dateDebut > b.dateDebut;
+        case 3:
+            return order == Qt::AscendingOrder ? a.dateFin < b.dateFin : a.dateFin > b.dateFin;
+        case 5:
+            return order == Qt::AscendingOrder ? a.etat < b.etat : a.etat > b.etat;
+        case 6: {
+            int pa = a.progression.left(a.progression.indexOf('%')).toInt();
+            int pb = b.progression.left(b.progression.indexOf('%')).toInt();
+            return order == Qt::AscendingOrder ? pa < pb : pa > pb;
+        }
+        default:
+            return false;
+        }
+    };
 
-    projChargerProjets();
+    std::sort(projets.begin(), projets.end(), cmp);
+    if (filtresActifs)
+        std::sort(projetsFiltres.begin(), projetsFiltres.end(), cmp);
+
+    // Repeupler le tableau depuis le vecteur trié SANS recharger depuis Oracle
+    projViderTable();
+    const QVector<Projet> &src = filtresActifs ? projetsFiltres : projets;
+    for (int i = 0; i < src.size(); ++i)
+        projAjouterProjetTable(src[i], i);
+    projAjusterColonnesTable();
 }
 
 void SmartPub::handleProjetStatistiques()
@@ -3126,6 +3082,15 @@ Projet SmartPub::projGetProjetFromForm() const
     projet.etat = ui->comboBoxEtatForm->currentData().toString();
     if (projet.etat.isEmpty())
         projet.etat = QStringLiteral("en_cours");
+
+    // Progression automatique cohérente avec l'état (corrige ORA-01722 et incohérences)
+    if (projet.etat == QStringLiteral("termine"))
+        projet.progression = QStringLiteral("100%");
+    else if (projet.etat == QStringLiteral("en_cours"))
+        projet.progression = QStringLiteral("50%");
+    else // suspendu, annule
+        projet.progression = QStringLiteral("0%");
+
     projet.description = ui->textEditDescriptionForm->toPlainText();
     return projet;
 }

@@ -92,7 +92,7 @@ void SmartPub::evAfficherListeEvents() {
 
     evEventsMap.clear();
     QSqlQuery query(db);
-    if (!query.exec("SELECT CODE_EVENEMENT, NOM, LIEU, DATE_EVENEMENT FROM EVENEMENT ORDER BY DATE_EVENEMENT")) {
+    if (!query.exec("SELECT ID_EVENEMENT, CODE_EVENEMENT, NOM, LIEU, DATE_EVENEMENT FROM EVENEMENT ORDER BY DATE_EVENEMENT")) {
         QMessageBox::warning(this, "Erreur", "Impossible de charger les événements : " + query.lastError().text());
         return;
     }
@@ -102,6 +102,7 @@ void SmartPub::evAfficherListeEvents() {
 
     while (query.next()) {
         EventData data;
+        data.id = QString::number(query.value("ID_EVENEMENT").toLongLong());
         data.code = QString::number(query.value("CODE_EVENEMENT").toLongLong());
         data.nom = query.value("NOM").toString();
         data.lieu = query.value("LIEU").toString();
@@ -136,6 +137,7 @@ void SmartPub::evAjouterEventTable(const EventData &data) {
     {
         QTableWidgetItem *codeItem = new QTableWidgetItem(data.code);
         codeItem->setFlags(codeItem->flags() & ~Qt::ItemIsEditable);
+        codeItem->setData(Qt::UserRole, data.id);
         ui->evTableEvents->setItem(row, 0, codeItem);
     }
     {
@@ -172,7 +174,7 @@ void SmartPub::evRechercherParLieu() {
 
     ui->evTableSearchEvents->setRowCount(0);
     QSqlQuery query(db);
-    query.prepare("SELECT CODE_EVENEMENT, NOM, LIEU, DATE_EVENEMENT FROM EVENEMENT WHERE UPPER(LIEU) LIKE UPPER(:lieu) ORDER BY DATE_EVENEMENT");
+    query.prepare("SELECT ID_EVENEMENT, CODE_EVENEMENT, NOM, LIEU, DATE_EVENEMENT FROM EVENEMENT WHERE UPPER(LIEU) LIKE UPPER(:lieu) ORDER BY DATE_EVENEMENT");
     query.bindValue(":lieu", "%" + lieu + "%");
     if (!query.exec()) {
         QMessageBox::warning(this, "Erreur", "Recherche échouée : " + query.lastError().text());
@@ -233,11 +235,15 @@ void SmartPub::handleEvBtnAjouterEventClicked() {
     };
 
     if (!evEditingCode.isEmpty()) {
-        bool codeOk = false;
-        const qlonglong code = evEditingCode.toLongLong(&codeOk);
-        if (!codeOk) {
+        if (!evEventsMap.contains(evEditingCode)) {
             QMessageBox::critical(this, "Erreur",
-                                  "Code d'événement invalide pour la modification.");
+                                  "Événement introuvable pour la modification.");
+            return;
+        }
+        const QString idEvenement = evEventsMap.value(evEditingCode).id;
+        if (idEvenement.isEmpty()) {
+            QMessageBox::critical(this, "Erreur",
+                                  "Identifiant d'événement invalide pour la modification.");
             return;
         }
 
@@ -259,11 +265,11 @@ void SmartPub::handleEvBtnAjouterEventClicked() {
             const QString dateLiteral = parsedDate.toString("dd/MM/yyyy");
             sql = "UPDATE EVENEMENT SET NOM = '" + nomSql + "', LIEU = '" + lieuSql + "', "
                   "DATE_EVENEMENT = TO_DATE('" + dateLiteral + "', 'DD/MM/YYYY') "
-                  "WHERE CODE_EVENEMENT = " + QString::number(code);
+                  "WHERE ID_EVENEMENT = " + idEvenement;
         } else {
             // Si la date n'a pas changé, on évite d'attaquer DATE_EVENEMENT (ce qui corrige l'erreur pour Nom/Lieu).
             sql = "UPDATE EVENEMENT SET NOM = '" + nomSql + "', LIEU = '" + lieuSql + "' "
-                  "WHERE CODE_EVENEMENT = " + QString::number(code);
+                  "WHERE ID_EVENEMENT = " + idEvenement;
         }
 
         if (!query.exec(sql)) {
@@ -284,15 +290,38 @@ void SmartPub::handleEvBtnAjouterEventClicked() {
         QMessageBox::information(this, "Succès", "Événement modifié avec succès !");
         evEditingCode.clear();
     } else {
+        const QString codeStr = ui->evLineEditID->text().trimmed();
+        if (codeStr.isEmpty()) {
+            QMessageBox::warning(this, "Erreur",
+                                 "Veuillez remplir le code de l'événement.");
+            return;
+        }
+        bool codeOk = false;
+        const qlonglong codeVal = codeStr.toLongLong(&codeOk);
+        if (!codeOk) {
+            QMessageBox::warning(this, "Erreur",
+                                 "Le code doit être un nombre entier valide.");
+            return;
+        }
+
+        // Même contournement que pour UPDATE : QODBC + Oracle échoue souvent sur INSERT préparé + bind.
+        QString nomSql = nom;
+        nomSql.replace('\'', "''");
+        QString lieuSql = lieu;
+        lieuSql.replace('\'', "''");
+        const QString dateLiteral = parsedDate.toString("dd/MM/yyyy");
+        const QString sql =
+            "INSERT INTO EVENEMENT (CODE_EVENEMENT, NOM, LIEU, DATE_EVENEMENT) VALUES ("
+            + QString::number(codeVal) + ", '" + nomSql + "', '" + lieuSql + "', "
+            "TO_DATE('" + dateLiteral + "', 'DD/MM/YYYY'))";
+
         QSqlQuery query(db);
-        query.prepare("INSERT INTO EVENEMENT (NOM, LIEU, DATE_EVENEMENT) VALUES (:nom, :lieu, :date_event)");
-        query.bindValue(":nom", nom);
-        query.bindValue(":lieu", lieu);
-        query.bindValue(":date_event", parsedDate);
-        if (!query.exec()) {
-            QMessageBox::critical(this, "Erreur",
-                                  "Échec de l'ajout : " +
-                                      sqlErrorMessage(query.lastError()));
+        if (!query.exec(sql)) {
+            QMessageBox::critical(
+                this, "Erreur",
+                "Échec de l'ajout : " + sqlErrorMessage(query.lastError()) + "\nRequête: " + sql
+                    + "\nDB: " + query.lastError().databaseText() + "\nDriver: "
+                    + query.lastError().driverText());
             return;
         }
         QMessageBox::information(this, "Succès", "Événement ajouté avec succès !");
@@ -349,23 +378,28 @@ void SmartPub::handleEvBtnSupprimerEventClicked() {
         QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
     if (reply == QMessageBox::Yes) {
         QString code = ui->evTableEvents->item(currentRow, 0)->text();
+        QTableWidgetItem *codeCell = ui->evTableEvents->item(currentRow, 0);
+        QString idStr = codeCell ? codeCell->data(Qt::UserRole).toString().trimmed() : QString();
+        if (idStr.isEmpty())
+            idStr = evEventsMap.value(code.trimmed()).id;
+
         QSqlDatabase db = Connection::instance()->getDatabase();
         if (!db.isOpen()) {
             return;
         }
         bool ok = false;
-        const qlonglong codeNum = code.trimmed().toLongLong(&ok);
-        if (!ok) {
-            QMessageBox::critical(this, "Erreur", "Code d'événement invalide.");
+        const qlonglong idNum = idStr.toLongLong(&ok);
+        if (!ok || idStr.isEmpty()) {
+            QMessageBox::critical(this, "Erreur", "Identifiant d'événement invalide.");
             return;
         }
 
         // Workaround QODBC: certaines configs échouent avec requêtes préparées + bind.
         // On supprime d'abord les dépendances éventuelles, puis l'événement.
         QSqlQuery query(db);
-        query.exec("DELETE FROM PARTICIPER WHERE CODE_EVENEMENT = " + QString::number(codeNum));
+        query.exec("DELETE FROM PARTICIPER WHERE ID_EVENEMENT = " + QString::number(idNum));
 
-        if (!query.exec("DELETE FROM EVENEMENT WHERE CODE_EVENEMENT = " + QString::number(codeNum))) {
+        if (!query.exec("DELETE FROM EVENEMENT WHERE ID_EVENEMENT = " + QString::number(idNum))) {
             QMessageBox::critical(
                 this, "Erreur",
                 "Échec de la suppression : " + query.lastError().text() +
