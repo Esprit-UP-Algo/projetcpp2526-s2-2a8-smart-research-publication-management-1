@@ -1650,7 +1650,20 @@ void SmartPub::on_cherchBtnStatistiques_clicked() {
 void SmartPub::cherchAfficherStatistiques() {
     QDialog *dialog = new QDialog(this);
     dialog->setWindowTitle("Statistiques et métiers innovants — Chercheurs");
-    dialog->setMinimumSize(1100, 820);
+
+    // Dimensionner à 85 % de l'écran disponible, avec un minimum raisonnable
+    QScreen *screen = QApplication::primaryScreen();
+    if (screen) {
+        QRect available = screen->availableGeometry();
+        int w = qMax(860, qRound(available.width()  * 0.85));
+        int h = qMax(600, qRound(available.height() * 0.85));
+        dialog->resize(w, h);
+        // Centrer sur l'écran
+        dialog->move(available.center() - QPoint(w / 2, h / 2));
+    } else {
+        dialog->resize(960, 680);
+    }
+    dialog->setMinimumSize(760, 540);
     dialog->setStyleSheet(R"(
             QDialog { background-color: #f8fafc; }
             QLabel { color: #1e293b; background: transparent; border: none; }
@@ -1672,6 +1685,137 @@ void SmartPub::cherchAfficherStatistiques() {
                 color: #1e40af;
                 background: white;
                 border-bottom: 3px solid #3b82f6;
+            }
+QComboBox, QSpinBox {
+                background-color: #ffffff;
+                border: 2px solid #e2e8f0;
+                border-radius: 8px;
+                padding: 6px 12px;
+                color: #1e293b;
+                font-size: 14px;
+            }
+            QComboBox:focus, QSpinBox:focus {
+                border: 2px solid #3b82f6;
+                background-color: #ffffff;
+            }
+            QComboBox::drop-down {
+                border: none;
+                width: 24px;
+            }
+            QComboBox QAbstractItemView {
+                background-color: #ffffff;
+                border: 2px solid #e2e8f0;
+                border-radius: 8px;
+                selection-background-color: #eff6ff;
+                selection-color: #1e40af;
+                color: #1e293b;
+                outline: none;
+                padding: 4px;
+            }
+            QComboBox QAbstractItemView::item {
+                padding: 8px 12px;
+                border-radius: 4px;
+                color: #1e293b;
+                min-height: 28px;
+            }
+            QComboBox QAbstractItemView::item:hover {
+                background-color: #f1f5f9;
+                color: #1e293b;
+            }
+            QComboBox QAbstractItemView::item:selected {
+                background-color: #eff6ff;
+                color: #1e40af;
+                font-weight: 600;
+            }
+            QListWidget {
+                background-color: #ffffff;
+                border: 2px solid #e2e8f0;
+                border-radius: 10px;
+                padding: 8px;
+                color: #1e293b;
+                font-size: 14px;
+            }
+            QListWidget::item {
+                padding: 10px 12px;
+                border-radius: 6px;
+                color: #1e293b;
+                background-color: transparent;
+                border-bottom: 1px solid #f1f5f9;
+            }
+            QListWidget::item:hover {
+                background-color: #f8fafc;
+                color: #1e293b;
+            }
+            QListWidget::item:selected {
+                background-color: #eff6ff;
+                color: #1e40af;
+                font-weight: 600;
+            }
+            /* --- Style pour le Tableau Matchmaking --- */
+            QTableWidget {
+                background-color: #ffffff;
+                border: 1px solid #e2e8f0;
+                border-radius: 8px;
+                gridline-color: #f1f5f9;
+                color: #334155;
+                selection-background-color: #eff6ff; /* Bleu très clair au clic */
+                selection-color: #1e40af; /* Texte bleu foncé au clic */
+                outline: none;
+            }
+            QTableWidget::item {
+                padding: 8px;
+                border-bottom: 1px solid #f8fafc;
+            }
+            QHeaderView::section {
+                background-color: #f8fafc;
+                color: #475569;
+                font-weight: 700;
+                padding: 10px;
+                border: none;
+                border-bottom: 2px solid #e2e8f0;
+                border-right: 1px solid #f1f5f9;
+            }
+            QHeaderView {
+                background-color: transparent;
+                border-top-left-radius: 8px;
+                border-top-right-radius: 8px;
+            }
+
+            /* --- Style pour les Scrollbars (Vue d'ensemble et Listes) --- */
+            QScrollBar:vertical {
+                border: none;
+                background: #f8fafc;
+                width: 10px;
+                margin: 0px 0px 0px 0px;
+                border-radius: 5px;
+            }
+            QScrollBar::handle:vertical {
+                background: #cbd5e1;
+                min-height: 30px;
+                border-radius: 5px;
+            }
+            QScrollBar::handle:vertical:hover {
+                background: #94a3b8; /* Devient plus foncé au survol */
+            }
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+                height: 0px; /* Cache les petites flèches de défilement (design moderne) */
+            }
+            QScrollBar:horizontal {
+                border: none;
+                background: #f8fafc;
+                height: 10px;
+                border-radius: 5px;
+            }
+            QScrollBar::handle:horizontal {
+                background: #cbd5e1;
+                min-width: 30px;
+                border-radius: 5px;
+            }
+            QScrollBar::handle:horizontal:hover {
+                background: #94a3b8;
+            }
+            QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
+                width: 0px;
             }
         )");
 
@@ -1732,23 +1876,53 @@ void SmartPub::cherchAfficherStatistiques() {
 
     QTabWidget *tabs = new QTabWidget(dialog);
     tabs->setDocumentMode(true);
-    tabs->setStyleSheet(
-        "QTabWidget::pane { border: 1px solid #e2e8f0; border-radius: 12px; background: white; }"
-        "QTabBar::tab { padding: 10px 18px; font-weight: 600; color: #64748b; }"
-        "QTabBar::tab:selected { color: #1e293b; border-bottom: 2px solid #3b82f6; }");
+    tabs->setStyleSheet(R"(
+        QTabWidget::pane {
+            border: 2px solid #e2e8f0;
+            border-radius: 12px;
+            background-color: #ffffff;
+            margin-top: -1px;
+        }
+        QTabBar::tab {
+            padding: 10px 20px;
+            font-weight: 600;
+            color: #64748b;
+            background-color: #f1f5f9;
+            border: 1px solid #e2e8f0;
+            border-bottom: none;
+            border-radius: 8px 8px 0 0;
+            margin-right: 4px;
+            min-width: 140px;
+        }
+        QTabBar::tab:selected {
+            color: #1e40af;
+            background-color: #ffffff;
+            border-bottom: 3px solid #3b82f6;
+        }
+        QTabBar::tab:hover:!selected {
+            background-color: #e2e8f0;
+            color: #334155;
+        }
+    )");
 
     QWidget *tabOverview = new QWidget();
+    tabOverview->setStyleSheet("background-color: #f8fafc;");
     QVBoxLayout *ovMain = new QVBoxLayout(tabOverview);
     ovMain->setSpacing(16);
-    ovMain->setContentsMargins(12, 12, 12, 12);
+    ovMain->setContentsMargins(16, 16, 16, 16);
     ovMain->addLayout(statsGrid);
 
     QScrollArea *scrollOverview = new QScrollArea();
     scrollOverview->setWidgetResizable(true);
     scrollOverview->setFrameShape(QFrame::NoFrame);
+    scrollOverview->setStyleSheet(
+        "QScrollArea { background-color: #f8fafc; border: none; }"
+        "QScrollArea > QWidget > QWidget { background-color: #f8fafc; }");
     QWidget *scrollContent = new QWidget();
+    scrollContent->setStyleSheet("background-color: #f8fafc;");
     QVBoxLayout *ovScrollLay = new QVBoxLayout(scrollContent);
     ovScrollLay->setSpacing(20);
+    ovScrollLay->setContentsMargins(0, 8, 0, 8);
 
     QHBoxLayout *chartsRow = new QHBoxLayout();
     chartsRow->setSpacing(16);
@@ -1811,15 +1985,23 @@ void SmartPub::cherchAfficherStatistiques() {
         QChart *chart = new QChart();
         chart->addSeries(series);
         chart->setTitle(title);
+        chart->setTitleFont(QFont("Segoe UI", 11, QFont::DemiBold));
+        chart->setTitleBrush(QBrush(QColor("#1e293b")));
         chart->setAnimationOptions(QChart::SeriesAnimations);
-        chart->setBackgroundRoundness(8);
-        chart->setBackgroundBrush(QBrush(QColor("#ffffff")));
+        chart->setBackgroundRoundness(0);
+        chart->setBackgroundBrush(QBrush(Qt::transparent));
+        chart->setPlotAreaBackgroundBrush(QBrush(QColor("#ffffff")));
+        chart->setPlotAreaBackgroundVisible(true);
         chart->legend()->setVisible(false);
+        chart->setMargins(QMargins(8, 8, 8, 8));
 
         QBarCategoryAxis *axisX = new QBarCategoryAxis();
         for (const QString &c : categories)
             axisX->append(c);
         axisX->setLabelsAngle(-25);
+        axisX->setLabelsBrush(QBrush(QColor("#475569")));
+        axisX->setLinePenColor(QColor("#e2e8f0"));
+        axisX->setGridLinePen(QPen(QColor("#f1f5f9")));
         chart->addAxis(axisX, Qt::AlignBottom);
         series->attachAxis(axisX);
 
@@ -1830,10 +2012,16 @@ void SmartPub::cherchAfficherStatistiques() {
         axisY->setRange(0, vmax * 1.15 + 0.5);
         axisY->setLabelFormat("%.0f");
         axisY->setTitleText(yLabel);
+        axisY->setLabelsBrush(QBrush(QColor("#475569")));
+        axisY->setTitleBrush(QBrush(QColor("#64748b")));
+        axisY->setLinePenColor(QColor("#e2e8f0"));
+        axisY->setGridLinePen(QPen(QColor("#f1f5f9")));
         chart->addAxis(axisY, Qt::AlignLeft);
         series->attachAxis(axisY);
 
         cv->setChart(chart);
+        cv->setStyleSheet("background: transparent; border: none;");
+        cv->setBackgroundBrush(QBrush(Qt::transparent));
         return cv;
     };
 
@@ -1842,11 +2030,20 @@ void SmartPub::cherchAfficherStatistiques() {
             "Effectifs par laboratoire (chercheurs distincts via projets)", labNames, labCounts,
             "#3b82f6", "Nombre de chercheurs"));
     } else {
+        QFrame *emptyFrame = new QFrame();
+        emptyFrame->setStyleSheet(
+            "QFrame { background-color: #fff7ed; border: 1px solid #fed7aa; "
+            "border-radius: 12px; }");
+        QHBoxLayout *emptyLay = new QHBoxLayout(emptyFrame);
+        emptyLay->setContentsMargins(16, 14, 16, 14);
         QLabel *empty = new QLabel(
-            "Aucune donnée laboratoire : vérifiez LABORATOIRE, CONTRIBUER et les clés CODE_PROJET.");
+            "⚠️  Aucune donnée laboratoire — vérifiez les tables LABORATOIRE, CONTRIBUER et les clés CODE_PROJET.");
         empty->setWordWrap(true);
-        empty->setStyleSheet("color: #64748b; padding: 16px;");
-        chartsRow->addWidget(empty);
+        empty->setStyleSheet(
+            "color: #92400e; font-size: 13px; font-weight: 500; "
+            "background: transparent; border: none;");
+        emptyLay->addWidget(empty);
+        chartsRow->addWidget(emptyFrame);
     }
 
     if (!labNamesSat.isEmpty() && labSurcharge.size() == labNamesSat.size()) {
@@ -1855,10 +2052,25 @@ void SmartPub::cherchAfficherStatistiques() {
             labSurcharge, "#8b5cf6", "Score sur 100"));
     }
 
-    ovScrollLay->addLayout(chartsRow);
+    QFrame *chartsFrame = new QFrame();
+    chartsFrame->setStyleSheet(
+        "QFrame { background-color: #ffffff; border-radius: 16px; border: 1px solid #e2e8f0; }");
+    QVBoxLayout *chartsFrameLay = new QVBoxLayout(chartsFrame);
+    chartsFrameLay->setContentsMargins(16, 16, 16, 16);
+    QLabel *chartsTitle = new QLabel("Statistiques par laboratoire");
+    chartsTitle->setStyleSheet(
+        "font-size: 17px; font-weight: 600; color: #1e293b; "
+        "background: transparent; border: none;");
+    chartsFrameLay->addWidget(chartsTitle);
+    chartsFrameLay->addLayout(chartsRow);
+    ovScrollLay->addWidget(chartsFrame);
 
     QFrame *gradeFrame = new QFrame();
-    gradeFrame->setStyleSheet("QFrame { background: white; border-radius: 16px; border: 1px solid #e2e8f0; }");
+    gradeFrame->setStyleSheet(
+        "QFrame { background-color: #ffffff; border-radius: 16px; "
+        "border: 1px solid #e2e8f0; } "
+        "QFrame QLabel { background: transparent; border: none; } "
+        "QFrame QProgressBar { border: none; }");
     QVBoxLayout *gradeLay = new QVBoxLayout(gradeFrame);
     gradeLay->setContentsMargins(20, 20, 20, 20);
     QLabel *gradeTitle = new QLabel("Répartition par grade");
@@ -1891,7 +2103,11 @@ void SmartPub::cherchAfficherStatistiques() {
     ovScrollLay->addWidget(gradeFrame);
 
     QFrame *overloadFrame = new QFrame();
-    overloadFrame->setStyleSheet("QFrame { background: white; border-radius: 16px; border: 1px solid #e2e8f0; }");
+    overloadFrame->setStyleSheet(
+        "QFrame { background-color: #ffffff; border-radius: 16px; "
+        "border: 1px solid #e2e8f0; } "
+        "QFrame QLabel { background: transparent; border: none; } "
+        "QFrame QProgressBar { border: none; }");
     QVBoxLayout *overloadLayout = new QVBoxLayout(overloadFrame);
     overloadLayout->setContentsMargins(20, 20, 20, 20);
     QLabel *overloadTitle = new QLabel("Indice de surcharge par chercheur (projets affectés)");
@@ -1972,92 +2188,325 @@ void SmartPub::cherchAfficherStatistiques() {
     tabs->addTab(tabOverview, "Vue d'ensemble");
 
     QWidget *tabPromo = new QWidget();
-    QVBoxLayout *promoLay = new QVBoxLayout(tabPromo);
+    tabPromo->setStyleSheet("background-color: #f8fafc;");
+    QVBoxLayout *tabPromoOuterLay = new QVBoxLayout(tabPromo);
+    tabPromoOuterLay->setContentsMargins(0, 0, 0, 0);
+    tabPromoOuterLay->setSpacing(0);
+
+    // ScrollArea pour éviter la compression quand le dialog est redimensionné
+    QScrollArea *promoScroll = new QScrollArea();
+    promoScroll->setWidgetResizable(true);
+    promoScroll->setFrameShape(QFrame::NoFrame);
+    promoScroll->setStyleSheet(
+        "QScrollArea { background-color: #f8fafc; border: none; }"
+        "QScrollArea > QWidget > QWidget { background-color: #f8fafc; }");
+
+    QWidget *promoScrollContent = new QWidget();
+    promoScrollContent->setStyleSheet("background-color: #f8fafc;");
+    QVBoxLayout *promoLay = new QVBoxLayout(promoScrollContent);
     promoLay->setContentsMargins(16, 16, 16, 16);
     promoLay->setSpacing(12);
 
+    // ── Carte : Sélection du chercheur + critères ─────────────────────────────
+    QFrame *promoFormCard = new QFrame();
+    promoFormCard->setStyleSheet(
+        "QFrame { background-color: #ffffff; border-radius: 14px; border: 1px solid #e2e8f0; }"
+        "QLabel { background: transparent; border: none; color: #334155; font-size: 13px; font-weight: 600; }"
+        "QComboBox, QSpinBox { background-color: #ffffff; border: 2px solid #e2e8f0; border-radius: 8px; "
+        "                      padding: 6px 10px; color: #1e293b; font-size: 13px; }"
+        "QComboBox:focus, QSpinBox:focus { border-color: #3b82f6; }"
+        "QComboBox QAbstractItemView { background: #ffffff; color: #1e293b; border: 2px solid #e2e8f0; "
+        "                              selection-background-color: #eff6ff; selection-color: #1e40af; }"
+        "QComboBox QAbstractItemView::item { color: #1e293b; padding: 6px 10px; }"
+        );
+    QVBoxLayout *promoFormCardLay = new QVBoxLayout(promoFormCard);
+    promoFormCardLay->setContentsMargins(20, 16, 20, 16);
+    promoFormCardLay->setSpacing(10);
+
+    QLabel *promoFormTitle = new QLabel("⚙️  Paramètres d'évaluation");
+    promoFormTitle->setStyleSheet(
+        "font-size: 15px; font-weight: 700; color: #1e293b; "
+        "background: transparent; border: none;");
+    promoFormCardLay->addWidget(promoFormTitle);
+
     QFormLayout *promoForm = new QFormLayout();
-    QComboBox *comboPromo = new QComboBox();
+    promoForm->setSpacing(8);
+    promoForm->setLabelAlignment(Qt::AlignRight | Qt::AlignVCenter);
+
     QList<int> idsSorted = cherchChercheursMap.keys();
     std::sort(idsSorted.begin(), idsSorted.end());
+
+    QComboBox *comboPromo = new QComboBox();
     for (int id : idsSorted) {
         const ChercheurData &d = cherchChercheursMap[id];
-        comboPromo->addItem(QString("%1 %2 — id %3").arg(d.prenom, d.nom).arg(id), id);
+        comboPromo->addItem(
+            QString("%1 %2").arg(d.prenom, d.nom), id);
     }
 
     PromotionCriteria critDefaults;
-    QSpinBox *spinAns = new QSpinBox();
-    spinAns->setRange(0, 50);
+    QSpinBox *spinAns  = new QSpinBox(); spinAns->setRange(0, 50);
+    QSpinBox *spinPub  = new QSpinBox(); spinPub->setRange(0, 500);
+    QSpinBox *spinProj = new QSpinBox(); spinProj->setRange(0, 100);
     spinAns->setValue(critDefaults.minAnneesAnciennete);
-    QSpinBox *spinPub = new QSpinBox();
-    spinPub->setRange(0, 500);
     spinPub->setValue(critDefaults.minPublications);
-    QSpinBox *spinProj = new QSpinBox();
-    spinProj->setRange(0, 100);
     spinProj->setValue(critDefaults.minProjetsGeres);
 
-    promoForm->addRow("Chercheur", comboPromo);
-    promoForm->addRow("Seuil ancienneté (années)", spinAns);
-    promoForm->addRow("Seuil publications", spinPub);
-    promoForm->addRow("Seuil projets (contributions)", spinProj);
-    promoLay->addLayout(promoForm);
+    promoForm->addRow("Chercheur :", comboPromo);
+    promoForm->addRow("Seuil ancienneté (années) :", spinAns);
+    promoForm->addRow("Seuil publications :", spinPub);
+    promoForm->addRow("Seuil projets (contributions) :", spinProj);
+    promoFormCardLay->addLayout(promoForm);
+    promoLay->addWidget(promoFormCard);
 
-    QLabel *promoResultTitle = new QLabel("Résultat");
-    promoResultTitle->setStyleSheet("font-weight: 700; color: #1e293b;");
-    promoLay->addWidget(promoResultTitle);
+    // ── Carte : Score visuel ──────────────────────────────────────────────────
+    QFrame *scoreCard = new QFrame();
+    scoreCard->setStyleSheet(
+        "QFrame { background-color: #ffffff; border-radius: 14px; border: 1px solid #e2e8f0; }"
+        "QLabel { background: transparent; border: none; }");
+    QHBoxLayout *scoreLay = new QHBoxLayout(scoreCard);
+    scoreLay->setContentsMargins(20, 16, 20, 16);
+    scoreLay->setSpacing(20);
 
-    QLabel *promoVerdict = new QLabel();
+    // Cercle de score (label grand)
+    QLabel *scoreCircle = new QLabel("—");
+    scoreCircle->setFixedSize(90, 90);
+    scoreCircle->setAlignment(Qt::AlignCenter);
+    scoreCircle->setStyleSheet(
+        "font-size: 26px; font-weight: 800; color: #64748b; "
+        "border: 4px solid #e2e8f0; border-radius: 45px; background: #f8fafc;");
+
+    QVBoxLayout *scoreRightLay = new QVBoxLayout();
+    scoreRightLay->setSpacing(6);
+
+    QLabel *promoVerdict = new QLabel("Sélectionnez un chercheur pour évaluer son éligibilité.");
     promoVerdict->setWordWrap(true);
-    promoVerdict->setStyleSheet("font-size: 15px; padding: 8px;");
+    promoVerdict->setStyleSheet(
+        "font-size: 15px; color: #475569; background: transparent; border: none;");
+
+    QProgressBar *scoreBar = new QProgressBar();
+    scoreBar->setRange(0, 100);
+    scoreBar->setValue(0);
+    scoreBar->setTextVisible(false);
+    scoreBar->setFixedHeight(10);
+    scoreBar->setStyleSheet(
+        "QProgressBar { border: none; border-radius: 5px; background: #e2e8f0; }"
+        "QProgressBar::chunk { border-radius: 5px; background: #64748b; }");
+
+    QLabel *scoreLabel = new QLabel("Score : — / 10");
+    scoreLabel->setStyleSheet(
+        "font-size: 12px; color: #64748b; background: transparent; border: none;");
+
+    scoreRightLay->addWidget(promoVerdict);
+    scoreRightLay->addWidget(scoreBar);
+    scoreRightLay->addWidget(scoreLabel);
+
+    scoreLay->addWidget(scoreCircle);
+    scoreLay->addLayout(scoreRightLay, 1);
+    promoLay->addWidget(scoreCard);
+
+    // ── Carte : Détails des critères ──────────────────────────────────────────
+    QFrame *detailsCard = new QFrame();
+    detailsCard->setStyleSheet(
+        "QFrame { background-color: #ffffff; border-radius: 14px; border: 1px solid #e2e8f0; }"
+        "QLabel { background: transparent; border: none; }");
+    QVBoxLayout *detailsCardLay = new QVBoxLayout(detailsCard);
+    detailsCardLay->setContentsMargins(20, 14, 20, 14);
+    detailsCardLay->setSpacing(8);
+
+    QLabel *detailsTitle = new QLabel("📋  Détail des critères");
+    detailsTitle->setStyleSheet(
+        "font-size: 14px; font-weight: 700; color: #1e293b; "
+        "background: transparent; border: none;");
+    detailsCardLay->addWidget(detailsTitle);
+
     QListWidget *promoDetails = new QListWidget();
-    promoDetails->setMinimumHeight(180);
-    promoLay->addWidget(promoVerdict);
-    promoLay->addWidget(promoDetails);
+    promoDetails->setMinimumHeight(130);
+    promoDetails->setStyleSheet(R"(
+        QListWidget {
+            background-color: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            padding: 6px;
+            color: #1e293b;
+            font-size: 13px;
+        }
+        QListWidget::item {
+            padding: 7px 10px;
+            border-radius: 6px;
+            color: #1e293b;
+            border-bottom: 1px solid #f1f5f9;
+        }
+        QListWidget::item:hover { background-color: #f1f5f9; }
+        QListWidget::item:selected {
+            background-color: #eff6ff;
+            color: #1e40af;
+        }
+    )");
+    detailsCardLay->addWidget(promoDetails);
+    promoLay->addWidget(detailsCard);
+
+    // ── Boutons en bas : Évaluer (gauche) + Promouvoir (droite) ──────────────
+    QPushButton *btnEvalPromo = new QPushButton("🔍  Évaluer l'éligibilité");
+    btnEvalPromo->setCursor(Qt::PointingHandCursor);
+    btnEvalPromo->setStyleSheet(
+        "QPushButton { background-color: #3b82f6; color: white; border: none; "
+        "border-radius: 10px; padding: 10px 22px; font-weight: 600; font-size: 13px; }"
+        "QPushButton:hover { background-color: #2563eb; }");
+
+    QPushButton *btnPromote = new QPushButton("⬆️  Promouvoir ce chercheur");
+    btnPromote->setCursor(Qt::PointingHandCursor);
+    btnPromote->setEnabled(false); // Désactivé tant que non éligible
+    btnPromote->setStyleSheet(
+        "QPushButton { background-color: #d1fae5; color: #065f46; border: 2px solid #a7f3d0; "
+        "border-radius: 10px; padding: 10px 22px; font-weight: 600; font-size: 13px; }"
+        "QPushButton:enabled { background-color: #10b981; color: white; border: 2px solid #059669; }"
+        "QPushButton:enabled:hover { background-color: #059669; }"
+        "QPushButton:disabled { background-color: #f1f5f9; color: #94a3b8; border: 2px solid #e2e8f0; }");
+
+    QHBoxLayout *btnRow = new QHBoxLayout();
+    btnRow->addWidget(btnEvalPromo, 0, Qt::AlignLeft);
+    btnRow->addStretch();
+    btnRow->addWidget(btnPromote, 0, Qt::AlignRight);
+    promoLay->addLayout(btnRow);
+    promoLay->addStretch();
+
+    // ── Logique runPromotion ──────────────────────────────────────────────────
+    // On stocke le profil courant pour le bouton "Promouvoir"
+    struct PromoState { ChercheurPromotionProfile profile; bool eligible = false; };
+    auto *state = new PromoState();
 
     auto runPromotion = [=]() {
         if (!db.isOpen() || comboPromo->count() == 0) {
             promoVerdict->setText("Base indisponible ou aucun chercheur chargé.");
             promoDetails->clear();
+            btnPromote->setEnabled(false);
             return;
         }
         PromotionCriteria c;
         c.minAnneesAnciennete = spinAns->value();
-        c.minPublications = spinPub->value();
-        c.minProjetsGeres = spinProj->value();
+        c.minPublications     = spinPub->value();
+        c.minProjetsGeres     = spinProj->value();
+
         int cid = comboPromo->currentData().toInt();
         QSqlDatabase dbConn(db);
         ChercheurPromotionProfile p = PromotionEngine::loadProfile(dbConn, cid);
-        bool ok = PromotionEngine::isEligible(p, c);
-        double score = PromotionEngine::eligibilityScore(p, c);
-        promoVerdict->setText(
-            ok ? QString("<span style='color:#059669;font-weight:700'>Éligible</span> au regard des "
-                         "critères — score de complétude : %1 / 10")
-                     .arg(score, 0, 'f', 1)
-               : QString("<span style='color:#b91c1c;font-weight:700'>Non éligible</span> — score de "
-                         "complétude : %1 / 10")
-                     .arg(score, 0, 'f', 1));
+        state->profile  = p;
+        state->eligible = PromotionEngine::isEligible(p, c);
+        double score    = PromotionEngine::eligibilityScore(p, c);
+
+        // Score en % pour la barre (score est sur 10)
+        int scorePct = qRound(score * 10.0); // sur 100
+        scoreBar->setValue(scorePct);
+
+        // Texte du cercle
+        scoreCircle->setText(QString("%1").arg(score, 0, 'f', 1));
+        scoreLabel->setText(QString("Score de complétude : %1 / 10").arg(score, 0, 'f', 1));
+
+        QString next = PromotionEngine::nextGrade(p.grade);
+
+        if (state->eligible) {
+            // Couleur verte
+            scoreCircle->setStyleSheet(
+                "font-size: 22px; font-weight: 800; color: #059669; "
+                "border: 4px solid #10b981; border-radius: 45px; background: #d1fae5;");
+            scoreBar->setStyleSheet(
+                "QProgressBar { border: none; border-radius: 5px; background: #d1fae5; }"
+                "QProgressBar::chunk { border-radius: 5px; background: #10b981; }");
+            scoreLabel->setStyleSheet(
+                "font-size: 12px; color: #059669; background: transparent; border: none;");
+
+            QString verdictHtml = QString(
+                "<span style='color:#059669;font-weight:700;font-size:16px'>✅ Éligible</span>"
+                " à la promotion");
+            if (!next.isEmpty())
+                verdictHtml += QString(" vers <b>%1</b>").arg(next);
+            promoVerdict->setText(verdictHtml);
+            btnPromote->setEnabled(!next.isEmpty());
+            if (!next.isEmpty())
+                btnPromote->setText(QString("⬆️  Promouvoir → %1").arg(next));
+        } else {
+            // Couleur rouge
+            scoreCircle->setStyleSheet(
+                "font-size: 22px; font-weight: 800; color: #b91c1c; "
+                "border: 4px solid #ef4444; border-radius: 45px; background: #fee2e2;");
+            scoreBar->setStyleSheet(
+                "QProgressBar { border: none; border-radius: 5px; background: #fee2e2; }"
+                "QProgressBar::chunk { border-radius: 5px; background: #ef4444; }");
+            scoreLabel->setStyleSheet(
+                "font-size: 12px; color: #b91c1c; background: transparent; border: none;");
+            promoVerdict->setText(
+                "<span style='color:#b91c1c;font-weight:700;font-size:16px'>❌ Non éligible</span>"
+                " — critères non atteints");
+            btnPromote->setEnabled(false);
+            btnPromote->setText("⬆️  Promouvoir ce chercheur");
+        }
+
         promoDetails->clear();
-        for (const QString &line : PromotionEngine::detailChecks(p, c))
-            promoDetails->addItem(line);
+        for (const QString &line : PromotionEngine::detailChecks(p, c)) {
+            QListWidgetItem *item = new QListWidgetItem(line);
+            item->setForeground(QColor("#1e293b"));
+            promoDetails->addItem(item);
+        }
     };
 
-    QPushButton *btnEvalPromo = new QPushButton("Évaluer l'éligibilité");
-    btnEvalPromo->setCursor(Qt::PointingHandCursor);
-    btnEvalPromo->setStyleSheet(
-        "QPushButton { background-color: #3b82f6; color: white; border: none; border-radius: 10px; "
-        "padding: 10px 20px; font-weight: 600; }"
-        "QPushButton:hover { background-color: #2563eb; }");
+    // ── Connexions évaluation ─────────────────────────────────────────────────
     connect(btnEvalPromo, &QPushButton::clicked, dialog, [runPromotion]() { runPromotion(); });
-    connect(comboPromo, QOverload<int>::of(&QComboBox::currentIndexChanged), dialog,
+    connect(comboPromo,   QOverload<int>::of(&QComboBox::currentIndexChanged), dialog,
             [runPromotion](int) { runPromotion(); });
-    connect(spinAns, QOverload<int>::of(&QSpinBox::valueChanged), dialog,
+    connect(spinAns,  QOverload<int>::of(&QSpinBox::valueChanged), dialog,
             [runPromotion](int) { runPromotion(); });
-    connect(spinPub, QOverload<int>::of(&QSpinBox::valueChanged), dialog,
+    connect(spinPub,  QOverload<int>::of(&QSpinBox::valueChanged), dialog,
             [runPromotion](int) { runPromotion(); });
     connect(spinProj, QOverload<int>::of(&QSpinBox::valueChanged), dialog,
             [runPromotion](int) { runPromotion(); });
-    promoLay->addWidget(btnEvalPromo, 0, Qt::AlignLeft);
-    promoLay->addStretch();
+
+    // ── Connexion bouton Promouvoir ───────────────────────────────────────────
+    connect(btnPromote, &QPushButton::clicked, dialog, [=]() {
+        if (!state->eligible) return;
+        const QString nextG = PromotionEngine::nextGrade(state->profile.grade);
+        if (nextG.isEmpty()) return;
+
+        const QString nom = QString("%1 %2")
+                                .arg(state->profile.prenom, state->profile.nom).trimmed();
+        auto reply = QMessageBox::question(
+            dialog,
+            "Confirmer la promotion",
+            QString("Voulez-vous promouvoir\n\n"
+                    "  %1\n\n"
+                    "du grade  « %2 »\n"
+                    "vers le grade  « %3 » ?\n\n"
+                    "Cette action modifie la base de données.")
+                .arg(nom, state->profile.grade, nextG),
+            QMessageBox::Yes | QMessageBox::No,
+            QMessageBox::No);
+
+        if (reply != QMessageBox::Yes) return;
+
+        QSqlDatabase dbConn(db);
+        if (PromotionEngine::promoteInDatabase(dbConn, state->profile.id, nextG)) {
+            QMessageBox::information(
+                dialog,
+                "Promotion effectuée",
+                QString("✅  %1 a été promu(e) au grade\n« %2 ».")
+                    .arg(nom, nextG));
+
+            // Mettre à jour le cache local pour cohérence immédiate
+            if (cherchChercheursMap.contains(state->profile.id))
+                cherchChercheursMap[state->profile.id].grade = nextG;
+
+            // Relancer l'évaluation pour refléter le nouveau grade
+            runPromotion();
+        } else {
+            QMessageBox::critical(
+                dialog,
+                "Erreur",
+                "❌  La mise à jour de la base de données a échoué.\n"
+                "Vérifiez votre connexion et vos droits.");
+        }
+    });
+
+    promoScroll->setWidget(promoScrollContent);
+    tabPromoOuterLay->addWidget(promoScroll);
     tabs->addTab(tabPromo, "Prédicteur de promotion");
     runPromotion();
 
@@ -2091,16 +2540,55 @@ void SmartPub::cherchAfficherStatistiques() {
     matchLay->addLayout(matchRow);
 
     QTableWidget *tableMatch = new QTableWidget(0, 4);
-    tableMatch->setHorizontalHeaderLabels(
-        QStringList() << "ID"
-                      << "Nom"
-                      << "Indice Jaccard"
-                      << "Mots-clés communs");
-    tableMatch->horizontalHeader()->setStretchLastSection(true);
+    tableMatch->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    tableMatch->setSelectionBehavior(QAbstractItemView::SelectRows);
+    tableMatch->setSelectionMode(QAbstractItemView::SingleSelection);
+    tableMatch->setShowGrid(false);
     tableMatch->setAlternatingRowColors(true);
-    tableMatch->setStyleSheet(
-        "QTableWidget { gridline-color: #e2e8f0; background: white; }"
-        "QHeaderView::section { background: #f1f5f9; font-weight: 600; padding: 6px; }");
+    tableMatch->setSortingEnabled(false); // Désactive le tri automatique qui perturbe les colonnes
+    tableMatch->verticalHeader()->setVisible(false);
+    tableMatch->horizontalHeader()->setSectionsMovable(false); // Empêche le déplacement des colonnes
+    tableMatch->horizontalHeader()->setSectionResizeMode(QHeaderView::Fixed); // Largeurs fixes
+    tableMatch->setHorizontalHeaderLabels(
+        QStringList() << "ID" << "Nom complet" << "Indice Jaccard" << "Mots-clés communs");
+    // Largeurs fixes pour chaque colonne — stable à chaque actualisation
+    tableMatch->setColumnWidth(0, 60);   // ID
+    tableMatch->setColumnWidth(1, 280);  // Nom
+    tableMatch->setColumnWidth(2, 130);  // Score Jaccard
+    tableMatch->setColumnWidth(3, 140);  // Mots communs
+    tableMatch->horizontalHeader()->setStretchLastSection(false);
+    // Étirer la colonne "Nom" pour occuper l'espace restant
+    tableMatch->horizontalHeader()->setSectionResizeMode(1, QHeaderView::Stretch);
+    tableMatch->setStyleSheet(R"(
+        QTableWidget {
+            gridline-color: #f1f5f9;
+            background-color: #ffffff;
+            border: none;
+            color: #1e293b;
+            font-size: 13px;
+        }
+        QTableWidget::item {
+            padding: 10px 8px;
+            color: #1e293b;
+            border-bottom: 1px solid #f1f5f9;
+        }
+        QTableWidget::item:selected {
+            background-color: #eff6ff;
+            color: #1e40af;
+        }
+        QTableWidget::item:alternate {
+            background-color: #f8fafc;
+        }
+        QHeaderView::section {
+            background-color: #f1f5f9;
+            color: #475569;
+            font-weight: 700;
+            font-size: 12px;
+            padding: 10px 8px;
+            border: none;
+            border-bottom: 2px solid #e2e8f0;
+        }
+    )");
     matchLay->addWidget(tableMatch);
 
     auto runMatch = [=]() {
@@ -2119,7 +2607,6 @@ void SmartPub::cherchAfficherStatistiques() {
                                 new QTableWidgetItem(QString::number(m.scoreJaccard, 'f', 3)));
             tableMatch->setItem(i, 3, new QTableWidgetItem(QString::number(m.nbMotsCommuns)));
         }
-        tableMatch->resizeColumnsToContents();
     };
     connect(btnMatch, &QPushButton::clicked, dialog, [runMatch]() { runMatch(); });
     connect(comboMatch, QOverload<int>::of(&QComboBox::currentIndexChanged), dialog,
