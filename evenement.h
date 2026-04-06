@@ -4,7 +4,8 @@
 #include <QString>
 
 struct EventData {
-    QString code;
+    QString id;   // ID_EVENEMENT (clé primaire technique)
+    QString code; // CODE_EVENEMENT (unique, saisi par l'utilisateur)
     QString nom;
     QString lieu;
     QString date;
