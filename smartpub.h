@@ -99,19 +99,30 @@ QT_END_NAMESPACE
 #include "publication.h"
 
 // ============================================================================
-// DIALOG LOGIN
+// SYSTÈME D'AUTHENTIFICATION CENTRALISÉ
+// ============================================================================
+#include "publicationauth.h"
+
+// ============================================================================
+// STRUCTURES LOGIN
 // ============================================================================
 
 enum class UserRole { Guest, Admin };
 
+// UserAccount : structure interne à SmartPub (post-login).
+// Construite à partir de AppUserAccount après authentification réussie.
 struct UserAccount {
-    QString email;
-    QString password;
-    QString module; // "Chercheurs", "Publications", "Finances", "Evenements",
-    // "Projets"
+    QString  email;
+    QString  password;
+    QString  module;       // "ALL" ou nom du module autorisé
     UserRole role;
-    QString displayName;
+    QString  displayName;
+    int      moduleIndex = -1; // -1 = accès total, sinon index du module
 };
+
+// ============================================================================
+// DIALOG LOGIN — utilise AppAuthService pour l'authentification
+// ============================================================================
 
 class LoginDialog : public QDialog {
     Q_OBJECT
@@ -127,18 +138,17 @@ private slots:
 
 private:
     void setupUI();
-    void setupAccounts();
 
-    QLineEdit *emailEdit;
-    QLineEdit *passwordEdit;
-    QPushButton *loginBtn;
-    QPushButton *guestBtn;
-    QPushButton *forgotBtn;
-    QLabel *errorLabel;
+    AppAuthService  m_authService;  // moteur d'auth centralisé
+    QLineEdit      *emailEdit;
+    QLineEdit      *passwordEdit;
+    QPushButton    *loginBtn;
+    QPushButton    *guestBtn;
+    QPushButton    *forgotBtn;
+    QLabel         *errorLabel;
 
-    QList<UserAccount> accounts;
     UserAccount loggedInUser;
-    bool loggedIn;
+    bool        loggedIn;
 };
 
 // ============================================================================
@@ -160,7 +170,6 @@ private:
     QCheckBox *autoSaveCheck;
     QSpinBox *intervalSpin;
 };
-
 
 
 
@@ -205,13 +214,11 @@ private slots:
     void on_cherchSupprimerChercheur(int id);
     void on_cherchVoirDetailsChercheur(int id);
     void on_cherchLineEditRecherche_textChanged(const QString &text);
-    //     void on_cherchUserProfileFrame_clicked();
     void on_cherchBtnLogin_clicked();
     void on_cherchBtnMotDePasseOublie_clicked();
     void on_cherchBtnRetourLogin_clicked();
     void on_cherchBtnForgotOk_clicked();
     void on_cherchBtnToggleVue_clicked();
-    // on_cherchBtnExportDetails_clicked → remplacée par lambda dans on_cherchVoirDetailsChercheur
     // === Vérification délivrabilité email (AbstractAPI) ===
     void on_cherchEmailVerificationReply(QNetworkReply *reply);
 
@@ -300,7 +307,7 @@ private:
     void updateSidebarProfileVisibility();
     void updateProfileName(int moduleIndex);
     void checkPermissions();
-    void applyGuestRestrictions();
+    void applyModuleRestrictions(); // remplace applyGuestRestrictions
 
     // === MODULE CHERCHEURS ===
     void cherchSetupUI();
@@ -608,6 +615,7 @@ private:
     int editingPublicationRow;
     QFrame *SR_filterFrame;
     QLineEdit *SR_filterTitre;
+    QComboBox *SR_comboBoxAuteur;
     QLineEdit *SR_filterAuteur;
     QComboBox *SR_filterStatut;
     QPushButton *SR_btnReinitFilter;

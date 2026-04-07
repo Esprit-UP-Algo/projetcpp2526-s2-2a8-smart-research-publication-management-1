@@ -13,69 +13,7 @@ LoginDialog::LoginDialog(QWidget *parent)
     setMinimumSize(400, 500);
     resize(450, 550);
     setModal(true);
-
-    setupAccounts();
     setupUI();
-}
-
-void LoginDialog::setupAccounts()
-{
-    // Initialize default accounts for different modules
-    accounts.append({
-        "admin@smartpub.com",
-        "admin123",
-        "Tous les modules",
-        UserRole::Admin,
-        "Administrateur"
-    });
-
-    accounts.append({
-        "chercheur@smartpub.com",
-        "chercheur123",
-        "Chercheurs",
-        UserRole::Admin,
-        "Gestionnaire Chercheurs"
-    });
-
-    accounts.append({
-        "publications@smartpub.com",
-        "pub123",
-        "Publications",
-        UserRole::Admin,
-        "Gestionnaire Publications"
-    });
-
-    accounts.append({
-        "finances@smartpub.com",
-        "fin123",
-        "Finances",
-        UserRole::Admin,
-        "Gestionnaire Finances"
-    });
-
-    accounts.append({
-        "evenements@smartpub.com",
-        "event123",
-        "Evenements",
-        UserRole::Admin,
-        "Gestionnaire Événements"
-    });
-
-    accounts.append({
-        "projets@smartpub.com",
-        "proj123",
-        "Projets",
-        UserRole::Admin,
-        "Gestionnaire Projets"
-    });
-
-    accounts.append({
-        "laboratoires@smartpub.com",
-        "lab123",
-        "Laboratoires",
-        UserRole::Admin,
-        "Dr de recherche"
-    });
 }
 
 void LoginDialog::setupUI()
@@ -233,10 +171,14 @@ void LoginDialog::setupUI()
 
     // Info label at bottom
     QLabel *infoLabel = new QLabel(
-        "Comptes de test:\n"
-        "admin@smartpub.com / admin123\n"
-        "chercheur@smartpub.com / chercheur123\n"
-        "laboratoires@smartpub.com / lab123"
+        "Comptes disponibles:\n"
+        "admin@gmail.com / admin123\n"
+        "smartpub.chercheur@gmail.com / chercheur123\n"
+        "smartpub.publications@gmail.com / pub123\n"
+        "smartpub.evenement@gmail.com / evenement123\n"
+        "smartpub.finance@gmail.com / fin123\n"
+        "smartpub.laboratoire@gmail.com / lab123\n"
+        "smartpub.projet@gmail.com / projet123\n"
     );
     infoLabel->setAlignment(Qt::AlignCenter);
     infoLabel->setStyleSheet(
@@ -265,29 +207,30 @@ void LoginDialog::setupUI()
 
 void LoginDialog::onLoginClicked()
 {
-    QString email = emailEdit->text().trimmed();
-    QString password = passwordEdit->text();
-
     errorLabel->hide();
 
-    if (email.isEmpty() || password.isEmpty()) {
-        errorLabel->setText("⚠ Veuillez remplir tous les champs");
-        errorLabel->show();
+    AppUserAccount acc;
+    QString errMsg;
+
+    if (m_authService.authenticate(emailEdit->text(), passwordEdit->text(),
+                                   &acc, &errMsg))
+    {
+        loggedInUser = UserAccount{
+            acc.email,
+            acc.password,
+            acc.allowedModule,
+            UserRole::Admin,
+            acc.displayName,
+            acc.moduleIndex
+        };
+        loggedIn = true;
+        accept();
         return;
     }
 
-    // Check credentials
-    for (const UserAccount &account : accounts) {
-        if (account.email == email && account.password == password) {
-            loggedInUser = account;
-            loggedIn = true;
-            accept();
-            return;
-        }
-    }
-
-    // Invalid credentials
-    errorLabel->setText("❌ Email ou mot de passe incorrect");
+    errorLabel->setText("❌ " + (errMsg.isEmpty()
+                                     ? QStringLiteral("Email ou mot de passe incorrect")
+                                     : errMsg));
     errorLabel->show();
     passwordEdit->clear();
     passwordEdit->setFocus();
@@ -930,8 +873,30 @@ void SmartPub::setupSidebar() {
         }
     )");
     connect(btnLogout, &QPushButton::clicked, this, [this]() {
-        mainStack->setCurrentIndex(0);
+        // Réinitialiser l'utilisateur courant
+        currentUser = UserAccount{
+            QString(), QString(), QStringLiteral("ALL"),
+            UserRole::Guest, QStringLiteral("Invité"), -1
+        };
         isUserLoggedIn = false;
+
+        // Réactiver tous les boutons sidebar avant de retourner au login
+        const QList<QPushButton*> sidebarBtns = {
+            ui->btnChercheurs, ui->btnPublications, ui->btnFinances,
+            ui->btnEvenements, ui->btnProjets, ui->btnLaboratoires
+        };
+        for (QPushButton *btn : sidebarBtns) {
+            if (btn) {
+                btn->setEnabled(true);
+                btn->setToolTip(QString());
+            }
+        }
+
+        // Vider les champs de login
+        if (ui->cherchLineEditLoginEmail)    ui->cherchLineEditLoginEmail->clear();
+        if (ui->cherchLineEditLoginPassword) ui->cherchLineEditLoginPassword->clear();
+
+        mainStack->setCurrentIndex(0);
     });
     profileMainLayout->addWidget(btnLogout);
 
@@ -972,36 +937,44 @@ void SmartPub::setupConnections() {
             &SmartPub::on_btnEvenements_clicked);
 }
 
-void SmartPub::checkPermissions() {
-    // Si l'utilisateur est un invité, désactiver tous les boutons de modification
-    if (currentUser.role == UserRole::Guest) {
-        applyGuestRestrictions();
-    }
+void SmartPub::checkPermissions()
+{
+    applyModuleRestrictions();
 }
 
-void SmartPub::applyGuestRestrictions() {
-    // Parcourir tous les boutons et désactiver ceux qui contiennent des mots-clés
-    // CRUD
-    QList<QPushButton *> allButtons = this->findChildren<QPushButton *>();
-    QStringList crudKeywords = {"add",     "edit",        "delete",
-                                "save",    "supprimer",   "modifier",
-                                "ajouter", "enregistrer", "annuler"};
+void SmartPub::applyModuleRestrictions()
+{
+    const bool fullAccess = (currentUser.module == QStringLiteral("ALL")
+                             || currentUser.moduleIndex == -1);
 
-    for (QPushButton *btn : allButtons) {
-        QString btnName = btn->objectName().toLower();
-        QString btnText = btn->text().toLower();
+    // Correspondance bouton sidebar → index module
+    // IMPORTANT : cet ordre doit correspondre exactement à stackedWidgetModules
+    struct SidebarEntry { QPushButton *btn; int moduleIdx; };
+    const QList<SidebarEntry> entries = {
+                                         { ui->btnChercheurs,   0 },
+                                         { ui->btnPublications, 1 },
+                                         { ui->btnFinances,     2 },
+                                         { ui->btnEvenements,   3 },
+                                         { ui->btnProjets,      4 },
+                                         { ui->btnLaboratoires, 5 },
+                                         };
 
-        // Vérifier si le nom ou le texte contient un mot-clé CRUD
-        bool isCrudButton = false;
-        for (const QString &keyword : crudKeywords) {
-            if (btnName.contains(keyword) || btnText.contains(keyword)) {
-                isCrudButton = true;
-                break;
-            }
-        }
+    const QString disabledStyle = QStringLiteral(
+        "QPushButton { color: #475569; background-color: transparent;"
+        " border: none; border-radius: 12px; padding: 14px 20px;"
+        " font-size: 16px; font-weight: 500; text-align: center; }"
+        );
 
-        if (isCrudButton) {
-            btn->setEnabled(false);
+    for (const SidebarEntry &e : entries) {
+        if (!e.btn) continue;
+        const bool allowed = fullAccess || (currentUser.moduleIndex == e.moduleIdx);
+        e.btn->setEnabled(allowed);
+        if (!allowed) {
+            e.btn->setStyleSheet(disabledStyle);
+            e.btn->setToolTip(QStringLiteral("Accès restreint à votre module"));
+        } else {
+            e.btn->setToolTip(QString());
+            // Le style actif/inactif sera re-appliqué par setActiveNavigationButton
         }
     }
 }

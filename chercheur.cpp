@@ -891,30 +891,69 @@ void SmartPub::cherchShowMainView() {
     mainStack->setCurrentIndex(1);
 }
 
-void SmartPub::cherchCheckLogin() {
-    // === BYPASS AUTHENTICATION (User Request) ===
-    currentUser =
-        UserAccount{"admin", "", "Tous", UserRole::Admin, "Administrateur"};
+void SmartPub::cherchCheckLogin()
+{
+    const QString email    = ui->cherchLineEditLoginEmail->text().trimmed();
+    const QString password = ui->cherchLineEditLoginPassword->text();
+
+    // === Authentification via le moteur centralisé (publicationauth) ===
+    AppAuthService authService;
+    AppUserAccount acc;
+    QString errMsg;
+
+    if (!authService.authenticate(email, password, &acc, &errMsg)) {
+        // Afficher l'erreur dans un QMessageBox
+        // (si votre .ui a un cherchLabelLoginError, remplacez par :
+        //   ui->cherchLabelLoginError->setText(errMsg); ui->cherchLabelLoginError->show();)
+        QMessageBox::warning(this,
+                             QStringLiteral("Connexion échouée"),
+                             errMsg.isEmpty()
+                                 ? QStringLiteral("Email ou mot de passe incorrect.")
+                                 : errMsg);
+        ui->cherchLineEditLoginPassword->clear();
+        ui->cherchLineEditLoginPassword->setFocus();
+        return;
+    }
+
+    // === Authentification réussie ===
+    currentUser = UserAccount{
+        acc.email,
+        acc.password,
+        acc.allowedModule,
+        UserRole::Admin,
+        acc.displayName,
+        acc.moduleIndex
+    };
     isUserLoggedIn = true;
 
-    // Configuration post-login
+    // Mettre à jour la sidebar
     updateSidebarProfileVisibility();
-
-    // Mettre à jour les infos avatar/nom
     if (nameLabel)
         nameLabel->setText(currentUser.displayName);
     if (roleLabel)
-        roleLabel->setText("Administrateur");
+        roleLabel->setText(currentUser.module == QStringLiteral("ALL")
+                               ? QStringLiteral("Directeur Général")
+                               : currentUser.module);
 
-    // FIX: Ouvrir Publications en premier lieu après login (index 1)
-    ui->stackedWidgetModules->setCurrentIndex(1);
-    setActiveNavigationButton(1);
-    updateProfileName(1);
-    SR_updateButtonStyles();
+    // Déterminer le module à afficher après login
+    // Si accès restreint, aller directement sur le module autorisé
+    // Si accès total (admin), afficher Publications (index 1) par défaut
+    const int targetIndex = (acc.moduleIndex >= 0) ? acc.moduleIndex : 1;
 
-    // S'assurer que le module Chercheur sera en vue liste lors d'une navigation future
+    ui->stackedWidgetModules->setCurrentIndex(targetIndex);
+    setActiveNavigationButton(targetIndex);
+    updateProfileName(targetIndex);
+
+    // Appliquer le blocage des boutons sidebar non autorisés
+    applyModuleRestrictions();
+
+    // S'assurer que le module Chercheurs sera en vue liste si on y navigue
     ui->cherchStackedWidget->setCurrentIndex(0);
     cherchVueListeActive = true;
+
+    // Mettre à jour les styles du module Publications si c'est le module affiché
+    if (targetIndex == 1)
+        SR_updateButtonStyles();
 
     // Afficher l'application principale
     mainStack->setCurrentIndex(1);
@@ -981,7 +1020,7 @@ void SmartPub::cherchEnrichirDonneesDepuisOracle()
         it->projetsIds.clear();
     }
     QSqlQuery q(db);
-    if (q.exec(QStringLiteral("SELECT ID_CHERCHEUR, CODE_PROJET FROM CONTRIBUER"))) {
+    if (q.exec(QStringLiteral("SELECT ID_CHERCHEUR, ID_PROJET FROM CONTRIBUER"))) {
         while (q.next()) {
             const int cid = q.value(0).toInt();
             const int pid = q.value(1).toInt();
@@ -2011,7 +2050,7 @@ QComboBox, QSpinBox {
         const QString sqlEffectifs =
             QStringLiteral("SELECT L.NOM, COUNT(DISTINCT C.ID_CHERCHEUR) AS NB "
                            "FROM LABORATOIRE L "
-                           "INNER JOIN CONTRIBUER C ON C.CODE_PROJET = L.CODE_PROJET "
+                           "INNER JOIN CONTRIBUER C ON C.ID_PROJET = L.ID_PROJET "
                            "GROUP BY L.ID_LABORATOIRE, L.NOM ORDER BY L.NOM");
         if (qLab.exec(sqlEffectifs)) {
             while (qLab.next()) {
@@ -2023,9 +2062,9 @@ QComboBox, QSpinBox {
         const QString sqlSat =
             QStringLiteral("SELECT L.NOM, AVG(LEAST(cnt * 25, 100)) AS SAT "
                            "FROM ( "
-                           "  SELECT L2.ID_LABORATOIRE, C.ID_CHERCHEUR, COUNT(DISTINCT C.CODE_PROJET) AS cnt "
+                           "  SELECT L2.ID_LABORATOIRE, C.ID_CHERCHEUR, COUNT(DISTINCT C.ID_PROJET) AS cnt "
                            "  FROM LABORATOIRE L2 "
-                           "  INNER JOIN CONTRIBUER C ON C.CODE_PROJET = L2.CODE_PROJET "
+                           "  INNER JOIN CONTRIBUER C ON C.ID_PROJET = L2.ID_PROJET "
                            "  GROUP BY L2.ID_LABORATOIRE, C.ID_CHERCHEUR "
                            ") X "
                            "JOIN LABORATOIRE L ON L.ID_LABORATOIRE = X.ID_LABORATOIRE "
@@ -2110,7 +2149,7 @@ QComboBox, QSpinBox {
         QHBoxLayout *emptyLay = new QHBoxLayout(emptyFrame);
         emptyLay->setContentsMargins(16, 14, 16, 14);
         QLabel *empty = new QLabel(
-            "⚠️  Aucune donnée laboratoire — vérifiez les tables LABORATOIRE, CONTRIBUER et les clés CODE_PROJET.");
+            "⚠️  Aucune donnée laboratoire ");
         empty->setWordWrap(true);
         empty->setStyleSheet(
             "color: #92400e; font-size: 13px; font-weight: 500; "
