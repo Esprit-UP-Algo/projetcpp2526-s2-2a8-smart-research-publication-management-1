@@ -637,7 +637,7 @@ private:
     QSpinBox       *labFormCapacite;
     QComboBox      *labFormStatut;
     QLineEdit      *labFormEquipements;
-    QLineEdit      *labFormDirecteur;
+    QComboBox      *labFormDirecteur;
     QMap<int, LaboratoryData> labDataMap;
     int            labNextId;
     int            labEditingId; // -1 = ajout, sinon id en cours d'édition

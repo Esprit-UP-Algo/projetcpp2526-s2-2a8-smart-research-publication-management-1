@@ -23,7 +23,9 @@ SOURCES += \
     evenement.cpp \
     publicationauth.cpp \
     promotionengine.cpp \
-    matchmakingengine.cpp
+    matchmakingengine.cpp \
+    scoringengine.cpp \
+    collaborationengine.cpp
 
 HEADERS += \
     connection.h \
@@ -33,6 +35,8 @@ HEADERS += \
     publicationauth.h \
     promotionengine.h \
     matchmakingengine.h \
+    scoringengine.h \
+    collaborationengine.h \
     chercheur.h \
     publication.h \
     projet.h \
