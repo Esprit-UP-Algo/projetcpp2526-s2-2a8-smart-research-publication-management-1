@@ -1,6 +1,10 @@
 #include "smartpub.h"
 #include "ui_smartpub.h"
 #include "connection.h"
+#include <QPrinter>
+#include <QPainter>
+#include <QPageSize>
+#include <QPageLayout>
 
 static QString finTypeDbToUi(const QString &db) {
     const QString d = db.trimmed().toLower();
@@ -63,117 +67,6 @@ void SmartPub::finSetupUI() {
     ui->finComboBoxType->addItem(QStringLiteral("Autre"), QStringLiteral("autre"));
 
     finRemplirComboProjets();
-
-    // === Style commun pour tous les QComboBox du formulaire ===
-    const QString comboStyle =
-        "QComboBox {"
-        "  border: 1px solid #cbd5e1;"
-        "  border-radius: 8px;"
-        "  padding: 6px 12px;"
-        "  background-color: white;"
-        "  color: #1e293b;"
-        "  font-size: 13px;"
-        "}"
-        "QComboBox:focus {"
-        "  border: 2px solid #3b82f6;"
-        "}"
-        "QComboBox::drop-down {"
-        "  border: none;"
-        "  width: 28px;"
-        "}"
-        "QComboBox::down-arrow {"
-        "  width: 12px;"
-        "  height: 12px;"
-        "}"
-        "QComboBox QAbstractItemView {"
-        "  border: 1px solid #e2e8f0;"
-        "  border-radius: 8px;"
-        "  background-color: white;"
-        "  color: #1e293b;"
-        "  selection-background-color: #eff6ff;"
-        "  selection-color: #1d4ed8;"
-        "  padding: 4px;"
-        "  font-size: 13px;"
-        "  outline: none;"
-        "}";
-
-    ui->finComboBoxProjet->setStyleSheet(comboStyle);
-    ui->finComboBoxType->setStyleSheet(comboStyle);
-    ui->finComboBoxCategorie->setStyleSheet(comboStyle);
-    ui->finComboBoxStatut->setStyleSheet(comboStyle);
-
-    // === Style du champ date ===
-    ui->finDateEdit->setStyleSheet(
-        "QDateEdit {"
-        "  border: 1px solid #cbd5e1;"
-        "  border-radius: 8px;"
-        "  padding: 6px 12px;"
-        "  background-color: white;"
-        "  color: #1e293b;"
-        "  font-size: 13px;"
-        "}"
-        "QDateEdit:focus {"
-        "  border: 2px solid #3b82f6;"
-        "}"
-        "QDateEdit::drop-down {"
-        "  border: none;"
-        "  width: 28px;"
-        "}"
-        "QDateEdit::down-arrow {"
-        "  width: 12px;"
-        "  height: 12px;"
-        "}"
-        "QCalendarWidget QWidget {"
-        "  background-color: white;"
-        "  color: #1e293b;"
-        "}"
-        "QCalendarWidget QAbstractItemView {"
-        "  background-color: white;"
-        "  color: #1e293b;"
-        "  selection-background-color: #3b82f6;"
-        "  selection-color: white;"
-        "  gridline-color: #e2e8f0;"
-        "  font-size: 13px;"
-        "}"
-        "QCalendarWidget QAbstractItemView:disabled {"
-        "  color: #94a3b8;"
-        "}"
-        "QCalendarWidget QToolButton {"
-        "  background-color: #3b82f6;"
-        "  color: white;"
-        "  border-radius: 6px;"
-        "  padding: 4px 10px;"
-        "  font-weight: 600;"
-        "  font-size: 13px;"
-        "}"
-        "QCalendarWidget QToolButton:hover {"
-        "  background-color: #2563eb;"
-        "}"
-        "QCalendarWidget QSpinBox {"
-        "  background-color: white;"
-        "  color: #1e293b;"
-        "  border: 1px solid #cbd5e1;"
-        "  border-radius: 4px;"
-        "  padding: 2px 6px;"
-        "}"
-        "QCalendarWidget #qt_calendar_navigationbar {"
-        "  background-color: #eff6ff;"
-        "  border-bottom: 1px solid #e2e8f0;"
-        "  padding: 4px;"
-        "}"
-        "QCalendarWidget #qt_calendar_prevmonth,"
-        "QCalendarWidget #qt_calendar_nextmonth {"
-        "  background-color: #3b82f6;"
-        "  color: white;"
-        "  border-radius: 6px;"
-        "  padding: 4px 8px;"
-        "  font-weight: bold;"
-        "}"
-        "QCalendarWidget #qt_calendar_prevmonth:hover,"
-        "QCalendarWidget #qt_calendar_nextmonth:hover {"
-        "  background-color: #2563eb;"
-        "}"
-        );
 }
 
 void SmartPub::finRemplirComboProjets()
@@ -573,31 +466,341 @@ void SmartPub::handleFinBtnTriClicked() {
     menu->exec(QCursor::pos());
 }
 
-void SmartPub::handleFinBtnExportClicked() {
+void SmartPub::handleFinBtnExportClicked()
+{
+    // ── 1. Choix fichier PDF ──────────────────────────────────────────────────
     QString fileName = QFileDialog::getSaveFileName(
-        this, "Exporter les transactions", QDir::homePath(), "CSV (*.csv)");
+        this,
+        QStringLiteral("Exporter le bilan financier"),
+        QDir::homePath() + QStringLiteral("/bilan_financier.pdf"),
+        QStringLiteral("PDF (*.pdf)"));
     if (fileName.isEmpty()) return;
 
-    QFile file(fileName);
-    if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
-        QMessageBox::critical(this, "Erreur", "Impossible de créer le fichier.");
+    // ── 2. Calculs financiers ─────────────────────────────────────────────────
+    QList<TransactionData> liste = finGetTransactionsFiltreesEtTriees();
+
+    double totalRecettes = 0.0, totalDepenses = 0.0;
+    QMap<QString, double> parType;
+    QMap<QString, double> parProjet;
+    QMap<QString, double> recParMois;
+    QMap<QString, double> depParMois;
+
+    auto estRecette = [](const QString &type) -> bool {
+        const QString t = type.trimmed().toLower();
+        return t == QLatin1String("subvention") || t == QLatin1String("remboursement");
+    };
+
+    for (const TransactionData &t : liste) {
+        bool rec = estRecette(t.type);
+        if (rec) totalRecettes += t.montant;
+        else     totalDepenses += t.montant;
+        parType[t.type] += t.montant;
+        QString proj = t.projet.isEmpty() ? QStringLiteral("—") : t.projet;
+        parProjet[proj] += t.montant;
+        QDate d = QDate::fromString(t.date, QStringLiteral("dd/MM/yyyy"));
+        if (d.isValid()) {
+            QString mois = d.toString(QStringLiteral("yyyy-MM"));
+            if (rec) recParMois[mois] += t.montant;
+            else     depParMois[mois] += t.montant;
+        }
+    }
+    double soldeNet    = totalRecettes - totalDepenses;
+    bool excedentaire  = soldeNet >= 0.0;
+
+    // ── 3. Initialisation QPrinter ────────────────────────────────────────────
+    QPrinter printer(QPrinter::HighResolution);
+    printer.setOutputFormat(QPrinter::PdfFormat);
+    printer.setOutputFileName(fileName);
+    printer.setPageSize(QPageSize(QPageSize::A4));
+    printer.setPageOrientation(QPageLayout::Portrait);
+    printer.setPageMargins(QMarginsF(12, 12, 12, 12), QPageLayout::Millimeter);
+
+    QPainter p;
+    if (!p.begin(&printer)) {
+        QMessageBox::critical(this, QStringLiteral("Erreur"),
+                              QStringLiteral("Impossible d'initialiser le moteur PDF."));
         return;
     }
 
-    QTextStream out(&file);
-    out.setEncoding(QStringConverter::Utf8);
-    out << "ID;Projet;Type;Montant;Date;Catégorie;Statut;Description\n";
+    // ── 4. Constantes de mise en page ─────────────────────────────────────────
+    const QRect  pageRect = printer.pageRect(QPrinter::DevicePixel).toRect();
+    const int    W        = pageRect.width();
+    const int    margin   = 55;
+    const int    colW     = W - 2 * margin;
 
-    QList<TransactionData> liste = finGetTransactionsFiltreesEtTriees();
-    for (const TransactionData &t : liste) {
-        QString desc = t.description;
-        desc.replace("\"", "\"\"");
-        out << t.id << ";\"" << t.projet << "\";\"" << t.type << "\";"
-            << QString::number(t.montant, 'f', 2) << ";\"" << t.date << "\";\""
-            << t.categorie << "\";\"" << t.statut << "\";\"" << desc << "\"\n";
+    // Couleurs
+    const QColor cBlue  ("#3b82f6");
+    const QColor cGreen ("#10b981");
+    const QColor cRed   ("#ef4444");
+    const QColor cGray  ("#64748b");
+    const QColor cLight ("#f8fafc");
+    const QColor cBorder("#e2e8f0");
+    const QColor cWhite (Qt::white);
+    const QColor cDark  ("#1e293b");
+    const QColor cAmber ("#d97706");
+
+    // Polices
+    auto font = [](int sz, bool bold = false) {
+        QFont f(QStringLiteral("Arial"), sz);
+        f.setBold(bold);
+        return f;
+    };
+
+    int y = margin; // curseur vertical
+
+    // ── Helpers ───────────────────────────────────────────────────────────────
+
+    auto fillRRect = [&](int x, int top, int w, int h, int r, const QColor &c) {
+        p.setPen(Qt::NoPen);
+        p.setBrush(c);
+        p.drawRoundedRect(x, top, w, h, r, r);
+    };
+
+    auto hLine = [&](int top, const QColor &c = QColor("#e2e8f0"), int lw = 1) {
+        p.setPen(QPen(c, lw));
+        p.drawLine(margin, top, margin + colW, top);
+    };
+
+    // Vérifie si on doit passer à une nouvelle page
+    auto checkPage = [&](int needed) {
+        if (y + needed > pageRect.height() - margin - 50) {
+            printer.newPage();
+            y = margin;
+        }
+    };
+
+    // Dessine une ligne de tableau (header ou data)
+    auto drawRow = [&](const QStringList &cells, const QList<int> &widths,
+                       int rowH, bool isHeader, bool odd = false,
+                       const QList<QColor> &cellColors = {}) {
+        int x = margin;
+        if (isHeader) {
+            // Fond dégradé bleu→vert
+            QLinearGradient g(margin, y, margin + colW, y);
+            g.setColorAt(0, cBlue); g.setColorAt(1, cGreen);
+            p.setPen(Qt::NoPen); p.setBrush(g);
+            p.drawRect(margin, y, colW, rowH);
+        } else if (odd) {
+            p.setPen(Qt::NoPen); p.setBrush(cLight);
+            p.drawRect(margin, y, colW, rowH);
+        }
+        for (int i = 0; i < cells.size(); ++i) {
+            QColor col = isHeader ? cWhite
+                       : (!cellColors.isEmpty() && i < cellColors.size()
+                          ? cellColors[i] : cDark);
+            p.setFont(font(isHeader ? 8 : 8, isHeader));
+            p.setPen(col);
+            p.drawText(QRect(x + 6, y, widths[i] - 8, rowH),
+                       Qt::AlignVCenter | Qt::AlignLeft, cells[i]);
+            x += widths[i];
+        }
+        p.setPen(QPen(cBorder, 1));
+        p.drawLine(margin, y + rowH, margin + colW, y + rowH);
+        y += rowH;
+    };
+
+    // Titre de section
+    auto sectionTitle = [&](const QString &title) {
+        checkPage(80);
+        p.setFont(font(11, true));
+        p.setPen(cDark);
+        p.drawText(QRect(margin, y, colW, 36),
+                   Qt::AlignVCenter | Qt::AlignLeft, title);
+        y += 36;
+        hLine(y, cBorder, 2);
+        y += 10;
+    };
+
+    // ── 5. EN-TÊTE ────────────────────────────────────────────────────────────
+    {
+        int hH = 155;
+        QLinearGradient grad(margin, y, margin + colW, y);
+        grad.setColorAt(0, cBlue); grad.setColorAt(1, cGreen);
+        p.setPen(Qt::NoPen); p.setBrush(grad);
+        p.drawRoundedRect(margin, y, colW, hH, 14, 14);
+
+        p.setFont(font(20, true));
+        p.setPen(cWhite);
+        p.drawText(QRect(margin + 30, y + 22, colW - 130, 50),
+                   Qt::AlignVCenter | Qt::AlignLeft,
+                   QStringLiteral("SmartPub \u2014 Bilan Financier"));
+
+        p.setFont(font(9));
+        p.setPen(QColor(255, 255, 255, 200));
+        p.drawText(QRect(margin + 30, y + 76, colW - 130, 28),
+                   Qt::AlignVCenter | Qt::AlignLeft,
+                   QStringLiteral("G\u00e9n\u00e9r\u00e9 le : %1  \u2022  %2 transaction(s)")
+                   .arg(QDate::currentDate().toString("dd/MM/yyyy"))
+                   .arg(liste.size()));
+
+        // Icône décorative
+        p.setFont(font(42));
+        p.setPen(QColor(255, 255, 255, 60));
+        p.drawText(QRect(margin + colW - 110, y + 10, 100, hH - 20),
+                   Qt::AlignCenter, QStringLiteral("\u2630"));
+
+        y += hH + 28;
     }
-    file.close();
-    QMessageBox::information(this, "Export", "Transactions exportées avec succès !");
+
+    // ── 6. CARTES KPI ─────────────────────────────────────────────────────────
+    {
+        struct Kpi { QString label; double val; QColor color; };
+        QList<Kpi> kpis = {
+            { QStringLiteral("Total Recettes"),      totalRecettes, cGreen },
+            { QStringLiteral("Total D\u00e9penses"), totalDepenses, cRed   },
+            { QStringLiteral("Solde Net"),            soldeNet,      excedentaire ? cGreen : cRed }
+        };
+        int kpiW = (colW - 36) / 3;
+        int kpiH = 100;
+        int kx   = margin;
+        for (const Kpi &k : kpis) {
+            p.setPen(QPen(cBorder, 1)); p.setBrush(cWhite);
+            p.drawRoundedRect(kx, y, kpiW, kpiH, 10, 10);
+            p.setFont(font(16, true)); p.setPen(k.color);
+            p.drawText(QRect(kx, y + 16, kpiW, 42), Qt::AlignCenter,
+                       QString::number(k.val, 'f', 2) + QStringLiteral(" TND"));
+            p.setFont(font(8)); p.setPen(cGray);
+            p.drawText(QRect(kx, y + 62, kpiW, 26), Qt::AlignCenter, k.label);
+            kx += kpiW + 18;
+        }
+        y += kpiH + 28;
+    }
+
+    // ── 7. DÉTAIL DES TRANSACTIONS ────────────────────────────────────────────
+    {
+        sectionTitle(QStringLiteral("D\u00e9tail des Transactions"));
+        const QStringList hdr = {
+            "ID","Projet","Type","Montant (TND)","Date","Cat\u00e9gorie","Statut"
+        };
+        const QList<int> w = {
+            int(colW*.07), int(colW*.19), int(colW*.13),
+            int(colW*.14), int(colW*.12), int(colW*.18), int(colW*.17)
+        };
+        checkPage(34);
+        drawRow(hdr, w, 30, true);
+
+        bool odd = false;
+        for (const TransactionData &t : liste) {
+            checkPage(30);
+            QColor sc = cGray;
+            if      (t.statut.contains("Valid",   Qt::CaseInsensitive)) sc = cGreen;
+            else if (t.statut.contains("attente", Qt::CaseInsensitive)) sc = cAmber;
+            else if (t.statut.contains("Rejet",   Qt::CaseInsensitive)) sc = cRed;
+            QList<QColor> cc = { cDark,cDark,cDark,cDark,cDark,cDark, sc };
+            drawRow({ QString::number(t.id), t.projet, t.type,
+                      QString::number(t.montant,'f',2), t.date,
+                      t.categorie, t.statut },
+                    w, 28, false, odd, cc);
+            odd = !odd;
+        }
+        y += 20;
+    }
+
+    // ── 8. RÉPARTITION PAR TYPE ───────────────────────────────────────────────
+    {
+        sectionTitle(QStringLiteral("R\u00e9partition par Type de Transaction"));
+        const QStringList hdr = { "Type","Montant (TND)","Part (%)" };
+        const QList<int>  w   = { int(colW*.50), int(colW*.28), int(colW*.22) };
+        checkPage(34);
+        drawRow(hdr, w, 30, true);
+
+        double grandTotal = totalRecettes + totalDepenses;
+        bool odd = false;
+        for (auto it = parType.constBegin(); it != parType.constEnd(); ++it) {
+            checkPage(28);
+            double pct = grandTotal > 0 ? it.value() / grandTotal * 100.0 : 0.0;
+            drawRow({ it.key(),
+                      QString::number(it.value(),'f',2),
+                      QString::number(pct,'f',1) + " %" },
+                    w, 28, false, odd);
+            odd = !odd;
+        }
+        y += 20;
+    }
+
+    // ── 9. RÉPARTITION PAR PROJET ─────────────────────────────────────────────
+    {
+        sectionTitle(QStringLiteral("R\u00e9partition par Projet"));
+        const QStringList hdr = { "Projet","Montant Total (TND)" };
+        const QList<int>  w   = { int(colW*.60), int(colW*.40) };
+        checkPage(34);
+        drawRow(hdr, w, 30, true);
+
+        bool odd = false;
+        for (auto it = parProjet.constBegin(); it != parProjet.constEnd(); ++it) {
+            checkPage(28);
+            drawRow({ it.key(), QString::number(it.value(),'f',2) },
+                    w, 28, false, odd);
+            odd = !odd;
+        }
+        y += 20;
+    }
+
+    // ── 10. SYNTHÈSE MENSUELLE ────────────────────────────────────────────────
+    {
+        QSet<QString> ms;
+        for (auto &k : recParMois.keys()) ms.insert(k);
+        for (auto &k : depParMois.keys()) ms.insert(k);
+        QStringList ml = ms.values();
+        std::sort(ml.begin(), ml.end());
+
+        sectionTitle(QStringLiteral("Synth\u00e8se Mensuelle"));
+        const QStringList hdr = { "Mois","Recettes (TND)","D\u00e9penses (TND)" };
+        const QList<int>  w   = { int(colW*.40), int(colW*.30), int(colW*.30) };
+        checkPage(34);
+        drawRow(hdr, w, 30, true);
+
+        bool odd = false;
+        for (const QString &mois : ml) {
+            checkPage(28);
+            drawRow({ mois,
+                      QString::number(recParMois.value(mois,0.0),'f',2),
+                      QString::number(depParMois.value(mois,0.0),'f',2) },
+                    w, 28, false, odd);
+            odd = !odd;
+        }
+        y += 20;
+    }
+
+    // ── 11. SOLDE NET FINAL ───────────────────────────────────────────────────
+    {
+        checkPage(100);
+        int bH = 86;
+        QLinearGradient grad(margin, y, margin + colW, y);
+        if (excedentaire) { grad.setColorAt(0, cGreen);  grad.setColorAt(1, QColor("#059669")); }
+        else              { grad.setColorAt(0, cRed);    grad.setColorAt(1, QColor("#b91c1c")); }
+        p.setPen(Qt::NoPen); p.setBrush(grad);
+        p.drawRoundedRect(margin, y, colW, bH, 12, 12);
+
+        p.setFont(font(9, true)); p.setPen(cWhite);
+        p.drawText(QRect(margin, y + 10, colW, 26), Qt::AlignCenter,
+                   QStringLiteral("SOLDE NET FINAL"));
+
+        p.setFont(font(18, true));
+        p.drawText(QRect(margin, y + 38, colW, 36), Qt::AlignCenter,
+                   QString::number(soldeNet,'f',2)
+                   + QStringLiteral(" TND  ")
+                   + (excedentaire ? QStringLiteral("\u2713 Exc\u00e9dentaire")
+                                   : QStringLiteral("\u26a0 D\u00e9ficitaire")));
+        y += bH + 24;
+    }
+
+    // ── 12. PIED DE PAGE ──────────────────────────────────────────────────────
+    {
+        int footerY = pageRect.height() - margin - 28;
+        p.setPen(QPen(cBorder, 1));
+        p.drawLine(margin, footerY, margin + colW, footerY);
+        p.setFont(font(7)); p.setPen(cGray);
+        p.drawText(QRect(margin, footerY + 6, colW, 22), Qt::AlignCenter,
+                   QStringLiteral("SmartPub \u2022 Bilan g\u00e9n\u00e9r\u00e9 automatiquement le %1 \u2022 Confidentiel")
+                   .arg(QDate::currentDate().toString("dd/MM/yyyy")));
+    }
+
+    p.end();
+
+    QMessageBox::information(this, QStringLiteral("Export r\u00e9ussi"),
+                             QStringLiteral("Bilan financier PDF export\u00e9 avec succ\u00e8s !\n%1")
+                             .arg(fileName));
 }
 
 void SmartPub::handleFinBtnStatistiquesClicked() {
@@ -1018,4 +1221,3 @@ void SmartPub::handleFinancesNavigation() {
     finUpdateButtonStyles();
     finAfficherListeTransactions();
 }
-
