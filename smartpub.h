@@ -62,6 +62,8 @@
 #include <QSqlError>
 #include <QSqlRecord>
 #include <QRegularExpression>
+#include <QIntValidator>
+#include <QRegularExpressionValidator>
 // PDF Export
 #include <QPrinter>
 #include <QPainter>
@@ -94,6 +96,7 @@ QT_END_NAMESPACE
 #include "projet.h"
 #include "chercheur.h"
 #include "finance.h"
+#include "trans_secure.h"
 #include "evenement.h"
 #include "laboratoire.h"
 #include "publication.h"

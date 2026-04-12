@@ -1,6 +1,7 @@
 #include "smartpub.h"
 #include "ui_smartpub.h"
 #include "connection.h"
+#include "trans_secure.h"
 #include <QPrinter>
 #include <QPainter>
 #include <QPageSize>
@@ -67,6 +68,34 @@ void SmartPub::finSetupUI() {
     ui->finComboBoxType->addItem(QStringLiteral("Autre"), QStringLiteral("autre"));
 
     finRemplirComboProjets();
+
+    // === Bouton Journal de Sécurité ===
+    // Cherche si un bouton existe déjà (évite les doublons au rechargement)
+    QPushButton *btnJournal = ui->finStackedWidget->parentWidget()
+                                  ? ui->finStackedWidget->parentWidget()->findChild<QPushButton*>("btnJournalSecurite")
+                                  : nullptr;
+    if (!btnJournal) {
+        // On cherche la barre de boutons du module finance pour y ajouter le bouton
+        QPushButton *btnRef = ui->finBtnStatistiques; // bouton de référence existant
+        if (btnRef && btnRef->parentWidget()) {
+            QHBoxLayout *barLayout = qobject_cast<QHBoxLayout*>(btnRef->parentWidget()->layout());
+            btnJournal = new QPushButton("🔒 Journal Sécurité");
+            btnJournal->setObjectName("btnJournalSecurite");
+            btnJournal->setCursor(Qt::PointingHandCursor);
+            btnJournal->setStyleSheet(
+                "QPushButton { background-color: #1e293b; color: #e2e8f0; border: none;"
+                " border-radius: 8px; padding: 8px 16px; font-size: 13px; font-weight: 600; }"
+                "QPushButton:hover { background-color: #334155; }");
+            connect(btnJournal, &QPushButton::clicked, this, [this]() {
+                TransSecure::afficherJournal(this);
+            });
+            if (barLayout) {
+                barLayout->addWidget(btnJournal);
+            } else if (btnRef->parentWidget()->layout()) {
+                btnRef->parentWidget()->layout()->addWidget(btnJournal);
+            }
+        }
+    }
 }
 
 void SmartPub::finRemplirComboProjets()
@@ -332,6 +361,13 @@ void SmartPub::finAjouterTransactionTable(const TransactionData &data) {
         q.prepare(QStringLiteral("DELETE FROM FINANCE WHERE ID_TRANSACTION = :id"));
         q.bindValue(":id", transId);
         if (q.exec()) {
+            TransSecure::logTransaction("SUPPRESSION", transId,
+                                        finTransactionsMap.contains(transId) ? finTransactionsMap[transId].type : "—",
+                                        finTransactionsMap.contains(transId) ? finTransactionsMap[transId].montant : 0.0,
+                                        finTransactionsMap.contains(transId) ? finTransactionsMap[transId].date : "—",
+                                        finTransactionsMap.contains(transId) ? finTransactionsMap[transId].categorie : "—",
+                                        finTransactionsMap.contains(transId) ? finTransactionsMap[transId].statut : "—",
+                                        finTransactionsMap.contains(transId) ? finTransactionsMap[transId].projet : "—");
             QMessageBox::information(this, "Succès", "Transaction supprimée avec succès !");
             finChargerTransactionsDepuisOracle();
         } else {
@@ -892,6 +928,10 @@ void SmartPub::handleFinBtnAjouterTransactionClicked() {
                                   QStringLiteral("Échec de la modification : ") + query.lastError().text());
             return;
         }
+        TransSecure::logTransaction("MODIFICATION", finTransactionSelectionnee,
+                                    finTypeDbToUi(typeDb), montant, date,
+                                    categorie, statut,
+                                    ui->finComboBoxProjet->currentText(), description);
         QMessageBox::information(this, QStringLiteral("Succès"),
                                  QStringLiteral("Transaction modifiée avec succès !"));
     } else {
@@ -913,6 +953,9 @@ void SmartPub::handleFinBtnAjouterTransactionClicked() {
                                   QStringLiteral("Échec de l'ajout : ") + query.lastError().text());
             return;
         }
+        TransSecure::logTransaction("AJOUT", 0, finTypeDbToUi(typeDb), montant, date,
+                                    categorie, statut,
+                                    ui->finComboBoxProjet->currentText(), description);
         QMessageBox::information(this, QStringLiteral("Succès"),
                                  QStringLiteral("Transaction ajoutée avec succès !"));
     }
@@ -997,6 +1040,13 @@ void SmartPub::handleFinBtnSupprimerTransactionClicked() {
             }
         }
         finChargerTransactionsDepuisOracle();
+        TransSecure::logTransaction("SUPPRESSION", transactionId,
+                                    finTransactionsMap.contains(transactionId) ? finTransactionsMap[transactionId].type : "—",
+                                    finTransactionsMap.contains(transactionId) ? finTransactionsMap[transactionId].montant : 0.0,
+                                    finTransactionsMap.contains(transactionId) ? finTransactionsMap[transactionId].date : "—",
+                                    finTransactionsMap.contains(transactionId) ? finTransactionsMap[transactionId].categorie : "—",
+                                    finTransactionsMap.contains(transactionId) ? finTransactionsMap[transactionId].statut : "—",
+                                    finTransactionsMap.contains(transactionId) ? finTransactionsMap[transactionId].projet : "—");
         QMessageBox::information(this, "Succès", "Transaction supprimée");
     }
 }

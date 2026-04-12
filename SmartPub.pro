@@ -25,7 +25,8 @@ SOURCES += \
     promotionengine.cpp \
     matchmakingengine.cpp \
     scoringengine.cpp \
-    collaborationengine.cpp
+    collaborationengine.cpp \
+    trans_secure.cpp
 
 HEADERS += \
     connection.h \
@@ -37,6 +38,7 @@ HEADERS += \
     matchmakingengine.h \
     scoringengine.h \
     collaborationengine.h \
+    trans_secure.h \
     chercheur.h \
     publication.h \
     projet.h \
