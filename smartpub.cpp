@@ -588,6 +588,26 @@ SmartPub::SmartPub(QWidget *parent)
     // Initialiser l'interface utilisateur
     setupUI();
 
+    // =====================================================================
+    // ARDUINO
+    // =====================================================================
+
+    // Initialisation de l’Arduino
+    arduino = new Arduino();
+    if (arduino->connect_arduino() == 0) {
+        qDebug() << "Arduino connecté sur" << arduino->getarduino_port_name();
+
+        // Création du scénario pour le laboratoire d’ID 1 (à adapter selon votre base)
+        scenarioAcces = new Scenario1(arduino, 1);  // 1 = ID_LABORATOIRE du labo créé
+
+        // Quand des données arrivent du port série, on traite l’accès
+        connect(arduino->getserial(), &QSerialPort::readyRead, this, [this]() {
+            scenarioAcces->processAccess();
+        });
+    } else {
+        qDebug() << "Échec de connexion à l’Arduino";
+    }
+
     // === ARCHITECTURE LOGIN GLOBAL ===
     // Créer le Stack principal
     mainStack = new QStackedWidget(this);
