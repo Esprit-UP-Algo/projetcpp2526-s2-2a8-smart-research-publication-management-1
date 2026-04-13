@@ -1,6 +1,8 @@
 ﻿#include "smartpub.h"
 #include "ui_smartpub.h"
 #include "connection.h"
+#include "scoringengine.h"
+#include "collaborationengine.h"
 #include <algorithm>
 #include <QSqlDatabase>
 #include <QSqlQuery>
@@ -12,6 +14,9 @@
 #include <QHeaderView>
 #include <QMenu>
 #include <QCursor>
+#include <QRegularExpression>
+#include <QRegularExpressionValidator>
+#include <QDoubleValidator>
 
 void SmartPub::labSetupUI()
 {
@@ -123,7 +128,7 @@ void SmartPub::labSetupUI()
         "QPushButton:hover{background-color:#ecfdf5;}");
     toolbarLayout->addWidget(btnOptim);
 
-    QPushButton *btnPred = new QPushButton("🔮  Prédicteur");
+    QPushButton *btnPred = new QPushButton("🏆  Scoring");
     btnPred->setObjectName("labBtnPredicteur");
     btnPred->setFixedHeight(44);
     btnPred->setCursor(Qt::PointingHandCursor);
@@ -179,6 +184,7 @@ void SmartPub::labSetupUI()
     labTable->setObjectName("labTable");
     labTable->setColumnCount(7);
     labTable->setHorizontalHeaderLabels({"ID", "Nom", "Thématique", "Budget (€)", "Capacité", "Statut", "Directeur"});
+    labTable->setColumnHidden(0, true);
     labTable->horizontalHeader()->setStretchLastSection(true);
     labTable->horizontalHeader()->setSectionResizeMode(1, QHeaderView::Stretch);
     labTable->setSelectionBehavior(QAbstractItemView::SelectRows);
@@ -265,6 +271,7 @@ void SmartPub::labSetupUI()
     formLayout->addWidget(makeLabel("Nom du laboratoire *"));
     labFormNom = makeInput();
     labFormNom->setPlaceholderText("Ex: Lab IA Avancée");
+    labFormNom->setValidator(new QRegularExpressionValidator(QRegularExpression("[\\p{L} ]+"), labFormFrame));
     formLayout->addWidget(labFormNom);
 
     formLayout->addWidget(makeLabel("Thématique *"));
@@ -283,6 +290,11 @@ void SmartPub::labSetupUI()
     formLayout->addWidget(makeLabel("Budget annuel (€)"));
     labFormBudget = makeInput();
     labFormBudget->setPlaceholderText("Ex: 250000");
+    {
+        QDoubleValidator *vBudget = new QDoubleValidator(0.0, 1e12, 2, labFormFrame);
+        vBudget->setNotation(QDoubleValidator::StandardNotation);
+        labFormBudget->setValidator(vBudget);
+    }
     formLayout->addWidget(labFormBudget);
 
     formLayout->addWidget(makeLabel("Capacité (chercheurs)"));
@@ -310,11 +322,31 @@ void SmartPub::labSetupUI()
     formLayout->addWidget(makeLabel("Équipements (séparés par virgule)"));
     labFormEquipements = makeInput();
     labFormEquipements->setPlaceholderText("Ex: Microscope, Spectromètre…");
+    labFormEquipements->setValidator(new QRegularExpressionValidator(QRegularExpression("[\\p{L} ,]+"), labFormFrame));
     formLayout->addWidget(labFormEquipements);
 
     formLayout->addWidget(makeLabel("Directeur de recherche"));
-    labFormDirecteur = makeInput();
-    labFormDirecteur->setPlaceholderText("Ex: Dr. Dupont");
+    labFormDirecteur = new QComboBox();
+    labFormDirecteur->setFixedHeight(40);
+    labFormDirecteur->setStyleSheet(
+        "QComboBox{background:#f8fafc;border:1.5px solid #e2e8f0;border-radius:8px;"
+        "padding:0 12px;font-size:13px;color:#334155;}"
+        "QComboBox:focus{border-color:#3b82f6;background:white;}"
+        "QComboBox::drop-down{border:none;width:26px;}");
+    labFormDirecteur->addItem("-- Sélectionner un directeur --", QVariant(0));
+    {
+        QSqlDatabase db = Connection::instance()->getDatabase();
+        if (db.isOpen()) {
+            QSqlQuery q(db);
+            if (q.exec("SELECT ID_CHERCHEUR, NOM, PRENOM FROM CHERCHEUR ORDER BY NOM, PRENOM")) {
+                while (q.next()) {
+                    int id = q.value(0).toInt();
+                    QString nom = q.value(1).toString() + " " + q.value(2).toString();
+                    labFormDirecteur->addItem(nom.trimmed(), QVariant(id));
+                }
+            }
+        }
+    }
     formLayout->addWidget(labFormDirecteur);
 
     formLayout->addStretch();
@@ -451,7 +483,7 @@ void SmartPub::labViderFormulaire()
     if (labFormCapacite)   labFormCapacite->setValue(10);
     if (labFormStatut)     labFormStatut->setCurrentIndex(0);
     if (labFormEquipements)labFormEquipements->clear();
-    if (labFormDirecteur)  labFormDirecteur->clear();
+    if (labFormDirecteur)  labFormDirecteur->setCurrentIndex(0);
 }
 
 void SmartPub::labRemplirFormulaire(const LaboratoryData &lab)
@@ -462,7 +494,10 @@ void SmartPub::labRemplirFormulaire(const LaboratoryData &lab)
     if (labFormCapacite)   labFormCapacite->setValue(lab.capacite > 0 ? lab.capacite : 1);
     if (labFormStatut)     labFormStatut->setCurrentText(lab.statut);
     if (labFormEquipements)labFormEquipements->setText(lab.equipements);
-    if (labFormDirecteur)  labFormDirecteur->setText(lab.directeur);
+    if (labFormDirecteur) {
+        int idx = labFormDirecteur->findText(lab.directeur, Qt::MatchContains);
+        labFormDirecteur->setCurrentIndex(idx >= 0 ? idx : 0);
+    }
 }
 
 LaboratoryData SmartPub::labGetFormData() const
@@ -474,7 +509,7 @@ LaboratoryData SmartPub::labGetFormData() const
     lab.capacite   = labFormCapacite   ? labFormCapacite->value()            : 1;
     lab.statut     = labFormStatut     ? labFormStatut->currentText()        : "Actif";
     lab.equipements= labFormEquipements? labFormEquipements->text().trimmed(): "";
-    lab.directeur  = labFormDirecteur  ? labFormDirecteur->text().trimmed()  : "";
+    lab.directeur  = labFormDirecteur  ? labFormDirecteur->currentText()      : "";
     return lab;
 }
 
@@ -812,28 +847,22 @@ void SmartPub::labOptimiseurCollab()
                          "QTableWidget::item{padding:8px;color:#1f2937;}"
                          "QHeaderView::section{background:#f3f4f6;color:#374151;padding:10px;border:none;border-bottom:1px solid #e5e7eb;font-weight:600;}");
 
-    QList<LaboratoryData> labs = labDataMap.values();
-    int synFound = 0; double totalSav = 0;
+    QList<CollaborationSynergy> synergies = CollaborationEngine::detect(labDataMap.values());
+    double totalSav = 0;
 
-    for (int i = 0; i < labs.size(); i++) {
-        for (int j = i + 1; j < labs.size(); j++) {
-            const LaboratoryData &l1 = labs[i]; const LaboratoryData &l2 = labs[j];
-            if (l1.thematique == l2.thematique && (l1.statut == "Actif" || l2.statut == "Actif")) {
-                double sav = (l1.budget + l2.budget) * 0.15;
-                totalSav += sav; synFound++;
-                int row = table->rowCount(); table->insertRow(row);
-                table->setItem(row, 0, new QTableWidgetItem(l1.nom));
-                table->setItem(row, 1, new QTableWidgetItem(l2.nom));
-                table->setItem(row, 2, new QTableWidgetItem("🎯 Thématique commune"));
-                table->setItem(row, 3, new QTableWidgetItem("⭐⭐⭐⭐⭐"));
-                table->setItem(row, 4, new QTableWidgetItem(QString("%1 €").arg(sav, 0, 'f', 0)));
-                table->setItem(row, 5, new QTableWidgetItem("Partage de ressources, projets conjoints"));
-                labSetTableRowBackground(table, row, QColor(220, 252, 231));
-            }
-        }
+    for (const CollaborationSynergy &syn : synergies) {
+        totalSav += syn.economies;
+        int row = table->rowCount(); table->insertRow(row);
+        table->setItem(row, 0, new QTableWidgetItem(syn.nomLab1));
+        table->setItem(row, 1, new QTableWidgetItem(syn.nomLab2));
+        table->setItem(row, 2, new QTableWidgetItem(syn.typesynergie));
+        table->setItem(row, 3, new QTableWidgetItem(QString("⭐").repeated(syn.scoreEtoiles)));
+        table->setItem(row, 4, new QTableWidgetItem(QString("%1 €").arg(syn.economies, 0, 'f', 0)));
+        table->setItem(row, 5, new QTableWidgetItem(syn.recommandation));
+        labSetTableRowBackground(table, row, QColor(220, 252, 231));
     }
 
-    if (synFound == 0) {
+    if (synergies.isEmpty()) {
         QLabel *noSyn = new QLabel("ℹ️  Aucune synergie détectée. Ajoutez plusieurs laboratoires avec des thématiques similaires.");
         noSyn->setWordWrap(true);
         noSyn->setStyleSheet("color:#6b7280;font-size:14px;padding:20px;background:#f9fafb;border-radius:8px;");
@@ -843,7 +872,7 @@ void SmartPub::labOptimiseurCollab()
         QLabel *summary = new QLabel(QString(
             "<span style='color:#1e40af;font-weight:600;'>📊 %1 synergie(s) détectée(s)</span> — "
             "Économies potentielles : <span style='color:#059669;font-weight:600;'>%2 €</span>")
-            .arg(synFound).arg(totalSav, 0, 'f', 0));
+            .arg(synergies.size()).arg(totalSav, 0, 'f', 0));
         summary->setTextFormat(Qt::RichText);
         summary->setStyleSheet("padding:10px;background:#eff6ff;border-radius:8px;font-size:13px;");
         layout->addWidget(summary);
@@ -858,90 +887,121 @@ void SmartPub::labOptimiseurCollab()
     dlg->exec();
 }
 
-// ---------- Prédicteur de Besoins ----------
+// ---------- Moteur de Scoring ----------
 void SmartPub::labPredicteurBesoins()
 {
     QDialog *dlg = new QDialog(this);
-    dlg->setWindowTitle("🔮  Prédicteur de Besoins");
-    dlg->setMinimumSize(920, 640);
+    dlg->setWindowTitle("🏆  Moteur de Scoring des Laboratoires");
+    dlg->setMinimumSize(860, 580);
     dlg->setAttribute(Qt::WA_DeleteOnClose);
-    dlg->setStyleSheet("QDialog{background-color:white;} QLabel{color:#1f2937;}");
+    dlg->setStyleSheet("QDialog{background-color:#f8fafc;} QLabel{color:#1f2937;}");
 
     QVBoxLayout *layout = new QVBoxLayout(dlg);
-    layout->setContentsMargins(24, 24, 24, 16); layout->setSpacing(14);
+    layout->setContentsMargins(24, 24, 24, 16);
+    layout->setSpacing(14);
 
-    QLabel *title = new QLabel("🔮  Prédicteur de Besoins & Alertes Intelligentes");
+    QLabel *title = new QLabel("🏆  Classement & Score de Performance des Laboratoires");
     title->setStyleSheet("font-size:18px;font-weight:bold;color:#1e3a5f;");
     layout->addWidget(title);
 
-    QTableWidget *table = new QTableWidget();
-    table->setColumnCount(5);
-    table->setHorizontalHeaderLabels({"Laboratoire","Type d'Alerte","Priorité","Délai","Action Recommandée"});
-    table->horizontalHeader()->setStretchLastSection(true);
-    table->setAlternatingRowColors(true);
-    table->verticalHeader()->setDefaultSectionSize(56);
-    table->setStyleSheet("QTableWidget{color:#1f2937;background:white;gridline-color:#e5e7eb;border:1px solid #e2e8f0;border-radius:10px;}"
-                         "QTableWidget::item{padding:10px;color:#1f2937;}"
-                         "QHeaderView::section{background:#f3f4f6;color:#374151;padding:10px;border:none;border-bottom:1px solid #e5e7eb;font-weight:600;}");
+    QLabel *subtitle = new QLabel("Score calculé sur : statut actif, budget, capacité, équipements et directeur assigné.");
+    subtitle->setStyleSheet("font-size:12px;color:#64748b;margin-bottom:4px;");
+    layout->addWidget(subtitle);
 
-    int crit = 0, warn = 0;
-    for (const LaboratoryData &lab : labDataMap) {
-        if (lab.capacite > 22 && lab.statut == "Actif") {
-            int row = table->rowCount(); table->insertRow(row);
-            table->setItem(row,0,new QTableWidgetItem(lab.nom));
-            table->setItem(row,1,new QTableWidgetItem("⚠️ Saturation capacité"));
-            table->setItem(row,2,new QTableWidgetItem("🔴 CRITIQUE"));
-            table->setItem(row,3,new QTableWidgetItem("2-3 mois"));
-            table->setItem(row,4,new QTableWidgetItem("Augmenter la capacité de 20% ou créer une annexe"));
-            labSetTableRowBackground(table, row, QColor(254, 226, 226)); crit++;
-        } else if (lab.capacite > 18 && lab.statut == "Actif") {
-            int row = table->rowCount(); table->insertRow(row);
-            table->setItem(row,0,new QTableWidgetItem(lab.nom));
-            table->setItem(row,1,new QTableWidgetItem("⚡ Capacité élevée"));
-            table->setItem(row,2,new QTableWidgetItem("🟡 ATTENTION"));
-            table->setItem(row,3,new QTableWidgetItem("4-6 mois"));
-            table->setItem(row,4,new QTableWidgetItem("Planifier extension, optimiser l'espace"));
-            labSetTableRowBackground(table, row, QColor(254, 243, 199)); warn++;
-        }
-        if (lab.budget > 300000) {
-            int row = table->rowCount(); table->insertRow(row);
-            table->setItem(row,0,new QTableWidgetItem(lab.nom));
-            table->setItem(row,1,new QTableWidgetItem("💰 Budget élevé"));
-            table->setItem(row,2,new QTableWidgetItem("🔵 INFO"));
-            table->setItem(row,3,new QTableWidgetItem("Continu"));
-            table->setItem(row,4,new QTableWidgetItem("Audit financier, recherche de synergies budgétaires"));
-            labSetTableRowBackground(table, row, QColor(219, 234, 254));
-        }
-        if (lab.statut == "En Construction" || lab.statut == "En Rénovation") {
-            int row = table->rowCount(); table->insertRow(row);
-            table->setItem(row,0,new QTableWidgetItem(lab.nom));
-            table->setItem(row,1,new QTableWidgetItem("🔧 Laboratoire indisponible"));
-            table->setItem(row,2,new QTableWidgetItem("🟠 SUIVI"));
-            table->setItem(row,3,new QTableWidgetItem("Variable"));
-            table->setItem(row,4,new QTableWidgetItem("Suivre l'avancement, prévoir ouverture"));
-            labSetTableRowBackground(table, row, QColor(255, 237, 213));
-        }
+    QList<ScoredLaboratory> scored = ScoringEngine::score(labDataMap.values());
+
+    QTableWidget *table = new QTableWidget();
+    table->setColumnCount(6);
+    table->setHorizontalHeaderLabels({"Rang", "Laboratoire", "Score /100", "Niveau", "Thématique", "Recommandation"});
+    table->horizontalHeader()->setStretchLastSection(true);
+    table->horizontalHeader()->setSectionResizeMode(5, QHeaderView::Stretch);
+    table->setColumnWidth(0, 55);
+    table->setColumnWidth(2, 90);
+    table->setColumnWidth(3, 130);
+    table->setColumnWidth(4, 160);
+    table->setSelectionBehavior(QAbstractItemView::SelectRows);
+    table->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    table->setAlternatingRowColors(true);
+    table->verticalHeader()->setVisible(false);
+    table->verticalHeader()->setDefaultSectionSize(52);
+    table->setStyleSheet(
+        "QTableWidget{background:white;border:1px solid #e2e8f0;border-radius:10px;"
+        "gridline-color:#f1f5f9;font-size:13px;color:#1f2937;}"
+        "QTableWidget::item{padding:8px 12px;color:#1f2937;}"
+        "QTableWidget::item:selected{background:#eff6ff;color:#1d4ed8;}"
+        "QHeaderView::section{background:#f8fafc;color:#64748b;font-weight:600;font-size:12px;"
+        "padding:10px 12px;border:none;border-bottom:1px solid #e2e8f0;}"
+        "QTableWidget::item:alternate{background:#f8fafc;}");
+
+    static const QStringList rankEmojis = {"🥇","🥈","🥉"};
+    for (int i = 0; i < scored.size(); i++) {
+        const ScoredLaboratory &sl = scored[i];
+        int row = table->rowCount();
+        table->insertRow(row);
+
+        QString rang = (i < 3) ? rankEmojis[i] + QString(" %1").arg(i+1)
+                                : QString("  %1").arg(i+1);
+        table->setItem(row, 0, new QTableWidgetItem(rang));
+        table->setItem(row, 1, new QTableWidgetItem(sl.lab.nom));
+
+        QTableWidgetItem *scoreItem = new QTableWidgetItem(QString::number(sl.score));
+        scoreItem->setTextAlignment(Qt::AlignCenter);
+        scoreItem->setForeground(QColor(sl.badgeColor));
+        QFont f = scoreItem->font(); f.setBold(true); scoreItem->setFont(f);
+        table->setItem(row, 2, scoreItem);
+
+        QTableWidgetItem *badgeItem = new QTableWidgetItem(sl.badge);
+        badgeItem->setForeground(QColor(sl.badgeColor));
+        QFont fb = badgeItem->font(); fb.setBold(true); badgeItem->setFont(fb);
+        table->setItem(row, 3, badgeItem);
+
+        table->setItem(row, 4, new QTableWidgetItem(sl.lab.thematique));
+        table->setItem(row, 5, new QTableWidgetItem(sl.recommandation));
+
+        QColor rowColor;
+        if      (sl.score >= 80) rowColor = QColor(220, 252, 231);
+        else if (sl.score >= 60) rowColor = QColor(219, 234, 254);
+        else if (sl.score >= 40) rowColor = QColor(254, 243, 199);
+        else                     rowColor = QColor(254, 226, 226);
+        labSetTableRowBackground(table, row, rowColor);
     }
 
-    if (table->rowCount() == 0) {
-        QLabel *ok = new QLabel("✅  Aucune alerte détectée. Tous les laboratoires sont dans des conditions optimales !");
-        ok->setWordWrap(true);
-        ok->setStyleSheet("color:#059669;font-size:14px;padding:20px;background:#ecfdf5;border-radius:8px;");
-        layout->addWidget(ok);
+    if (scored.isEmpty()) {
+        QLabel *empty = new QLabel("ℹ️  Aucun laboratoire à scorer. Ajoutez des laboratoires d'abord.");
+        empty->setStyleSheet("color:#6b7280;font-size:14px;padding:20px;background:#f9fafb;border-radius:8px;");
+        layout->addWidget(empty);
     } else {
         layout->addWidget(table);
-        QString summary = QString("🔴 %1 critique(s)  —  🟡 %2 avertissement(s)").arg(crit).arg(warn);
-        QLabel *sumLabel = new QLabel(summary);
-        sumLabel->setStyleSheet("padding:10px;background:#fef9ec;border-radius:8px;font-size:13px;font-weight:600;color:#92400e;");
-        layout->addWidget(sumLabel);
+        int excellent = 0, bon = 0, moyen = 0, faible = 0;
+        for (const ScoredLaboratory &sl : scored) {
+            if      (sl.score >= 80) excellent++;
+            else if (sl.score >= 60) bon++;
+            else if (sl.score >= 40) moyen++;
+            else                     faible++;
+        }
+        QLabel *summary = new QLabel(QString(
+            "🥇 <b>%1</b> Excellent &nbsp;&nbsp; 🥈 <b>%2</b> Bon &nbsp;&nbsp; "
+            "🥉 <b>%3</b> Moyen &nbsp;&nbsp; ⚠️ <b>%4</b> À améliorer")
+            .arg(excellent).arg(bon).arg(moyen).arg(faible));
+        summary->setTextFormat(Qt::RichText);
+        summary->setStyleSheet("padding:10px 16px;background:white;border:1px solid #e2e8f0;"
+                               "border-radius:8px;font-size:13px;color:#334155;");
+        layout->addWidget(summary);
     }
 
     QPushButton *closeBtn = new QPushButton("Fermer");
-    closeBtn->setFixedHeight(40); closeBtn->setCursor(Qt::PointingHandCursor);
-    closeBtn->setStyleSheet("QPushButton{background:#6b7280;color:white;border:none;border-radius:8px;padding:0 20px;font-weight:600;}QPushButton:hover{background:#4b5563;}");
+    closeBtn->setFixedHeight(40);
+    closeBtn->setCursor(Qt::PointingHandCursor);
+    closeBtn->setStyleSheet(
+        "QPushButton{background:#6b7280;color:white;border:none;border-radius:8px;"
+        "padding:0 20px;font-weight:600;}"
+        "QPushButton:hover{background:#4b5563;}");
     connect(closeBtn, &QPushButton::clicked, dlg, &QDialog::accept);
-    QHBoxLayout *btnRow = new QHBoxLayout(); btnRow->addStretch(); btnRow->addWidget(closeBtn);
+    QHBoxLayout *btnRow = new QHBoxLayout();
+    btnRow->addStretch();
+    btnRow->addWidget(closeBtn);
     layout->addLayout(btnRow);
+
     dlg->exec();
 }
 

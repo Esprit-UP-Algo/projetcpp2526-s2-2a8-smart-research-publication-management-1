@@ -12,6 +12,30 @@ void SmartPub::evSetupUI() {
     ui->evTabWidget->setCurrentIndex(0);
     evEventSelectionne = -1;
 
+    // --- Contrôle de saisie ---
+
+    // Code : chiffres uniquement
+    ui->evLineEditID->setValidator(new QIntValidator(0, 999999999, this));
+
+    // Nom et Lieu : lettres et espaces uniquement
+    QRegularExpression lettersOnly("[A-Za-zÀ-ÿ ]+");
+    ui->evLineEditNom->setValidator(new QRegularExpressionValidator(lettersOnly, this));
+    ui->evLineEditLieu->setValidator(new QRegularExpressionValidator(lettersOnly, this));
+
+    // Date : validation en temps réel, champ rouge si invalide
+    connect(ui->evLineEditDate, &QLineEdit::textChanged, this, [this](const QString &text) {
+        if (text.isEmpty()) {
+            ui->evLineEditDate->setStyleSheet("");
+            return;
+        }
+        QDate d = QDate::fromString(text.trimmed(), "dd/MM/yyyy");
+        if (d.isValid() && d.toString("dd/MM/yyyy") == text.trimmed()) {
+            ui->evLineEditDate->setStyleSheet("");
+        } else {
+            ui->evLineEditDate->setStyleSheet("border: 1px solid red; background-color: #ffe4e4;");
+        }
+    });
+
     // Configure evTableEvents to stretch and fill available space
     if (ui->evTableEvents) {
         ui->evTableEvents->horizontalHeader()->setStretchLastSection(true);

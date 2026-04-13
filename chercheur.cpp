@@ -163,35 +163,9 @@ void SmartPub::cherchSetupUI() {
 }
 
 void SmartPub::cherchConnectSignals() {
-    connect(ui->cherchBtnLogin, &QPushButton::clicked, this,
-            &SmartPub::on_cherchBtnLogin_clicked);
-    connect(ui->cherchBtnMotDePasseOublie, &QPushButton::clicked, this,
-            &SmartPub::on_cherchBtnMotDePasseOublie_clicked);
-    connect(ui->cherchBtnRetourLogin, &QPushButton::clicked, this,
-            &SmartPub::on_cherchBtnRetourLogin_clicked);
-    connect(ui->cherchBtnForgotOk, &QPushButton::clicked, this,
-            &SmartPub::on_cherchBtnForgotOk_clicked);
-
-    connect(ui->cherchBtnVueListe, &QPushButton::clicked, this,
-            &SmartPub::on_cherchBtnVueListe_clicked);
-    connect(ui->cherchBtnAjouter, &QPushButton::clicked, this,
-            &SmartPub::on_cherchBtnAjouter_clicked);
-    connect(ui->cherchBtnRecherche, &QPushButton::clicked, this,
-            &SmartPub::on_cherchBtnRecherche_clicked);
-    connect(ui->cherchBtnTri, &QPushButton::clicked, this,
-            &SmartPub::on_cherchBtnTri_clicked);
-    connect(ui->cherchBtnExport, &QPushButton::clicked, this,
-            &SmartPub::on_cherchBtnExport_clicked);
-    connect(ui->cherchBtnStatistiques, &QPushButton::clicked, this,
-            &SmartPub::on_cherchBtnStatistiques_clicked);
-    connect(ui->cherchBtnUploadPhoto, &QPushButton::clicked, this,
-            &SmartPub::on_cherchBtnUploadPhoto_clicked);
-    connect(ui->cherchBtnAjouterChercheur, &QPushButton::clicked, this,
-            &SmartPub::on_cherchBtnAjouterChercheur_clicked);
-    connect(ui->cherchBtnAnnulerAjout, &QPushButton::clicked, this,
-            &SmartPub::on_cherchBtnAnnulerAjout_clicked);
-    connect(ui->cherchLineEditRecherche, &QLineEdit::textChanged, this,
-            &SmartPub::on_cherchLineEditRecherche_textChanged);
+    // NOTE : Les slots on_cherchBtn*_clicked sont connectés automatiquement
+    // par ui->setupUi() via le mécanisme de connexion automatique Qt (auto-connect).
+    // On ne les reconnecte PAS ici pour éviter le double déclenchement.
 
     // ── CIN live-validation ───────────────────────────────────────────────────
     connect(ui->cherchLineEditCIN, &QLineEdit::textChanged, this, [this](const QString &) {
@@ -917,30 +891,69 @@ void SmartPub::cherchShowMainView() {
     mainStack->setCurrentIndex(1);
 }
 
-void SmartPub::cherchCheckLogin() {
-    // === BYPASS AUTHENTICATION (User Request) ===
-    currentUser =
-        UserAccount{"admin", "", "Tous", UserRole::Admin, "Administrateur"};
+void SmartPub::cherchCheckLogin()
+{
+    const QString email    = ui->cherchLineEditLoginEmail->text().trimmed();
+    const QString password = ui->cherchLineEditLoginPassword->text();
+
+    // === Authentification via le moteur centralisé (publicationauth) ===
+    AppAuthService authService;
+    AppUserAccount acc;
+    QString errMsg;
+
+    if (!authService.authenticate(email, password, &acc, &errMsg)) {
+        // Afficher l'erreur dans un QMessageBox
+        // (si votre .ui a un cherchLabelLoginError, remplacez par :
+        //   ui->cherchLabelLoginError->setText(errMsg); ui->cherchLabelLoginError->show();)
+        QMessageBox::warning(this,
+                             QStringLiteral("Connexion échouée"),
+                             errMsg.isEmpty()
+                                 ? QStringLiteral("Email ou mot de passe incorrect.")
+                                 : errMsg);
+        ui->cherchLineEditLoginPassword->clear();
+        ui->cherchLineEditLoginPassword->setFocus();
+        return;
+    }
+
+    // === Authentification réussie ===
+    currentUser = UserAccount{
+        acc.email,
+        acc.password,
+        acc.allowedModule,
+        UserRole::Admin,
+        acc.displayName,
+        acc.moduleIndex
+    };
     isUserLoggedIn = true;
 
-    // Configuration post-login
+    // Mettre à jour la sidebar
     updateSidebarProfileVisibility();
-
-    // Mettre à jour les infos avatar/nom
     if (nameLabel)
         nameLabel->setText(currentUser.displayName);
     if (roleLabel)
-        roleLabel->setText("Administrateur");
+        roleLabel->setText(currentUser.module == QStringLiteral("ALL")
+                               ? QStringLiteral("Directeur Général")
+                               : currentUser.module);
 
-    // FIX: Ouvrir Publications en premier lieu après login (index 1)
-    ui->stackedWidgetModules->setCurrentIndex(1);
-    setActiveNavigationButton(1);
-    updateProfileName(1);
-    SR_updateButtonStyles();
+    // Déterminer le module à afficher après login
+    // Si accès restreint, aller directement sur le module autorisé
+    // Si accès total (admin), afficher Publications (index 1) par défaut
+    const int targetIndex = (acc.moduleIndex >= 0) ? acc.moduleIndex : 1;
 
-    // S'assurer que le module Chercheur sera en vue liste lors d'une navigation future
+    ui->stackedWidgetModules->setCurrentIndex(targetIndex);
+    setActiveNavigationButton(targetIndex);
+    updateProfileName(targetIndex);
+
+    // Appliquer le blocage des boutons sidebar non autorisés
+    applyModuleRestrictions();
+
+    // S'assurer que le module Chercheurs sera en vue liste si on y navigue
     ui->cherchStackedWidget->setCurrentIndex(0);
     cherchVueListeActive = true;
+
+    // Mettre à jour les styles du module Publications si c'est le module affiché
+    if (targetIndex == 1)
+        SR_updateButtonStyles();
 
     // Afficher l'application principale
     mainStack->setCurrentIndex(1);
@@ -1007,7 +1020,7 @@ void SmartPub::cherchEnrichirDonneesDepuisOracle()
         it->projetsIds.clear();
     }
     QSqlQuery q(db);
-    if (q.exec(QStringLiteral("SELECT ID_CHERCHEUR, CODE_PROJET FROM CONTRIBUER"))) {
+    if (q.exec(QStringLiteral("SELECT ID_CHERCHEUR, ID_PROJET FROM CONTRIBUER"))) {
         while (q.next()) {
             const int cid = q.value(0).toInt();
             const int pid = q.value(1).toInt();
@@ -1620,26 +1633,125 @@ void SmartPub::cherchTrierParDateCreation(bool croissant) {
 
 void SmartPub::on_cherchBtnExport_clicked() {
     QString fileName = QFileDialog::getSaveFileName(
-        this, "Exporter", QDir::homePath(), "CSV (*.csv)");
-    if (!fileName.isEmpty()) {
-        QFile file(fileName);
-        if (file.open(QIODevice::WriteOnly | QIODevice::Text)) {
-            QTextStream stream(&file);
-            stream << "ID,Nom,Prenom,Grade,Email,CIN,Date Creation,Age,Carriere,Nb "
-                      "Projets\n";
+        this, "Exporter la liste des chercheurs",
+        QDir::homePath() + "/Chercheurs_SmartPub.csv",
+        "Fichier CSV (*.csv)");
+    if (fileName.isEmpty())
+        return;
 
-            for (auto it = cherchChercheursMap.begin();
-                 it != cherchChercheursMap.end(); ++it) {
-                auto data = it.value();
-                stream << it.key() << "," << data.nom << "," << data.prenom << ","
-                       << data.grade << "," << data.email << "," << data.cin << ","
-                       << data.dateCreation.toString("dd/MM/yyyy") << "," << data.age
-                       << "," << data.carriere << "," << data.projetsIds.size() << "\n";
+    QFile file(fileName);
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        QMessageBox::critical(this, "Erreur",
+                              "Impossible de créer le fichier :\n" + fileName);
+        return;
+    }
+
+    // UTF-8 avec BOM pour que Excel reconnaisse l'encodage correctement
+    QTextStream stream(&file);
+    stream.setEncoding(QStringConverter::Utf8);
+    stream << "\xEF\xBB\xBF"; // BOM UTF-8
+
+    // ── Helper : encapsuler une valeur dans des guillemets CSV ────────────────
+    // Règle CSV : si la valeur contient ",", "\n" ou '"', on entoure de guillemets
+    // et on double les guillemets internes.
+    auto csvCell = [](const QString &val) -> QString {
+        QString v = val;
+        v.replace(QLatin1Char('"'), QStringLiteral("\"\""));  // doubler les guillemets
+        // Toujours encapsuler pour garantir la lisibilité dans Excel/LibreOffice
+        return QStringLiteral("\"") + v + QStringLiteral("\"");
+    };
+
+    // ── En-tête ───────────────────────────────────────────────────────────────
+    QStringList headers = {
+        "ID",
+        "Nom",
+        "Prénom",
+        "Grade",
+        "Email",
+        "CIN",
+        "Carrière",
+        "Nb Projets",
+        "Codes Projets",
+        "Titres des Projets"
+    };
+    stream << headers.join(";") << "\n";   // séparateur ";" — standard FR pour Excel
+
+    // ── Charger les projets depuis la BD pour chaque chercheur ────────────────
+    QSqlDatabase db = Connection::instance()->getDatabase();
+
+    // Précharger TOUS les projets par chercheur en une seule requête
+    // Structure : idChercheur → liste de "CODE — TITRE"
+    QHash<int, QStringList> projetsParChercheur;
+    QHash<int, QStringList> codesParChercheur;
+    if (db.isOpen()) {
+        QSqlQuery qProj(db);
+        if (qProj.exec(
+                QStringLiteral(
+                    "SELECT c.ID_CHERCHEUR, p.CODE, p.TITRE "
+                    "FROM CONTRIBUER c "
+                    "INNER JOIN PROJET p ON p.ID_PROJET = c.ID_PROJET "
+                    "ORDER BY c.ID_CHERCHEUR, p.CODE"))) {
+            while (qProj.next()) {
+                int    cid   = qProj.value(0).toInt();
+                QString code = qProj.value(1).toString();
+                QString titre = qProj.value(2).toString();
+                codesParChercheur[cid].append(code);
+                projetsParChercheur[cid].append(
+                    QString("[%1] %2").arg(code, titre));
             }
-            file.close();
-            QMessageBox::information(this, "Export", "Export réussi !");
         }
     }
+
+    // ── Lignes de données ─────────────────────────────────────────────────────
+    // Trier par ID pour un export ordonné
+    QList<int> ids = cherchChercheursMap.keys();
+    std::sort(ids.begin(), ids.end());
+
+    int nbExportes = 0;
+    for (int id : ids) {
+        const ChercheurData &d = cherchChercheursMap.value(id);
+
+        // Projets : codes séparés par " | " et titres séparés par " | "
+        QStringList codes  = codesParChercheur.value(id);
+        QStringList titres = projetsParChercheur.value(id);
+
+        QString codesStr  = codes.isEmpty()  ? "—" : codes.join(" | ");
+        QString titresStr = titres.isEmpty() ? "Aucun projet" : titres.join(" | ");
+
+        // Carrière calculée depuis nb projets + grade (déjà dans le cache)
+        QString carriere = d.carriere.isEmpty()
+                               ? cherchDeterminerCarriere(d.projetsIds.size(), d.grade)
+                               : d.carriere;
+
+        QStringList row = {
+            csvCell(QString::number(id)),
+            csvCell(d.nom),
+            csvCell(d.prenom),
+            csvCell(d.grade.isEmpty()    ? "—" : d.grade),
+            csvCell(d.email.isEmpty()    ? "—" : d.email),
+            csvCell(d.cin.isEmpty()      ? "—" : d.cin),
+            csvCell(carriere.isEmpty()   ? "—" : carriere),
+            csvCell(QString::number(codes.size())),
+            csvCell(codesStr),
+            csvCell(titresStr)
+        };
+
+        stream << row.join(";") << "\n";
+        ++nbExportes;
+    }
+
+    file.close();
+
+    QMessageBox::information(
+        this,
+        "Export réussi",
+        QString("✅  %1 chercheur(s) exporté(s) avec succès.\n\n"
+                "Fichier :\n%2\n\n"
+                "💡 Conseil : ouvrez le fichier avec Excel ou LibreOffice Calc.\n"
+                "    Si les colonnes ne se séparent pas, utilisez\n"
+                "    Données → Convertir → Délimiteur : point-virgule.")
+            .arg(nbExportes)
+            .arg(fileName));
 }
 
 void SmartPub::on_cherchBtnStatistiques_clicked() {
@@ -1938,7 +2050,7 @@ QComboBox, QSpinBox {
         const QString sqlEffectifs =
             QStringLiteral("SELECT L.NOM, COUNT(DISTINCT C.ID_CHERCHEUR) AS NB "
                            "FROM LABORATOIRE L "
-                           "INNER JOIN CONTRIBUER C ON C.CODE_PROJET = L.CODE_PROJET "
+                           "INNER JOIN CONTRIBUER C ON C.ID_PROJET = L.ID_PROJET "
                            "GROUP BY L.ID_LABORATOIRE, L.NOM ORDER BY L.NOM");
         if (qLab.exec(sqlEffectifs)) {
             while (qLab.next()) {
@@ -1950,9 +2062,9 @@ QComboBox, QSpinBox {
         const QString sqlSat =
             QStringLiteral("SELECT L.NOM, AVG(LEAST(cnt * 25, 100)) AS SAT "
                            "FROM ( "
-                           "  SELECT L2.ID_LABORATOIRE, C.ID_CHERCHEUR, COUNT(DISTINCT C.CODE_PROJET) AS cnt "
+                           "  SELECT L2.ID_LABORATOIRE, C.ID_CHERCHEUR, COUNT(DISTINCT C.ID_PROJET) AS cnt "
                            "  FROM LABORATOIRE L2 "
-                           "  INNER JOIN CONTRIBUER C ON C.CODE_PROJET = L2.CODE_PROJET "
+                           "  INNER JOIN CONTRIBUER C ON C.ID_PROJET = L2.ID_PROJET "
                            "  GROUP BY L2.ID_LABORATOIRE, C.ID_CHERCHEUR "
                            ") X "
                            "JOIN LABORATOIRE L ON L.ID_LABORATOIRE = X.ID_LABORATOIRE "
@@ -2037,7 +2149,7 @@ QComboBox, QSpinBox {
         QHBoxLayout *emptyLay = new QHBoxLayout(emptyFrame);
         emptyLay->setContentsMargins(16, 14, 16, 14);
         QLabel *empty = new QLabel(
-            "⚠️  Aucune donnée laboratoire — vérifiez les tables LABORATOIRE, CONTRIBUER et les clés CODE_PROJET.");
+            "⚠️  Aucune donnée laboratoire ");
         empty->setWordWrap(true);
         empty->setStyleSheet(
             "color: #92400e; font-size: 13px; font-weight: 500; "
@@ -2631,16 +2743,32 @@ QComboBox, QSpinBox {
 void SmartPub::on_cherchBtnUploadPhoto_clicked() {
     QString fileName = QFileDialog::getOpenFileName(
         this, "Photo", QDir::homePath(), "Images (*.png *.jpg *.jpeg)");
-    if (!fileName.isEmpty()) {
-        cherchCurrentPhotoPath = fileName;
-        ui->cherchLabelPhotoHint->setText("Photo sélectionnée ✓");
-        ui->cherchLabelPhotoHint->setStyleSheet(
-            "color: #10b981; font-size: 12px; background: transparent; border: "
-            "none;");
-    } else {
-        // Si l'utilisateur annule, conserver la photo actuelle sans la réinitialiser
+    if (fileName.isEmpty()) {
         if (cherchCurrentPhotoPath.isEmpty())
             cherchCurrentPhotoPath = QString(":/avatar.png");
+        return;
+    }
+
+    cherchCurrentPhotoPath = fileName;
+
+    // ── Afficher l'aperçu de la photo dans le bouton upload ──────────────────
+    QPixmap pix(fileName);
+    if (!pix.isNull() && ui->cherchBtnUploadPhoto) {
+        // Redimensionner le pixmap à la taille du bouton et l'afficher comme icône
+        QSize btnSize = ui->cherchBtnUploadPhoto->size();
+        int sz = qMin(btnSize.width(), btnSize.height()) - 8;
+        QPixmap circ = makeCircularPixmap(pix, sz);
+        ui->cherchBtnUploadPhoto->setIcon(QIcon(circ));
+        ui->cherchBtnUploadPhoto->setIconSize(QSize(sz, sz));
+        ui->cherchBtnUploadPhoto->setText(""); // Retirer le texte "+" quand photo présente
+    }
+
+    // ── Mettre à jour le label hint ───────────────────────────────────────────
+    if (ui->cherchLabelPhotoHint) {
+        ui->cherchLabelPhotoHint->setText("✓  Photo sélectionnée");
+        ui->cherchLabelPhotoHint->setStyleSheet(
+            "color: #10b981; font-size: 12px; font-weight: 600; "
+            "background: transparent; border: none;");
     }
 }
 
@@ -2770,6 +2898,11 @@ void SmartPub::on_cherchBtnAjouterChercheur_clicked() {
 
     QMessageBox::information(this, "Succès", "Chercheur ajouté !");
 
+    // ── OBJECTIF 2 : Rafraîchir le comboBox Responsable du module Projet ─────
+    // Sans ce rechargement, le nouveau chercheur n'apparaît pas dans la liste
+    // des responsables tant que l'application n'est pas redémarrée.
+    projSetupComboBoxes();
+
     // Récupérer l'ID du nouveau chercheur via la séquence Oracle
     int newId = -1;
     {
@@ -2778,18 +2911,20 @@ void SmartPub::on_cherchBtnAjouterChercheur_clicked() {
             newId = qId.value(0).toInt();
     }
 
-    // Insérer les contributions dans CONTRIBUER si des projets ont été sélectionnés
+    // Insérer les contributions dans CONTRIBUER (colonne ID_PROJET, clé numérique)
     if (newId > 0 && cherchProjetsListWidget) {
         QList<QListWidgetItem*> selItems = cherchProjetsListWidget->selectedItems();
         for (QListWidgetItem *item : selItems) {
-            int codeProjet = item->data(Qt::UserRole).toInt();
+            int idProjet = item->data(Qt::UserRole).toInt(); // ID_PROJET stocké dans UserRole
+            if (idProjet <= 0) continue;
             QSqlQuery qContrib(db);
             qContrib.prepare(
-                "INSERT INTO CONTRIBUER (ID_CHERCHEUR, CODE_PROJET) "
+                "INSERT INTO CONTRIBUER (ID_CHERCHEUR, ID_PROJET) "
                 "VALUES (:idc, :idp)");
             qContrib.bindValue(":idc", newId);
-            qContrib.bindValue(":idp", codeProjet);
-            qContrib.exec(); // erreur silencieuse si doublon (PK déjà présente)
+            qContrib.bindValue(":idp", idProjet);
+            if (!qContrib.exec())
+                qWarning() << "[CONTRIBUER] INSERT échoué :" << qContrib.lastError().text();
         }
     }
 
@@ -2802,6 +2937,12 @@ void SmartPub::on_cherchBtnAjouterChercheur_clicked() {
     ui->cherchLabelPhotoHint->setStyleSheet(
         "color: #94a3b8; font-size: 12px; background: transparent; border: "
         "none;");
+    // Réinitialiser l'aperçu photo du bouton upload
+    if (ui->cherchBtnUploadPhoto) {
+        ui->cherchBtnUploadPhoto->setIcon(QIcon());
+        ui->cherchBtnUploadPhoto->setText("+");
+    }
+    cherchCurrentPhotoPath.clear();
     // Réinitialiser le widget projets
     if (cherchProjetsListWidget) cherchProjetsListWidget->clearSelection();
     if (cherchBtnSelectProjets)  cherchBtnSelectProjets->setText("Sélectionner des projets…");
@@ -2827,6 +2968,18 @@ void SmartPub::on_cherchBtnAnnulerAjout_clicked() {
     ui->cherchLineEditPrenom->clear();
     ui->cherchLineEditCIN->clear();
     ui->cherchLineEditEmail->clear();
+
+    // Réinitialiser l'aperçu photo
+    if (ui->cherchBtnUploadPhoto) {
+        ui->cherchBtnUploadPhoto->setIcon(QIcon());
+        ui->cherchBtnUploadPhoto->setText("+");
+    }
+    cherchCurrentPhotoPath.clear();
+    if (ui->cherchLabelPhotoHint) {
+        ui->cherchLabelPhotoHint->setText("Cliquez pour ajouter une photo");
+        ui->cherchLabelPhotoHint->setStyleSheet(
+            "color: #94a3b8; font-size: 12px; background: transparent; border: none;");
+    }
 
     on_cherchBtnVueListe_clicked();
 }
@@ -3015,22 +3168,30 @@ void SmartPub::on_cherchModifierChercheur(int id) {
     comboGrade->setCurrentText(data.grade);
     layout->addWidget(comboGrade);
 
-    // Projets (inchangé)
+    // Projets déjà affectés au chercheur (via CONTRIBUER.ID_PROJET)
     QList<int> projetsAffectes;
     {
         QSqlQuery qProj(db);
-        qProj.prepare("SELECT CODE_PROJET FROM CONTRIBUER WHERE ID_CHERCHEUR = :id");
+        qProj.prepare(
+            "SELECT ID_PROJET FROM CONTRIBUER WHERE ID_CHERCHEUR = :id");
         qProj.bindValue(":id", id);
         if (qProj.exec())
             while (qProj.next())
                 projetsAffectes.append(qProj.value(0).toInt());
     }
-    QList<QPair<int,QString>> tousLesProjets;
+    // Tous les projets disponibles (ID_PROJET = clé PK, CODE = code métier, TITRE)
+    QList<QPair<int,QString>> tousLesProjets; // first = ID_PROJET, second = affichage
     {
         QSqlQuery qAll(db);
-        if (qAll.exec("SELECT CODE_PROJET, TITRE FROM PROJET ORDER BY CODE_PROJET"))
-            while (qAll.next())
-                tousLesProjets.append({qAll.value(0).toInt(), qAll.value(1).toString()});
+        if (qAll.exec(
+                "SELECT ID_PROJET, CODE, TITRE FROM PROJET ORDER BY CODE"))
+            while (qAll.next()) {
+                int    idProjet = qAll.value(0).toInt();
+                QString code    = qAll.value(1).toString();
+                QString titre   = qAll.value(2).toString();
+                tousLesProjets.append({idProjet,
+                                       QString("[%1]  %2").arg(code, titre)});
+            }
     }
 
     QLabel *lblProjets = new QLabel("Projets (max 5) :");
@@ -3083,9 +3244,10 @@ void SmartPub::on_cherchModifierChercheur(int id) {
         }
         QListWidget::item:hover { background-color: #f8fafc; }
     )");
+    // Remplir la liste — UserRole contient ID_PROJET (clé numérique pour CONTRIBUER)
     for (auto &p : tousLesProjets) {
-        QListWidgetItem *item = new QListWidgetItem(QString("[%1]  %2").arg(p.first).arg(p.second));
-        item->setData(Qt::UserRole, p.first);
+        QListWidgetItem *item = new QListWidgetItem(p.second); // texte = "[CODE]  TITRE"
+        item->setData(Qt::UserRole, p.first);                  // UserRole = ID_PROJET
         listProjetsModif->addItem(item);
         if (projetsAffectes.contains(p.first))
             item->setSelected(true);
@@ -3417,21 +3579,28 @@ void SmartPub::on_cherchModifierChercheur(int id) {
             return;
         }
 
+        // Supprimer toutes les contributions existantes puis réinsérer
         QSqlQuery delContrib(db);
-        delContrib.prepare("DELETE FROM CONTRIBUER WHERE ID_CHERCHEUR = :id");
+        delContrib.prepare(
+            "DELETE FROM CONTRIBUER WHERE ID_CHERCHEUR = :id");
         delContrib.bindValue(":id", id);
-        delContrib.exec();
+        if (!delContrib.exec())
+            qWarning() << "[CONTRIBUER] DELETE échoué :"
+                       << delContrib.lastError().text();
 
         QList<QListWidgetItem*> selItems = listProjetsModif->selectedItems();
         for (QListWidgetItem *item : selItems) {
-            int codeProjet = item->data(Qt::UserRole).toInt();
+            int idProjet = item->data(Qt::UserRole).toInt(); // ID_PROJET
+            if (idProjet <= 0) continue;
             QSqlQuery insContrib(db);
             insContrib.prepare(
-                "INSERT INTO CONTRIBUER (ID_CHERCHEUR, CODE_PROJET) "
+                "INSERT INTO CONTRIBUER (ID_CHERCHEUR, ID_PROJET) "
                 "VALUES (:idc, :idp)");
             insContrib.bindValue(":idc", id);
-            insContrib.bindValue(":idp", codeProjet);
-            insContrib.exec();
+            insContrib.bindValue(":idp", idProjet);
+            if (!insContrib.exec())
+                qWarning() << "[CONTRIBUER] INSERT échoué :"
+                           << insContrib.lastError().text();
         }
 
         cherchAfficherListeChercheurs();
@@ -3493,21 +3662,28 @@ void SmartPub::on_cherchVoirDetailsChercheur(int id) {
     if (data.photoPath.isEmpty()) data.photoPath = ":/avatar.png";
     data.age = 0;
 
-    // ── Charger les projets depuis CONTRIBUER (jointure directe) ─────────────
-    QList<QString> projetsTitres;
+    // ── Charger les projets via CONTRIBUER → PROJET (jointure sur ID_PROJET) ──
+    // projetsTitres : liste d'affichage  "[CODE]  TITRE"
+    // data.projetsIds : liste des ID_PROJET pour le calcul de carrière
+    QList<QString> projetsTitres;   // pour l'affichage dans le dialog et le PDF
+    QList<QString> projetsCodes;    // codes métier (CODE) pour référence
     {
         QSqlQuery qProj(db);
         qProj.prepare(
-            "SELECT p.CODE_PROJET, p.TITRE "
+            "SELECT p.ID_PROJET, p.CODE, p.TITRE "
             "FROM CONTRIBUER c "
-            "INNER JOIN PROJET p ON p.CODE_PROJET = c.CODE_PROJET "
+            "INNER JOIN PROJET p ON p.ID_PROJET = c.ID_PROJET "
             "WHERE c.ID_CHERCHEUR = :id "
-            "ORDER BY p.CODE_PROJET");
+            "ORDER BY p.CODE");
         qProj.bindValue(":id", id);
         if (qProj.exec()) {
             while (qProj.next()) {
-                data.projetsIds.append(qProj.value(0).toInt());
-                projetsTitres.append(qProj.value(1).toString());
+                data.projetsIds.append(qProj.value(0).toInt());  // ID_PROJET
+                projetsCodes.append(qProj.value(1).toString());  // CODE métier
+                projetsTitres.append(
+                    QString("[%1]  %2")
+                        .arg(qProj.value(1).toString(),           // CODE
+                             qProj.value(2).toString()));         // TITRE
             }
         }
     }
@@ -3621,8 +3797,12 @@ void SmartPub::on_cherchVoirDetailsChercheur(int id) {
     contentLayout->addWidget(createInfoRow("Email",    data.email,                    "✉️"));
     contentLayout->addWidget(createInfoRow("CIN",      data.cin,                      "🆔"));
     contentLayout->addWidget(createInfoRow("Carrière", data.carriere,                 "⭐"));
-    contentLayout->addWidget(createInfoRow("Projets",
-                                           QString::number(data.projetsIds.size()) + " contribution(s)",                "📁"));
+    contentLayout->addWidget(createInfoRow(
+        "Projets",
+        data.projetsIds.isEmpty()
+            ? "Aucune contribution"
+            : QString("%1 contribution(s)").arg(data.projetsIds.size()),
+        "📁"));
 
     // ── Liste des projets associés ────────────────────────────────────────────
     if (!projetsTitres.isEmpty()) {
@@ -3792,7 +3972,7 @@ void SmartPub::on_cherchVoirDetailsChercheur(int id) {
 
                 y += (int)(0.5 * cm);
 
-                // ── Projets ─────────────────────────────────────────────────────────
+                // ── Projets de recherche ────────────────────────────────────────────
                 drawSectionHeader(
                     QString("Projets de recherche  (%1 contribution(s))")
                         .arg(projetsTitres.size()));
@@ -3800,20 +3980,49 @@ void SmartPub::on_cherchVoirDetailsChercheur(int id) {
                 if (projetsTitres.isEmpty()) {
                     painter.setFont(QFont("Segoe UI", 11));
                     painter.setPen(QColor("#94a3b8"));
-                    painter.drawText(x + (int)(0.5 * cm), y, "Aucun projet associé.");
-                    y += (int)(0.7 * cm);
+                    painter.drawText(x + (int)(0.5 * cm), y,
+                                     "Aucun projet associé.");
+                    y += (int)(0.8 * cm);
                 } else {
-                    for (const QString &titre : projetsTitres) {
-                        // Puce bleue
+                    for (int pi = 0; pi < projetsTitres.size(); ++pi) {
+                        const QString &ligne = projetsTitres.at(pi);
+
+                        // Fond alterné léger
                         painter.setPen(Qt::NoPen);
+                        painter.setBrush(pi % 2 == 0
+                                             ? QColor("#f8fafc")
+                                             : QColor("#eff6ff"));
+                        painter.drawRoundedRect(
+                            x, y - (int)(0.32 * cm),
+                            (int)(17.4 * cm), (int)(0.72 * cm),
+                            6, 6);
+
+                        // Puce bleue
                         painter.setBrush(QColor("#3b82f6"));
-                        painter.drawEllipse(x + (int)(0.4 * cm),
-                                            y - (int)(0.2 * cm),
-                                            (int)(0.2 * cm), (int)(0.2 * cm));
+                        painter.drawEllipse(
+                            x + (int)(0.4 * cm),
+                            y - (int)(0.17 * cm),
+                            (int)(0.22 * cm), (int)(0.22 * cm));
+
+                        // Texte — on tronque si trop long pour tenir sur la ligne
                         painter.setFont(QFont("Segoe UI", 11));
                         painter.setPen(QColor("#1e293b"));
-                        painter.drawText(x + (int)(0.85 * cm), y, titre);
-                        y += (int)(0.6 * cm);
+                        QRect textRect(
+                            x + (int)(0.85 * cm),
+                            y - (int)(0.32 * cm),
+                            (int)(16.0 * cm),
+                            (int)(0.72 * cm));
+                        painter.drawText(textRect,
+                                         Qt::AlignVCenter | Qt::AlignLeft,
+                                         ligne);
+
+                        y += (int)(0.75 * cm);
+
+                        // Saut de page si on approche du bas
+                        if (y > (int)(26.0 * cm)) {
+                            printer.newPage();
+                            y = (int)(1.5 * cm);
+                        }
                     }
                 }
 
@@ -3941,7 +4150,7 @@ void SmartPub::cherchVerifyEmailDeliverability(const QString &email) {
         cherchErrEmailLabel->setVisible(true);
     }
 
-    QString apiKey = "2b9bff7449d243b28938b55d44c905ed";
+    QString apiKey = "a7d04d7f998b45e9b0b892b8aa524077";
     QString urlString = QString("https://emailreputation.abstractapi.com/v1/?api_key=%1&email=%2")
                             .arg(apiKey).arg(email);
 

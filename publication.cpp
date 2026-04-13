@@ -288,43 +288,187 @@ private:
 void SmartPub::SR_setupUI() {
     ui->SR_stackedWidget->setCurrentIndex(0);
 
-    SR_filterFrame = new QFrame(ui->SR_tableFrame);
-    SR_filterFrame->setStyleSheet("background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 4px;");
-    SR_filterFrame->setFrameShape(QFrame::NoFrame);
-    QHBoxLayout *filterLayout = new QHBoxLayout(SR_filterFrame);
-    filterLayout->setSpacing(12);
+    // Insérer SR_comboBoxAuteur dans le layout à la place de SR_lineEditAuteurs
+    SR_comboBoxAuteur = new QComboBox(ui->SR_lineEditAuteurs->parentWidget());
+    SR_comboBoxAuteur->setFont(ui->SR_lineEditAuteurs->font());
+    SR_comboBoxAuteur->setSizePolicy(ui->SR_lineEditAuteurs->sizePolicy());
+    SR_comboBoxAuteur->setMinimumHeight(ui->SR_lineEditAuteurs->minimumHeight());
+    SR_comboBoxAuteur->setStyleSheet(
+        "QComboBox {"
+        "  border: 1px solid #cbd5e1;"
+        "  border-radius: 8px;"
+        "  padding: 6px 12px;"
+        "  background-color: white;"
+        "  color: #1e293b;"
+        "  font-size: 13px;"
+        "}"
+        "QComboBox:focus {"
+        "  border: 2px solid #3b82f6;"
+        "}"
+        "QComboBox::drop-down {"
+        "  border: none;"
+        "  width: 28px;"
+        "}"
+        "QComboBox::down-arrow {"
+        "  width: 12px;"
+        "  height: 12px;"
+        "}"
+        "QComboBox QAbstractItemView {"
+        "  border: 1px solid #e2e8f0;"
+        "  border-radius: 8px;"
+        "  background-color: white;"
+        "  color: #1e293b;"
+        "  selection-background-color: #eff6ff;"
+        "  selection-color: #1d4ed8;"
+        "  padding: 4px;"
+        "}"
+        );
 
-    QLabel *lblTitre = new QLabel("Titre", SR_filterFrame);
-    SR_filterTitre = new QLineEdit(SR_filterFrame);
-    SR_filterTitre->setPlaceholderText("Filtrer par titre...");
-    SR_filterTitre->setMinimumWidth(140);
-    QLabel *lblAuteur = new QLabel("Auteur", SR_filterFrame);
-    SR_filterAuteur = new QLineEdit(SR_filterFrame);
-    SR_filterAuteur->setPlaceholderText("Filtrer par auteur...");
-    SR_filterAuteur->setMinimumWidth(140);
-    QLabel *lblStatut = new QLabel("Statut", SR_filterFrame);
-    SR_filterStatut = new QComboBox(SR_filterFrame);
-    SR_filterStatut->setMinimumWidth(120);
-    SR_filterStatut->addItem("Tous");
-    SR_filterStatut->addItem("Publié");
-    SR_filterStatut->addItem("Soumis");
-    SR_filterStatut->addItem("En révision");
-    SR_filterStatut->addItem("Accepté");
-    SR_filterStatut->addItem("Rejeté");
-    SR_btnReinitFilter = new QPushButton("Réinitialiser", SR_filterFrame);
+    // Remplacer SR_lineEditAuteurs par SR_comboBoxAuteur dans son layout parent
+    QLayout *parentLayout = ui->SR_lineEditAuteurs->parentWidget()->layout();
+    if (parentLayout) {
+        // Chercher SR_lineEditAuteurs dans tous les sous-layouts et le remplacer
+        auto replaceInLayout = [&](QLayout *layout, auto &self) -> bool {
+            for (int i = 0; i < layout->count(); ++i) {
+                QLayoutItem *item = layout->itemAt(i);
+                if (item->widget() == ui->SR_lineEditAuteurs) {
+                    // Trouver l'index et remplacer
+                    layout->removeWidget(ui->SR_lineEditAuteurs);
+                    ui->SR_lineEditAuteurs->hide();
+                    if (QBoxLayout *box = qobject_cast<QBoxLayout *>(layout)) {
+                        box->insertWidget(i, SR_comboBoxAuteur);
+                    } else {
+                        layout->addWidget(SR_comboBoxAuteur);
+                    }
+                    return true;
+                }
+                if (item->layout()) {
+                    if (self(item->layout(), self)) return true;
+                }
+            }
+            return false;
+        };
+        replaceInLayout(parentLayout, replaceInLayout);
+    }
 
-    filterLayout->addWidget(lblTitre);
-    filterLayout->addWidget(SR_filterTitre);
-    filterLayout->addWidget(lblAuteur);
-    filterLayout->addWidget(SR_filterAuteur);
-    filterLayout->addWidget(lblStatut);
-    filterLayout->addWidget(SR_filterStatut);
-    filterLayout->addWidget(SR_btnReinitFilter);
-    filterLayout->addStretch();
+    // Initialiser les pointeurs à nullptr pour éviter les crashes
+    SR_filterFrame = nullptr;
+    SR_filterTitre = nullptr;
+    SR_filterAuteur = nullptr;
+    SR_filterStatut = nullptr;
+    SR_btnReinitFilter = nullptr;
 
-    QVBoxLayout *tableLayout = qobject_cast<QVBoxLayout *>(ui->SR_tableFrame->layout());
-    if (tableLayout)
-        tableLayout->insertWidget(1, SR_filterFrame);
+    // Style du champ date
+    ui->SR_dateEditPublication->setStyleSheet(
+        "QDateEdit {"
+        "  border: 1px solid #cbd5e1;"
+        "  border-radius: 8px;"
+        "  padding: 6px 12px;"
+        "  background-color: white;"
+        "  color: #1e293b;"
+        "  font-size: 13px;"
+        "}"
+        "QDateEdit:focus {"
+        "  border: 2px solid #3b82f6;"
+        "}"
+        "QDateEdit::drop-down {"
+        "  border: none;"
+        "  width: 28px;"
+        "}"
+        "QDateEdit::down-arrow {"
+        "  width: 12px;"
+        "  height: 12px;"
+        "}"
+        // Calendrier popup
+        "QCalendarWidget QWidget {"
+        "  background-color: white;"
+        "  color: #1e293b;"
+        "}"
+        "QCalendarWidget QAbstractItemView {"
+        "  background-color: white;"
+        "  color: #1e293b;"
+        "  selection-background-color: #3b82f6;"
+        "  selection-color: white;"
+        "  gridline-color: #e2e8f0;"
+        "  font-size: 13px;"
+        "}"
+        "QCalendarWidget QAbstractItemView:disabled {"
+        "  color: #94a3b8;"
+        "}"
+        "QCalendarWidget QToolButton {"
+        "  background-color: #3b82f6;"
+        "  color: white;"
+        "  border-radius: 6px;"
+        "  padding: 4px 10px;"
+        "  font-weight: 600;"
+        "  font-size: 13px;"
+        "}"
+        "QCalendarWidget QToolButton:hover {"
+        "  background-color: #2563eb;"
+        "}"
+        "QCalendarWidget QSpinBox {"
+        "  background-color: white;"
+        "  color: #1e293b;"
+        "  border: 1px solid #cbd5e1;"
+        "  border-radius: 4px;"
+        "  padding: 2px 6px;"
+        "}"
+        "QCalendarWidget QMenu {"
+        "  background-color: white;"
+        "  color: #1e293b;"
+        "}"
+        "QCalendarWidget #qt_calendar_navigationbar {"
+        "  background-color: #eff6ff;"
+        "  border-bottom: 1px solid #e2e8f0;"
+        "  padding: 4px;"
+        "}"
+        "QCalendarWidget #qt_calendar_prevmonth,"
+        "QCalendarWidget #qt_calendar_nextmonth {"
+        "  background-color: #3b82f6;"
+        "  color: white;"
+        "  border-radius: 6px;"
+        "  padding: 4px 8px;"
+        "  font-weight: bold;"
+        "}"
+        "QCalendarWidget #qt_calendar_prevmonth:hover,"
+        "QCalendarWidget #qt_calendar_nextmonth:hover {"
+        "  background-color: #2563eb;"
+        "}"
+        );
+
+    // Style du champ Statut (SR_comboBoxStatut)
+    ui->SR_comboBoxStatut->setStyleSheet(
+        "QComboBox {"
+        "  border: 1px solid #cbd5e1;"
+        "  border-radius: 8px;"
+        "  padding: 6px 12px;"
+        "  background-color: white;"
+        "  color: #1e293b;"
+        "  font-size: 13px;"
+        "}"
+        "QComboBox:focus {"
+        "  border: 2px solid #3b82f6;"
+        "}"
+        "QComboBox::drop-down {"
+        "  border: none;"
+        "  width: 28px;"
+        "}"
+        "QComboBox::down-arrow {"
+        "  width: 12px;"
+        "  height: 12px;"
+        "}"
+        "QComboBox QAbstractItemView {"
+        "  border: 1px solid #e2e8f0;"
+        "  border-radius: 8px;"
+        "  background-color: white;"
+        "  color: #1e293b;"
+        "  selection-background-color: #eff6ff;"
+        "  selection-color: #1d4ed8;"
+        "  padding: 4px;"
+        "  font-size: 13px;"
+        "  outline: none;"
+        "}"
+        );
 }
 
 void SmartPub::SR_connectSignals() {
@@ -691,7 +835,7 @@ void SmartPub::SR_loadSampleData() {
 
     QSqlQuery query(db);
     const QString sql =
-        QStringLiteral("SELECT ID_PUBLICATION, DOI, TITRE, AUTEUR, DATE_PUBLICATION, REVUE, STATUT "
+        QStringLiteral("SELECT ID_PUBLICATION, DOI, TITRE, AUTEUR, DATE_PUBLICATION, REVUE, STATUT, ID_CHERCHEUR "
                        "FROM PUBLICATION ORDER BY ID_PUBLICATION");
     if (!query.exec(sql)) {
         QMessageBox::warning(this, QStringLiteral("Erreur"),
@@ -718,6 +862,7 @@ void SmartPub::SR_loadSampleData() {
         ui->SR_tablePublications->insertRow(row);
         QTableWidgetItem *titItem = new QTableWidgetItem(titre);
         titItem->setData(Qt::UserRole, idPub);
+        titItem->setData(Qt::UserRole + 1, query.value(QStringLiteral("ID_CHERCHEUR")).toInt());
         titItem->setToolTip(query.value(QStringLiteral("DOI")).toString());
         ui->SR_tablePublications->setItem(row, 0, titItem);
         ui->SR_tablePublications->setItem(row, 1, new QTableWidgetItem(auteur));
@@ -747,10 +892,27 @@ void SmartPub::handleSRBtnAjouterClicked() {
     // Reset form state
     editingPublicationRow = -1;
     ui->SR_lineEditTitre->clear();
-    ui->SR_lineEditAuteurs->clear();
     ui->SR_lineEditRevue->clear();
     ui->SR_dateEditPublication->setDate(QDate::currentDate());
     ui->SR_btnAjouterPublication->setText("Ajouter");
+
+    // Peupler le comboBox des chercheurs
+    SR_comboBoxAuteur->clear();
+    SR_comboBoxAuteur->addItem("-- Sélectionner un chercheur --", QVariant(0));
+    {
+        QSqlDatabase db = Connection::instance()->getDatabase();
+        if (db.isOpen()) {
+            QSqlQuery q(db);
+            if (q.exec(QStringLiteral("SELECT ID_CHERCHEUR, NOM, PRENOM FROM CHERCHEUR ORDER BY NOM, PRENOM"))) {
+                while (q.next()) {
+                    int idC = q.value(0).toInt();
+                    QString nomComplet = q.value(1).toString().trimmed()
+                                         + " " + q.value(2).toString().trimmed();
+                    SR_comboBoxAuteur->addItem(nomComplet.trimmed(), QVariant(idC));
+                }
+            }
+        }
+    }
 
     ui->SR_stackedWidget->setCurrentIndex(1);
     SR_updateButtonStyles();
@@ -864,15 +1026,16 @@ void SmartPub::handleSRBtnAjouterPublicationClicked() {
     }
 
     QString titre = ui->SR_lineEditTitre->text().trimmed();
-    QString auteurs = ui->SR_lineEditAuteurs->text().trimmed();
+    int idChercheur = SR_comboBoxAuteur->currentData().toInt();
+    QString auteurs = SR_comboBoxAuteur->currentText().trimmed();
     QString revue = ui->SR_lineEditRevue->text().trimmed();
     QString statut = ui->SR_comboBoxStatut->currentText();
     QDate datePub = ui->SR_dateEditPublication->date();
     QString dateStr = datePub.toString("yyyy-MM-dd");
 
-    if (titre.isEmpty() || auteurs.isEmpty() || revue.isEmpty()) {
+    if (titre.isEmpty() || idChercheur <= 0 || revue.isEmpty()) {
         QMessageBox::warning(this, "Erreur",
-                             "Veuillez remplir tous les champs obligatoires");
+                             "Veuillez sélectionner un chercheur et remplir tous les champs obligatoires");
         return;
     }
 
@@ -894,13 +1057,15 @@ void SmartPub::handleSRBtnAjouterPublicationClicked() {
         QSqlQuery query(db);
         query.prepare(
             QStringLiteral("UPDATE PUBLICATION SET TITRE = :titre, AUTEUR = :auteur, "
-                           "DATE_PUBLICATION = TO_DATE(:date_pub, 'YYYY-MM-DD'), REVUE = :revue, STATUT = :statut "
+                           "DATE_PUBLICATION = TO_DATE(:date_pub, 'YYYY-MM-DD'), REVUE = :revue, "
+                           "STATUT = :statut, ID_CHERCHEUR = :id_chercheur "
                            "WHERE ID_PUBLICATION = :id"));
         query.bindValue(QStringLiteral(":titre"), titre);
         query.bindValue(QStringLiteral(":auteur"), auteurs);
         query.bindValue(QStringLiteral(":date_pub"), dateStr);
         query.bindValue(QStringLiteral(":revue"), revue);
         query.bindValue(QStringLiteral(":statut"), statutDb);
+        query.bindValue(QStringLiteral(":id_chercheur"), idChercheur);
         query.bindValue(QStringLiteral(":id"), idPublication);
         if (!query.exec()) {
             QMessageBox::critical(this, QStringLiteral("Erreur"),
@@ -916,14 +1081,15 @@ void SmartPub::handleSRBtnAjouterPublicationClicked() {
             QStringLiteral("10.1000/smartpub/%1").arg(QDateTime::currentMSecsSinceEpoch());
         QSqlQuery query(db);
         query.prepare(
-            QStringLiteral("INSERT INTO PUBLICATION (DOI, TITRE, AUTEUR, DATE_PUBLICATION, REVUE, STATUT) "
-                           "VALUES (:doi, :titre, :auteur, TO_DATE(:date_pub, 'YYYY-MM-DD'), :revue, :statut)"));
+            QStringLiteral("INSERT INTO PUBLICATION (DOI, TITRE, AUTEUR, DATE_PUBLICATION, REVUE, STATUT, ID_CHERCHEUR) "
+                           "VALUES (:doi, :titre, :auteur, TO_DATE(:date_pub, 'YYYY-MM-DD'), :revue, :statut, :id_chercheur)"));
         query.bindValue(QStringLiteral(":doi"), doi);
         query.bindValue(QStringLiteral(":titre"), titre);
         query.bindValue(QStringLiteral(":auteur"), auteurs);
         query.bindValue(QStringLiteral(":date_pub"), dateStr);
         query.bindValue(QStringLiteral(":revue"), revue);
         query.bindValue(QStringLiteral(":statut"), statutDb);
+        query.bindValue(QStringLiteral(":id_chercheur"), idChercheur);
         if (!query.exec()) {
             QMessageBox::critical(this, QStringLiteral("Erreur"),
                                   QStringLiteral("Échec de l'ajout : ") + query.lastError().text());
@@ -936,7 +1102,7 @@ void SmartPub::handleSRBtnAjouterPublicationClicked() {
     ui->SR_stackedWidget->setCurrentIndex(0);
     SR_updateButtonStyles();
     ui->SR_lineEditTitre->clear();
-    ui->SR_lineEditAuteurs->clear();
+    SR_comboBoxAuteur->setCurrentIndex(0);
     ui->SR_lineEditRevue->clear();
     ui->SR_dateEditPublication->setDate(QDate::currentDate());
 }
@@ -950,9 +1116,10 @@ void SmartPub::handleSRBtnAnnulerAjoutClicked() {
 
 void SmartPub::handleSRApplyFilterListe() {
     const QString searchText = ui->SR_lineEditRecherche->text().trimmed();
-    QString titreFilter = SR_filterTitre->text().trimmed();
-    QString auteurFilter = SR_filterAuteur->text().trimmed();
-    QString statutFilter = SR_filterStatut->currentIndex() <= 0 ? QString() : SR_filterStatut->currentText();
+    QString titreFilter = SR_filterTitre ? SR_filterTitre->text().trimmed() : QString();
+    QString auteurFilter = SR_filterAuteur ? SR_filterAuteur->text().trimmed() : QString();
+    QString statutFilter = (SR_filterStatut && SR_filterStatut->currentIndex() > 0)
+                               ? SR_filterStatut->currentText() : QString();
 
     for (int r = 0; r < ui->SR_tablePublications->rowCount(); r++) {
         bool show = true;
@@ -985,9 +1152,9 @@ void SmartPub::handleSRApplyFilterListe() {
 }
 
 void SmartPub::handleSRReinitFilterListe() {
-    SR_filterTitre->clear();
-    SR_filterAuteur->clear();
-    SR_filterStatut->setCurrentIndex(0);
+    if (SR_filterTitre) SR_filterTitre->clear();
+    if (SR_filterAuteur) SR_filterAuteur->clear();
+    if (SR_filterStatut) SR_filterStatut->setCurrentIndex(0);
     ui->SR_lineEditRecherche->clear();
     for (int r = 0; r < ui->SR_tablePublications->rowCount(); r++)
         ui->SR_tablePublications->setRowHidden(r, false);
@@ -1062,7 +1229,29 @@ void SmartPub::handleSRModifierPublicationClicked() {
 
     editingPublicationRow = row;
     ui->SR_lineEditTitre->setText(titre);
-    ui->SR_lineEditAuteurs->setText(auteurs);
+
+    SR_comboBoxAuteur->clear();
+    SR_comboBoxAuteur->addItem("-- Sélectionner un chercheur --", QVariant(0));
+    {
+        QSqlDatabase db = Connection::instance()->getDatabase();
+        if (db.isOpen()) {
+            QSqlQuery q(db);
+            if (q.exec(QStringLiteral("SELECT ID_CHERCHEUR, NOM, PRENOM FROM CHERCHEUR ORDER BY NOM, PRENOM"))) {
+                while (q.next()) {
+                    int idC = q.value(0).toInt();
+                    QString nomComplet = q.value(1).toString().trimmed()
+                                         + " " + q.value(2).toString().trimmed();
+                    SR_comboBoxAuteur->addItem(nomComplet.trimmed(), QVariant(idC));
+                }
+            }
+        }
+    }
+    // Récupérer l'ID_CHERCHEUR stocké sur la ligne
+    QTableWidgetItem *titItem2 = ui->SR_tablePublications->item(row, 0);
+    int idChercheurExistant = titItem2 ? titItem2->data(Qt::UserRole + 1).toInt() : 0;
+    int comboIdx = SR_comboBoxAuteur->findData(QVariant(idChercheurExistant));
+    if (comboIdx >= 0)
+        SR_comboBoxAuteur->setCurrentIndex(comboIdx);
     ui->SR_lineEditRevue->setText(revue);
     ui->SR_dateEditPublication->setDate(datePub);
     int idx = ui->SR_comboBoxStatut->findText(statut);
@@ -1113,61 +1302,68 @@ void SmartPub::handleSRSupprimerPublicationClicked() {
 void SmartPub::SR_addButtonsToRow(int row)
 {
     QWidget *buttonWidget = new QWidget();
+    buttonWidget->setStyleSheet("background-color: transparent;");
     QHBoxLayout *layout = new QHBoxLayout(buttonWidget);
-    layout->setContentsMargins(4, 2, 4, 2);
-    layout->setSpacing(4);
+    layout->setContentsMargins(8, 4, 8, 4);
+    layout->setSpacing(6);
+    layout->setAlignment(Qt::AlignCenter);
 
-    QPushButton *btnEdit = new QPushButton("✏️");
-    btnEdit->setMinimumSize(32, 28);
-    btnEdit->setMaximumSize(32, 28);
+    QPushButton *btnEdit = new QPushButton("✏ Modifier");
+    btnEdit->setFixedHeight(30);
     btnEdit->setCursor(Qt::PointingHandCursor);
     btnEdit->setStyleSheet(
         "QPushButton {"
         "    background-color: #3b82f6;"
         "    color: white;"
         "    border: none;"
-        "    border-radius: 4px;"
-        "    font-size: 14px;"
+        "    border-radius: 6px;"
+        "    padding: 0 12px;"
+        "    font-size: 12px;"
+        "    font-weight: 600;"
         "}"
         "QPushButton:hover {"
         "    background-color: #2563eb;"
         "}"
-    );
+        "QPushButton:pressed {"
+        "    background-color: #1d4ed8;"
+        "}"
+        );
 
-    QPushButton *btnDelete = new QPushButton("🗑️");
-    btnDelete->setMinimumSize(32, 28);
-    btnDelete->setMaximumSize(32, 28);
+    QPushButton *btnDelete = new QPushButton("✕ Supprimer");
+    btnDelete->setFixedHeight(30);
     btnDelete->setCursor(Qt::PointingHandCursor);
     btnDelete->setStyleSheet(
         "QPushButton {"
         "    background-color: #ef4444;"
         "    color: white;"
         "    border: none;"
-        "    border-radius: 4px;"
-        "    font-size: 14px;"
+        "    border-radius: 6px;"
+        "    padding: 0 12px;"
+        "    font-size: 12px;"
+        "    font-weight: 600;"
         "}"
         "QPushButton:hover {"
         "    background-color: #dc2626;"
         "}"
-    );
+        "QPushButton:pressed {"
+        "    background-color: #b91c1c;"
+        "}"
+        );
 
     connect(btnEdit, &QPushButton::clicked, this, &SmartPub::on_SR_modifierPublication_clicked);
     connect(btnDelete, &QPushButton::clicked, this, &SmartPub::on_SR_supprimerPublication_clicked);
 
     layout->addWidget(btnEdit);
     layout->addWidget(btnDelete);
-    layout->addStretch();
 
     ui->SR_tablePublications->setCellWidget(row, 5, buttonWidget);
 }
 
-void SmartPub::handlePublicationsNavigation() {
-    PublicationLoginDialog authDialog(this);
-    if (authDialog.exec() != QDialog::Accepted) {
-        QMessageBox::warning(this, QStringLiteral("Accès refusé"),
-                             QStringLiteral("Authentification requise pour accéder au module Publications."));
-        return;
-    }
+void SmartPub::handlePublicationsNavigation()
+{
+    // L'authentification est déjà gérée par cherchCheckLogin() au démarrage.
+    // handlePublicationsNavigation() se contente de naviguer vers le module.
+
     ui->stackedWidgetModules->setCurrentIndex(1);
     setActiveNavigationButton(1);
     updateProfileName(1);

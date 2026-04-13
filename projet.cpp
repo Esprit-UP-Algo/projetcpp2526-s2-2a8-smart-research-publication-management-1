@@ -34,6 +34,8 @@
 #include <QMap>
 #include <QColor>
 #include <QFileDialog>
+#include <QPrinter>
+#include <QDir>
 #include <QMessageBox>
 #include <QRegularExpression>
 #include <QRegularExpressionValidator>
@@ -113,54 +115,35 @@ FiltresDialog::FiltresDialog(QWidget *parent)
     : QDialog(parent), filtreActif(false)
 {
     setWindowTitle("Filtres de Recherche");
-    setMinimumSize(450, 450);
-    resize(450, 450);
+    setFixedSize(500, 460);
 
     setStyleSheet(
-        "QDialog {"
-        "    background-color: #f8fafc;"
-        "    font-family: 'Segoe UI', 'Roboto', sans-serif;"
-        "}"
-        "QLabel {"
-        "    color: #334155;"
-        "    font-size: 13px;"
-        "    font-weight: 600;"
-        "}"
+        "QDialog { background-color: #f8fafc; font-family: 'Segoe UI', sans-serif; }"
+        "QLabel#sectionLabel { color: #334155; font-size: 13px; font-weight: 600; "
+        "  background: transparent; border: none; }"
+        "QLabel#subLabel { color: #64748b; font-size: 11px; font-weight: 400; "
+        "  background: transparent; border: none; }"
         "QComboBox {"
-        "    background-color: white;"
-        "    border: 2px solid #e2e8f0;"
-        "    border-radius: 8px;"
-        "    padding: 10px 15px;"
-        "    font-size: 13px;"
-        "    color: #334155;"
-        "    min-height: 42px;"
+        "    background-color: white; border: 1.5px solid #cbd5e1;"
+        "    border-radius: 8px; padding: 0px 12px;"
+        "    font-size: 13px; color: #1e293b; min-height: 40px; max-height: 40px;"
         "}"
         "QComboBox:focus { border-color: #3b82f6; }"
-        "QComboBox::drop-down { border: none; width: 30px; }"
+        "QComboBox::drop-down { border: none; width: 24px; }"
         "QComboBox QAbstractItemView {"
-        "    background-color: white;"
-        "    border: 1px solid #e2e8f0;"
-        "    selection-background-color: #eff6ff;"
-        "    color: #334155;"
+        "    background-color: white; border: 1px solid #e2e8f0;"
+        "    selection-background-color: #eff6ff; color: #1e293b; outline: none;"
+        "    font-size: 13px;"
         "}"
         "QDateEdit {"
-        "    background-color: white;"
-        "    border: 2px solid #e2e8f0;"
-        "    border-radius: 8px;"
-        "    padding: 10px 15px;"
-        "    font-size: 13px;"
-        "    color: #334155;"
-        "    min-height: 42px;"
+        "    background-color: white; border: 1.5px solid #cbd5e1;"
+        "    border-radius: 8px; padding: 0px 12px;"
+        "    font-size: 13px; color: #1e293b; min-height: 40px; max-height: 40px;"
         "}"
         "QDateEdit:focus { border-color: #3b82f6; }"
-        "QPushButton {"
-        "    border: none;"
-        "    border-radius: 8px;"
-        "    padding: 12px 24px;"
-        "    font-size: 14px;"
-        "    font-weight: 600;"
-        "}"
-        );
+        "QPushButton { border: none; border-radius: 8px; padding: 10px 20px;"
+        "  font-size: 13px; font-weight: 600; }"
+    );
 
     setupUI();
 }
@@ -171,156 +154,151 @@ void FiltresDialog::setupUI()
     mainLayout->setSpacing(0);
     mainLayout->setContentsMargins(0, 0, 0, 0);
 
-    // Header
+    // ── Header ────────────────────────────────────────────────────────────────
     QFrame *headerFrame = new QFrame();
     headerFrame->setStyleSheet(
-        "QFrame {"
-        "    background-color: white;"
-        "    border-bottom: 1px solid #e2e8f0;"
-        "}"
-        );
-    headerFrame->setFixedHeight(80);
-
+        "QFrame { background-color: white; border-bottom: 1px solid #e2e8f0; }");
+    headerFrame->setFixedHeight(70);
     QVBoxLayout *headerLayout = new QVBoxLayout(headerFrame);
-    headerLayout->setSpacing(5);
-    headerLayout->setContentsMargins(25, 15, 25, 15);
-
-    QLabel *titleLabel = new QLabel("🔍 Filtrer les Projets");
-    titleLabel->setStyleSheet("font-size: 22px; font-weight: bold; color: #1e293b;");
-
+    headerLayout->setContentsMargins(24, 10, 24, 10);
+    headerLayout->setSpacing(3);
+    QLabel *titleLabel = new QLabel("🔍  Filtrer les Projets");
+    titleLabel->setStyleSheet("font-size: 20px; font-weight: 700; color: #1e293b;"
+                              " background: transparent; border: none;");
     QLabel *subtitleLabel = new QLabel("Affinez votre recherche avec les critères ci-dessous");
-    subtitleLabel->setStyleSheet("font-size: 13px; color: #64748b;");
-
+    subtitleLabel->setStyleSheet("font-size: 12px; color: #64748b; font-weight: 400;"
+                                 " background: transparent; border: none;");
     headerLayout->addWidget(titleLabel);
     headerLayout->addWidget(subtitleLabel);
     mainLayout->addWidget(headerFrame);
 
-    // Contenu
+    // ── Contenu ───────────────────────────────────────────────────────────────
     QWidget *contentWidget = new QWidget();
     contentWidget->setStyleSheet("background-color: transparent;");
     QVBoxLayout *contentLayout = new QVBoxLayout(contentWidget);
-    contentLayout->setSpacing(20);
-    contentLayout->setContentsMargins(25, 25, 25, 25);
-
-    // Formulaire avec QFormLayout pour alignement parfait
-    QFormLayout *formLayout = new QFormLayout();
-    formLayout->setSpacing(18);
-    formLayout->setLabelAlignment(Qt::AlignLeft | Qt::AlignVCenter);
-    formLayout->setFieldGrowthPolicy(QFormLayout::ExpandingFieldsGrow);
-    formLayout->setContentsMargins(0, 0, 0, 0);
+    contentLayout->setSpacing(6);
+    contentLayout->setContentsMargins(24, 18, 24, 18);
 
     // État
     QLabel *labelEtat = new QLabel("État du projet");
-    labelEtat->setStyleSheet("font-size: 13px; font-weight: 600; color: #334155;");
+    labelEtat->setObjectName("sectionLabel");
+    contentLayout->addWidget(labelEtat);
+
+    const QString comboFixStyle =
+        "QComboBox {"
+        "  background-color: white; border: 1.5px solid #cbd5e1;"
+        "  border-radius: 8px; padding: 0px 12px;"
+        "  font-size: 13px; color: #1e293b; min-height: 40px; max-height: 40px; }"
+        "QComboBox:focus { border-color: #3b82f6; }"
+        "QComboBox::drop-down { border: none; width: 24px; }"
+        "QComboBox QAbstractItemView {"
+        "  background-color: white; color: #1e293b;"
+        "  border: 1px solid #cbd5e1;"
+        "  selection-background-color: #eff6ff; selection-color: #1e293b;"
+        "  outline: none; font-size: 13px; padding: 2px; }";
 
     comboBoxEtat = new QComboBox();
-    comboBoxEtat->addItem("Tous les états", "");
-    comboBoxEtat->addItem("Planifié", "Planifié");
-    comboBoxEtat->addItem("Actif", "Actif");
-    comboBoxEtat->addItem("En pause", "En pause");
-    comboBoxEtat->addItem("Terminé", "Terminé");
-    formLayout->addRow(labelEtat, comboBoxEtat);
+    comboBoxEtat->setMaxVisibleItems(5);
+    comboBoxEtat->setStyleSheet(comboFixStyle);
+    comboBoxEtat->addItem("Tous les états",  "");
+    comboBoxEtat->addItem("En cours",        "en_cours");
+    comboBoxEtat->addItem("Terminé",         "termine");
+    comboBoxEtat->addItem("Suspendu",        "suspendu");
+    comboBoxEtat->addItem("Annulé",          "annule");
+    contentLayout->addWidget(comboBoxEtat);
+    contentLayout->addSpacing(10);
 
     // Responsable
     QLabel *labelResp = new QLabel("Responsable");
-    labelResp->setStyleSheet("font-size: 13px; font-weight: 600; color: #334155;");
+    labelResp->setObjectName("sectionLabel");
+    contentLayout->addWidget(labelResp);
 
     comboBoxResponsable = new QComboBox();
+    comboBoxResponsable->setMaxVisibleItems(6);
+    comboBoxResponsable->setStyleSheet(comboFixStyle);
     comboBoxResponsable->addItem("Tous les responsables", "");
-    comboBoxResponsable->addItem("Dr. Ahmed Ben Ali", "Dr. Ahmed Ben Ali");
-    comboBoxResponsable->addItem("Pr. Fatima Zohra", "Pr. Fatima Zohra");
-    comboBoxResponsable->addItem("Dr. Mohamed Salah", "Dr. Mohamed Salah");
-    comboBoxResponsable->addItem("Dr. Sarah Johnson", "Dr. Sarah Johnson");
-    comboBoxResponsable->addItem("Pr. Robert Chen", "Pr. Robert Chen");
-    formLayout->addRow(labelResp, comboBoxResponsable);
+    {
+        QSqlDatabase db = Connection::instance()->getDatabase();
+        if (db.isOpen()) {
+            QSqlQuery q(db);
+            if (q.exec("SELECT TRIM(NOM || ' ' || PRENOM) FROM CHERCHEUR ORDER BY NOM")) {
+                while (q.next()) {
+                    const QString nom = q.value(0).toString().trimmed();
+                    if (!nom.isEmpty())
+                        comboBoxResponsable->addItem(nom, nom);
+                }
+            }
+        }
+    }
+    contentLayout->addWidget(comboBoxResponsable);
+    contentLayout->addSpacing(10);
 
-    // Période - Label
+    // Période
     QLabel *labelPeriode = new QLabel("Période de début");
-    labelPeriode->setStyleSheet("font-size: 13px; font-weight: 600; color: #334155;");
+    labelPeriode->setObjectName("sectionLabel");
+    contentLayout->addWidget(labelPeriode);
 
-    // Widget conteneur pour les dates avec layout horizontal
-    QWidget *datesWidget = new QWidget();
-    QHBoxLayout *datesLayout = new QHBoxLayout(datesWidget);
-    datesLayout->setSpacing(15);
+    QHBoxLayout *datesLayout = new QHBoxLayout();
+    datesLayout->setSpacing(12);
     datesLayout->setContentsMargins(0, 0, 0, 0);
 
-    // Date début
-    QVBoxLayout *debutLayout = new QVBoxLayout();
-    debutLayout->setSpacing(5);
+    // Du
+    QVBoxLayout *debutCol = new QVBoxLayout();
+    debutCol->setSpacing(3);
     QLabel *labelDu = new QLabel("Du");
-    labelDu->setStyleSheet("font-size: 12px; color: #64748b; font-weight: normal;");
-    dateEditDebutMin = new QDateEdit();
+    labelDu->setObjectName("subLabel");
+    dateEditDebutMin = new QDateEdit(QDate(2020, 1, 1));
     dateEditDebutMin->setCalendarPopup(true);
-    dateEditDebutMin->setDate(QDate(2020, 1, 1));
     dateEditDebutMin->setDisplayFormat("dd/MM/yyyy");
-    dateEditDebutMin->setMinimumHeight(42);
-    debutLayout->addWidget(labelDu);
-    debutLayout->addWidget(dateEditDebutMin);
+    debutCol->addWidget(labelDu);
+    debutCol->addWidget(dateEditDebutMin);
 
-    // Date fin
-    QVBoxLayout *finLayout = new QVBoxLayout();
-    finLayout->setSpacing(5);
+    // Au
+    QVBoxLayout *finCol = new QVBoxLayout();
+    finCol->setSpacing(3);
     QLabel *labelAu = new QLabel("Au");
-    labelAu->setStyleSheet("font-size: 12px; color: #64748b; font-weight: normal;");
-    dateEditMax = new QDateEdit();
+    labelAu->setObjectName("subLabel");
+    dateEditMax = new QDateEdit(QDate::currentDate().addYears(5));
     dateEditMax->setCalendarPopup(true);
-    dateEditMax->setDate(QDate::currentDate().addYears(5));
     dateEditMax->setDisplayFormat("dd/MM/yyyy");
-    dateEditMax->setMinimumHeight(42);
-    finLayout->addWidget(labelAu);
-    finLayout->addWidget(dateEditMax);
+    finCol->addWidget(labelAu);
+    finCol->addWidget(dateEditMax);
 
-    datesLayout->addLayout(debutLayout, 1);
-    datesLayout->addLayout(finLayout, 1);
-
-    formLayout->addRow(labelPeriode, datesWidget);
-
-    contentLayout->addLayout(formLayout);
+    datesLayout->addLayout(debutCol, 1);
+    datesLayout->addLayout(finCol, 1);
+    contentLayout->addLayout(datesLayout);
     contentLayout->addStretch();
 
     mainLayout->addWidget(contentWidget, 1);
 
-    // Footer avec boutons
+    // ── Footer ────────────────────────────────────────────────────────────────
     QFrame *footerFrame = new QFrame();
-    footerFrame->setStyleSheet("background-color: white; border-top: 1px solid #e2e8f0;");
-    footerFrame->setFixedHeight(70);
-
+    footerFrame->setStyleSheet(
+        "QFrame { background-color: white; border-top: 1px solid #e2e8f0; }");
+    footerFrame->setFixedHeight(64);
     QHBoxLayout *buttonLayout = new QHBoxLayout(footerFrame);
-    buttonLayout->setSpacing(12);
-    buttonLayout->setContentsMargins(25, 0, 25, 0);
+    buttonLayout->setContentsMargins(24, 0, 24, 0);
+    buttonLayout->setSpacing(10);
 
-    btnReinitialiser = new QPushButton("🔄 Réinitialiser");
+    btnReinitialiser = new QPushButton("↺  Réinitialiser");
     btnReinitialiser->setStyleSheet(
-        "QPushButton {"
-        "    background-color: #e2e8f0;"
-        "    color: #475569;"
-        "}"
-        "QPushButton:hover { background-color: #cbd5e1; }"
-        );
-
+        "QPushButton { background-color: #f1f5f9; color: #475569; }"
+        "QPushButton:hover { background-color: #e2e8f0; }");
     buttonLayout->addWidget(btnReinitialiser);
     buttonLayout->addStretch();
 
     btnAnnuler = new QPushButton("Annuler");
     btnAnnuler->setStyleSheet(
-        "QPushButton {"
-        "    background-color: white;"
-        "    color: #64748b;"
-        "    border: 2px solid #e2e8f0;"
-        "}"
-        "QPushButton:hover { background-color: #f1f5f9; }"
-        );
+        "QPushButton { background-color: white; color: #64748b;"
+        "  border: 1.5px solid #e2e8f0; }"
+        "QPushButton:hover { background-color: #f8fafc; }");
 
     btnAppliquer = new QPushButton("Appliquer");
     btnAppliquer->setStyleSheet(
-        "QPushButton {"
-        "    background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #3b82f6, stop:1 #10b981);"
-        "    color: white;"
-        "}"
-        "QPushButton:hover {"
-        "    background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #2563eb, stop:1 #059669);"
-        "}"
-        );
+        "QPushButton { background: qlineargradient(x1:0,y1:0,x2:1,y2:0,"
+        "  stop:0 #3b82f6,stop:1 #10b981); color: white; }"
+        "QPushButton:hover { background: qlineargradient(x1:0,y1:0,x2:1,y2:0,"
+        "  stop:0 #2563eb,stop:1 #059669); }");
 
     connect(btnReinitialiser, &QPushButton::clicked, [=]() {
         comboBoxEtat->setCurrentIndex(0);
@@ -328,16 +306,11 @@ void FiltresDialog::setupUI()
         dateEditDebutMin->setDate(QDate(2020, 1, 1));
         dateEditMax->setDate(QDate::currentDate().addYears(5));
     });
-
-    connect(btnAnnuler, &QPushButton::clicked, this, &QDialog::reject);
-    connect(btnAppliquer, &QPushButton::clicked, [=]() {
-        filtreActif = true;
-        accept();
-    });
+    connect(btnAnnuler,   &QPushButton::clicked, this, &QDialog::reject);
+    connect(btnAppliquer, &QPushButton::clicked, [=]() { filtreActif = true; accept(); });
 
     buttonLayout->addWidget(btnAnnuler);
     buttonLayout->addWidget(btnAppliquer);
-
     mainLayout->addWidget(footerFrame);
 }
 
@@ -456,264 +429,283 @@ IARecommandationsDialog::IARecommandationsDialog(const QVector<Projet> &projets,
     setupUI();
 }
 
-void IARecommandationsDialog::setupUI()
-{
-    QVBoxLayout *mainLayout = new QVBoxLayout(this);
-    mainLayout->setSpacing(0);
-    mainLayout->setContentsMargins(0, 0, 0, 0);
-
-    QFrame *headerFrame = new QFrame();
-    headerFrame->setStyleSheet(
-        "QFrame {"
-        "    background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #3b82f6, stop:1 #10b981);"
-        "    border: none;"
-        "}"
-        );
-    headerFrame->setFixedHeight(100);
-
-    QVBoxLayout *headerLayout = new QVBoxLayout(headerFrame);
-    headerLayout->setSpacing(5);
-    headerLayout->setContentsMargins(30, 20, 30, 20);
-
-    QLabel *titleLabel = new QLabel("🤖 Recommandations Intelligentes");
-    titleLabel->setStyleSheet("color: white; font-size: 28px; font-weight: bold;");
-    titleLabel->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
-
-    QLabel *subtitleLabel = new QLabel("Analyse sémantique et génération de projets basée sur l'IA");
-    subtitleLabel->setStyleSheet("color: rgba(255,255,255,0.9); font-size: 14px;");
-
-    headerLayout->addWidget(titleLabel);
-    headerLayout->addWidget(subtitleLabel);
-    mainLayout->addWidget(headerFrame);
-
-    QScrollArea *scrollArea = new QScrollArea();
-    scrollArea->setWidgetResizable(true);
-    scrollArea->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-    scrollArea->setStyleSheet("background-color: #f1f5f9;");
-
-    QWidget *contentWidget = new QWidget();
-    QVBoxLayout *contentLayout = new QVBoxLayout(contentWidget);
-    contentLayout->setSpacing(20);
-    contentLayout->setContentsMargins(30, 30, 30, 30);
-
-    QFrame *statsFrame = new QFrame();
-    statsFrame->setStyleSheet(
-        "QFrame {"
-        "    background-color: white;"
-        "    border-radius: 12px;"
-        "    border: 1px solid #e2e8f0;"
-        "}"
-        );
-    statsFrame->setFixedHeight(120);
-
-    QHBoxLayout *statsLayout = new QHBoxLayout(statsFrame);
-    statsLayout->setSpacing(30);
-    statsLayout->setContentsMargins(25, 20, 25, 20);
-
-    QVBoxLayout *stat1Layout = new QVBoxLayout();
-    QLabel *stat1Value = new QLabel(QString::number(m_projets.size()));
-    stat1Value->setStyleSheet("font-size: 32px; font-weight: bold; color: #3b82f6;");
-    stat1Value->setAlignment(Qt::AlignCenter);
-    QLabel *stat1Label = new QLabel("Projets analysés");
-    stat1Label->setStyleSheet("font-size: 13px; color: #64748b;");
-    stat1Label->setAlignment(Qt::AlignCenter);
-    stat1Layout->addWidget(stat1Value);
-    stat1Layout->addWidget(stat1Label);
-    statsLayout->addLayout(stat1Layout);
-
-    statsLayout->addWidget(createVerticalSeparator());
-
-    QVBoxLayout *stat2Layout = new QVBoxLayout();
-    int actifs = 0;
-    for (const auto &p : m_projets)
-        if (p.etat == QLatin1String("en_cours")) actifs++;
-    QLabel *stat2Value = new QLabel(QString::number(actifs));
-    stat2Value->setStyleSheet("font-size: 32px; font-weight: bold; color: #10b981;");
-    stat2Value->setAlignment(Qt::AlignCenter);
-    QLabel *stat2Label = new QLabel("Projets actifs");
-    stat2Label->setStyleSheet("font-size: 13px; color: #64748b;");
-    stat2Label->setAlignment(Qt::AlignCenter);
-    stat2Layout->addWidget(stat2Value);
-    stat2Layout->addWidget(stat2Label);
-    statsLayout->addLayout(stat2Layout);
-
-    statsLayout->addWidget(createVerticalSeparator());
-
-    QVBoxLayout *stat3Layout = new QVBoxLayout();
-    QLabel *stat3Value = new QLabel("3");
-    stat3Value->setStyleSheet("font-size: 32px; font-weight: bold; color: #8b5cf6;");
-    stat3Value->setAlignment(Qt::AlignCenter);
-    QLabel *stat3Label = new QLabel("Recommandations");
-    stat3Label->setStyleSheet("font-size: 13px; color: #64748b;");
-    stat3Label->setAlignment(Qt::AlignCenter);
-    stat3Layout->addWidget(stat3Value);
-    stat3Layout->addWidget(stat3Label);
-    statsLayout->addLayout(stat3Layout);
-
-    contentLayout->addWidget(statsFrame);
-
-    genererRecommandations();
-
-    for (int i = 0; i < m_recommandations.size(); ++i) {
-        const auto &rec = m_recommandations[i];
-
-        QGroupBox *recGroup = new QGroupBox(QString("Recommandation #%1 - %2").arg(i+1).arg(rec.domaine));
-
-        QVBoxLayout *recLayout = new QVBoxLayout(recGroup);
-        recLayout->setSpacing(15);
-        recLayout->setContentsMargins(20, 20, 20, 20);
-
-        QHBoxLayout *headerRecLayout = new QHBoxLayout();
-
-        QLabel *titreLabel = new QLabel(rec.titre);
-        titreLabel->setStyleSheet("font-size: 18px; font-weight: bold; color: #1e293b;");
-        titreLabel->setWordWrap(true);
-        headerRecLayout->addWidget(titreLabel, 1);
-
-        QVBoxLayout *scoreLayout = new QVBoxLayout();
-        scoreLayout->setSpacing(2);
-        QLabel *scoreLabel = new QLabel(QString("%1%").arg(qRound(rec.scoreSimilarite)));
-        scoreLabel->setStyleSheet("font-size: 24px; font-weight: bold; color: #10b981;");
-        scoreLabel->setAlignment(Qt::AlignRight);
-        QLabel *scoreText = new QLabel("Pertinence");
-        scoreText->setStyleSheet("font-size: 11px; color: #64748b;");
-        scoreText->setAlignment(Qt::AlignRight);
-        scoreLayout->addWidget(scoreLabel);
-        scoreLayout->addWidget(scoreText);
-        headerRecLayout->addLayout(scoreLayout);
-
-        recLayout->addLayout(headerRecLayout);
-
-        QProgressBar *scoreBar = new QProgressBar();
-        scoreBar->setValue(qRound(rec.scoreSimilarite));
-        scoreBar->setTextVisible(false);
-        scoreBar->setFixedHeight(8);
-
-        QString color;
-        if (rec.scoreSimilarite >= 85) color = "#10b981";
-        else if (rec.scoreSimilarite >= 70) color = "#3b82f6";
-        else color = "#f59e0b";
-
-        scoreBar->setStyleSheet(QString(
-                                    "QProgressBar { border: none; border-radius: 4px; background-color: #e2e8f0; }"
-                                    "QProgressBar::chunk { border-radius: 4px; background-color: %1; }"
-                                    ).arg(color));
-        recLayout->addWidget(scoreBar);
-
-        QLabel *descLabel = new QLabel(rec.description);
-        descLabel->setStyleSheet("font-size: 14px; color: #475569; line-height: 1.6;");
-        descLabel->setWordWrap(true);
-        recLayout->addWidget(descLabel);
-
-        QLabel *raisonLabel = new QLabel(rec.raison);
-        raisonLabel->setStyleSheet(
-            "font-size: 13px; color: #3b82f6; "
-            "background-color: #eff6ff; padding: 10px; "
-            "border-radius: 8px; border-left: 4px solid #3b82f6;"
-            );
-        raisonLabel->setWordWrap(true);
-        recLayout->addWidget(raisonLabel);
-
-        QLabel *collabTitle = new QLabel("Collaborateurs suggérés");
-        collabTitle->setStyleSheet("font-size: 14px; font-weight: bold; color: #334155; margin-top: 10px;");
-        recLayout->addWidget(collabTitle);
-
-        QListWidget *collabList = new QListWidget();
-        collabList->setFixedHeight(100);
-        for (const QString &c : rec.collaborateursSuggeres) {
-            collabList->addItem(c);
-        }
-        recLayout->addWidget(collabList);
-
-        contentLayout->addWidget(recGroup);
-    }
-
-    QGroupBox *insightsGroup = new QGroupBox("Insights & Patterns détectés");
-    QVBoxLayout *insightsLayout = new QVBoxLayout(insightsGroup);
-    insightsLayout->setContentsMargins(20, 20, 20, 20);
-
-    QTextBrowser *insightsBrowser = new QTextBrowser();
-    insightsBrowser->setFixedHeight(150);
-    insightsBrowser->setStyleSheet(
-        "QTextBrowser {"
-        "    border: 1px solid #e2e8f0;"
-        "    border-radius: 8px;"
-        "    padding: 15px;"
-        "    background-color: #f8fafc;"
-        "    font-size: 14px;"
-        "    line-height: 1.6;"
-        "    color: #475569;"
-        "}"
-        );
-
-    QString insightsHtml = QString(R"(
-        <h3 style='color: #1e293b; margin-top: 0;'>Analyse des projets existants</h3>
-        <ul style='margin: 10px 0; padding-left: 20px;'>
-            <li><b>Domaines dominants :</b> Intelligence Artificielle, Biotechnologie, Énergies Renouvelables</li>
-            <li><b>Taux de réussite :</b> 85%% pour les projets interdisciplinaires</li>
-            <li><b>Durée optimale :</b> 18-24 mois pour maximiser l'impact</li>
-            <li><b>Collaboration :</b> Projets à 3+ chercheurs = +40%% de publications</li>
-        </ul>
-        <p style='color: #059669; font-weight: 600; margin: 10px 0 0 0;'>
-            Recommandation stratégique : Privilégiez les consortiums multi-laboratoires
-        </p>
-    )");
-    insightsBrowser->setHtml(insightsHtml);
-    insightsLayout->addWidget(insightsBrowser);
-    contentLayout->addWidget(insightsGroup);
-
-    contentLayout->addStretch();
-    scrollArea->setWidget(contentWidget);
-    mainLayout->addWidget(scrollArea, 1);
-
-    QFrame *footerFrame = new QFrame();
-    footerFrame->setStyleSheet("background-color: white; border-top: 1px solid #e2e8f0;");
-    footerFrame->setFixedHeight(70);
-
-    QHBoxLayout *footerLayout = new QHBoxLayout(footerFrame);
-    footerLayout->setContentsMargins(30, 0, 30, 0);
-
-    footerLayout->addStretch();
-
-    QPushButton *closeButton = new QPushButton("J'ai compris, fermer");
-    closeButton->setFixedSize(180, 45);
-    closeButton->setCursor(Qt::PointingHandCursor);
-    closeButton->setStyleSheet(
-        "QPushButton {"
-        "    background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #3b82f6, stop:1 #10b981);"
-        "    color: white;"
-        "    border: none;"
-        "    border-radius: 10px;"
-        "    font-size: 14px;"
-        "    font-weight: 600;"
-        "}"
-        "QPushButton:hover {"
-        "    background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #2563eb, stop:1 #059669);"
-        "}"
-        );
-    connect(closeButton, &QPushButton::clicked, this, &QDialog::accept);
-
-    footerLayout->addWidget(closeButton);
-    mainLayout->addWidget(footerFrame);
-}
-
 void IARecommandationsDialog::genererRecommandations()
 {
     m_recommandations.clear();
 
     const QVector<AIService::Recommandation> recs = AIService::genererRecommandations(m_projets);
-    m_recommandations.reserve(recs.size());
-
     for (const auto &r : recs) {
         Recommandation rec;
-        rec.titre = r.titre;
-        rec.description = r.description;
-        rec.scoreSimilarite = r.scoreSimilarite;
+        rec.titre                = r.titre;
+        rec.description          = r.description;
+        rec.scoreSimilarite      = r.scoreSimilarite;
         rec.collaborateursSuggeres = r.collaborateursSuggeres;
-        rec.raison = r.raison;
-        rec.domaine = r.domaine;
+        rec.raison               = r.raison;
+        rec.domaine              = r.domaine;
         m_recommandations.append(rec);
     }
+}
+
+void IARecommandationsDialog::setupUI()
+{
+    setStyleSheet("QDialog { background-color: #f1f5f9; }");
+    setMinimumSize(900, 700);
+    resize(1000, 780);
+
+    QVBoxLayout *mainLayout = new QVBoxLayout(this);
+    mainLayout->setSpacing(0);
+    mainLayout->setContentsMargins(0, 0, 0, 0);
+
+    // ── Header ────────────────────────────────────────────────────────────────
+    QFrame *headerFrame = new QFrame();
+    headerFrame->setFrameShape(QFrame::NoFrame);
+    headerFrame->setAutoFillBackground(true);
+    headerFrame->setStyleSheet(
+        "QFrame { background: qlineargradient(x1:0,y1:0,x2:1,y2:0,"
+        "stop:0 #3b82f6,stop:1 #10b981); }");
+    headerFrame->setFixedHeight(95);
+    QVBoxLayout *hL = new QVBoxLayout(headerFrame);
+    hL->setContentsMargins(30, 14, 30, 14);
+    hL->setSpacing(4);
+    QLabel *hTitle = new QLabel("🤖  Recommandations Intelligentes");
+    hTitle->setStyleSheet("color:white;font-size:22px;font-weight:700;background:transparent;");
+    QLabel *hSub = new QLabel(
+        QString("Analyse de %1 projet(s)  ·  Suggestions personnalisées basées sur votre portefeuille")
+        .arg(m_projets.size()));
+    hSub->setStyleSheet("color:rgba(255,255,255,0.85);font-size:12px;background:transparent;");
+    hL->addWidget(hTitle);
+    hL->addWidget(hSub);
+    mainLayout->addWidget(headerFrame);
+
+    // ── Scroll ────────────────────────────────────────────────────────────────
+    QScrollArea *scroll = new QScrollArea();
+    scroll->setWidgetResizable(true);
+    scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    scroll->setFrameShape(QFrame::NoFrame);
+    scroll->setStyleSheet("background:#f1f5f9;");
+
+    QWidget *body = new QWidget();
+    body->setAutoFillBackground(true);
+    QPalette pal = body->palette();
+    pal.setColor(QPalette::Window, QColor("#f1f5f9"));
+    body->setPalette(pal);
+    QVBoxLayout *bL = new QVBoxLayout(body);
+    bL->setSpacing(12);
+    bL->setContentsMargins(22, 18, 22, 18);
+
+    // ── KPI ───────────────────────────────────────────────────────────────────
+    int nbActifs = 0;
+    for (const auto &p : m_projets)
+        if (p.etat == QLatin1String("en_cours")) nbActifs++;
+
+    QFrame *kpi = new QFrame();
+    kpi->setFrameShape(QFrame::NoFrame);
+    kpi->setAutoFillBackground(true);
+    kpi->setStyleSheet("QFrame{background:white;border-radius:10px;}");
+    kpi->setFixedHeight(84);
+    QHBoxLayout *kL = new QHBoxLayout(kpi);
+    kL->setContentsMargins(0,0,0,0);
+    kL->setSpacing(0);
+
+    auto mkKpi = [&](const QString &v, const QString &l, const QString &c, bool sep){
+        QFrame *cell = new QFrame();
+        cell->setFrameShape(QFrame::NoFrame);
+        cell->setStyleSheet("background:transparent;");
+        QVBoxLayout *cl = new QVBoxLayout(cell);
+        cl->setSpacing(2); cl->setAlignment(Qt::AlignCenter);
+        QLabel *lv = new QLabel(v);
+        lv->setStyleSheet(QString("font-size:26px;font-weight:700;color:%1;background:transparent;").arg(c));
+        lv->setAlignment(Qt::AlignCenter);
+        QLabel *ll = new QLabel(l);
+        ll->setStyleSheet("font-size:11px;color:#64748b;background:transparent;");
+        ll->setAlignment(Qt::AlignCenter);
+        cl->addWidget(lv); cl->addWidget(ll);
+        kL->addWidget(cell,1);
+        if(sep){
+            QFrame *s=new QFrame(); s->setFrameShape(QFrame::VLine);
+            s->setFixedWidth(1); s->setStyleSheet("background:#e2e8f0;");
+            kL->addWidget(s);
+        }
+    };
+    mkKpi(QString::number(m_projets.size()),"Projets analysés","#3b82f6",true);
+    mkKpi(QString::number(nbActifs),"Projets actifs","#10b981",true);
+    mkKpi("3","Recommandations","#3b82f6",false);
+    bL->addWidget(kpi);
+
+    // ── Cards recommandations ─────────────────────────────────────────────────
+    genererRecommandations();
+
+    for (int i = 0; i < m_recommandations.size(); ++i) {
+        const auto &rec = m_recommandations[i];
+
+        QFrame *card = new QFrame();
+        card->setFrameShape(QFrame::NoFrame);
+        card->setAutoFillBackground(true);
+        card->setAttribute(Qt::WA_StyledBackground, true);
+        card->setStyleSheet(
+            "QFrame{"
+            "background:white;"
+            "border:1px solid #e2e8f0;"
+            "border-radius:12px;"
+            "}");
+
+        QVBoxLayout *cL = new QVBoxLayout(card);
+        cL->setSpacing(10);
+        cL->setContentsMargins(18, 20, 18, 16);
+
+        // Ligne titre
+        QHBoxLayout *row1 = new QHBoxLayout();
+        row1->setSpacing(10);
+        row1->setContentsMargins(0,0,0,0);
+
+        QLabel *badge = new QLabel(QString::number(i+1));
+        badge->setFixedSize(28,28);
+        badge->setAlignment(Qt::AlignCenter);
+        badge->setStyleSheet(
+            "background:qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 #3b82f6,stop:1 #10b981);"
+            "color:white;border-radius:14px;font-size:12px;font-weight:700;");
+        row1->addWidget(badge, 0, Qt::AlignTop);
+
+        QVBoxLayout *tCol = new QVBoxLayout();
+        tCol->setSpacing(4);
+        tCol->setContentsMargins(0,0,0,0);
+        QLabel *titre = new QLabel(rec.titre);
+        titre->setStyleSheet("font-size:14px;font-weight:700;color:#1e293b;background:transparent;");
+        titre->setWordWrap(true);
+        titre->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+        // Forcer la hauteur minimale selon le nombre de mots
+        titre->setMinimumHeight(titre->sizeHint().height() > 0
+                                ? titre->sizeHint().height() : 40);
+        QLabel *dom = new QLabel(rec.domaine);
+        dom->setStyleSheet(
+            "background:#eff6ff;color:#3b82f6;border-radius:8px;"
+            "font-size:11px;font-weight:600;padding:2px 8px;");
+        dom->setSizePolicy(QSizePolicy::Maximum,QSizePolicy::Fixed);
+        tCol->addWidget(titre);
+        tCol->addWidget(dom);
+        row1->addLayout(tCol,1);
+
+        const QString sc = rec.scoreSimilarite>=85?"#10b981":"#3b82f6";
+        QVBoxLayout *sCol = new QVBoxLayout();
+        sCol->setAlignment(Qt::AlignCenter); sCol->setSpacing(1);
+        QLabel *sv = new QLabel(QString("%1%").arg(qRound(rec.scoreSimilarite)));
+        sv->setStyleSheet(QString("font-size:20px;font-weight:700;color:%1;background:transparent;").arg(sc));
+        sv->setAlignment(Qt::AlignCenter);
+        QLabel *sl = new QLabel("Pertinence");
+        sl->setStyleSheet("font-size:11px;color:#94a3b8;background:transparent;");
+        sl->setAlignment(Qt::AlignCenter);
+        sCol->addWidget(sv); sCol->addWidget(sl);
+        row1->addLayout(sCol);
+        cL->addLayout(row1);
+
+        // Barre
+        QProgressBar *bar = new QProgressBar();
+        bar->setValue(qRound(rec.scoreSimilarite));
+        bar->setTextVisible(false);
+        bar->setFixedHeight(4);
+        bar->setStyleSheet(QString(
+            "QProgressBar{border:none;border-radius:2px;background:#f1f5f9;}"
+            "QProgressBar::chunk{border-radius:2px;background:%1;}").arg(sc));
+        cL->addWidget(bar);
+
+        // Description
+        QLabel *desc = new QLabel(rec.description);
+        desc->setStyleSheet("font-size:13px;color:#475569;background:transparent;");
+        desc->setWordWrap(true);
+        cL->addWidget(desc);
+
+        // Raison
+        QFrame *rBox = new QFrame();
+        rBox->setFrameShape(QFrame::NoFrame);
+        rBox->setAutoFillBackground(true);
+        rBox->setStyleSheet("QFrame{background:#eff6ff;border-radius:6px;border-left:3px solid #3b82f6;}");
+        QHBoxLayout *rL = new QHBoxLayout(rBox);
+        rL->setContentsMargins(10,7,10,7);
+        QLabel *rTxt = new QLabel(rec.raison);
+        rTxt->setStyleSheet("font-size:12px;color:#1e40af;background:transparent;");
+        rTxt->setWordWrap(true);
+        rL->addWidget(rTxt);
+        cL->addWidget(rBox);
+
+        // Collaborateurs
+        QLabel *cTitle = new QLabel("👥  Collaborateurs suggérés");
+        cTitle->setStyleSheet("font-size:12px;font-weight:600;color:#64748b;background:transparent;");
+        cL->addWidget(cTitle);
+
+        for (const QString &c : rec.collaborateursSuggeres) {
+            QFrame *cRow = new QFrame();
+            cRow->setFrameShape(QFrame::NoFrame);
+            cRow->setAutoFillBackground(true);
+            cRow->setStyleSheet("QFrame{background:#f8fafc;border-radius:5px;}");
+            QHBoxLayout *crL = new QHBoxLayout(cRow);
+            crL->setContentsMargins(10,5,10,5);
+            QLabel *cl = new QLabel(c);
+            cl->setStyleSheet("font-size:12px;color:#475569;background:transparent;");
+            crL->addWidget(cl);
+            cL->addWidget(cRow);
+        }
+
+        bL->addWidget(card);
+    }
+
+    // ── Insights ──────────────────────────────────────────────────────────────
+    QFrame *iCard = new QFrame();
+    iCard->setFrameShape(QFrame::NoFrame);
+    iCard->setAutoFillBackground(true);
+    iCard->setStyleSheet("QFrame{background:white;border-radius:12px;}");
+    QVBoxLayout *iL = new QVBoxLayout(iCard);
+    iL->setContentsMargins(18,14,18,14);
+    iL->setSpacing(7);
+    QLabel *iTitle = new QLabel("📊  Insights & Patterns détectés");
+    iTitle->setStyleSheet("font-size:14px;font-weight:700;color:#1e293b;background:transparent;");
+    iL->addWidget(iTitle);
+
+    const QStringList insights = {
+        "✅  Projets interdisciplinaires : taux de réussite de 85%",
+        "⏱️  Durée optimale recommandée : 18 à 24 mois par projet",
+        "👥  Équipes 3+ chercheurs = +40% de publications scientifiques",
+        "🔗  Consortiums multi-laboratoires = impact socio-économique ×3",
+        "📈  Recommandation : diversifier les domaines de recherche"
+    };
+    for (const QString &ins : insights) {
+        QFrame *iRow = new QFrame();
+        iRow->setFrameShape(QFrame::NoFrame);
+        iRow->setAutoFillBackground(true);
+        iRow->setStyleSheet("QFrame{background:#f8fafc;border-radius:5px;}");
+        QHBoxLayout *irL = new QHBoxLayout(iRow);
+        irL->setContentsMargins(10,6,10,6);
+        QLabel *il = new QLabel(ins);
+        il->setStyleSheet("font-size:12px;color:#475569;background:transparent;");
+        irL->addWidget(il);
+        iL->addWidget(iRow);
+    }
+    bL->addWidget(iCard);
+    bL->addStretch();
+
+    scroll->setWidget(body);
+    mainLayout->addWidget(scroll,1);
+
+    // ── Footer ────────────────────────────────────────────────────────────────
+    QFrame *footer = new QFrame();
+    footer->setFrameShape(QFrame::NoFrame);
+    footer->setAutoFillBackground(true);
+    footer->setStyleSheet("QFrame{background:white;}");
+    footer->setFixedHeight(62);
+    QHBoxLayout *fL = new QHBoxLayout(footer);
+    fL->setContentsMargins(22, 0, 22, 0);
+    fL->addStretch();
+    QPushButton *btn = new QPushButton("Fermer");
+    btn->setFixedSize(110, 36);
+    btn->setCursor(Qt::PointingHandCursor);
+    btn->setStyleSheet(
+        "QPushButton{background:qlineargradient(x1:0,y1:0,x2:1,y2:0,"
+        "stop:0 #3b82f6,stop:1 #10b981);color:white;border:none;"
+        "border-radius:8px;font-size:13px;font-weight:600;}"
+        "QPushButton:hover{background:qlineargradient(x1:0,y1:0,x2:1,y2:0,"
+        "stop:0 #2563eb,stop:1 #059669);}");
+    connect(btn, &QPushButton::clicked, this, &QDialog::accept);
+    fL->addWidget(btn);
+    mainLayout->addWidget(footer);
 }
 
 // ==================== PROJET DETAILS DIALOG ====================
@@ -727,201 +719,281 @@ ProjetDetailsDialog::ProjetDetailsDialog(const Projet &projet, QWidget *parent)
     : QDialog(parent), m_projet(projet)
 {
     setWindowTitle("Détails du Projet - " + projet.titre);
-    setMinimumSize(700, 600);
-    resize(750, 650);
+    setMinimumSize(680, 420);
+    resize(720, 460);
+    setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Minimum);
 
-    // Style Qt clair — suppression de background-color: #1e1e1e (champs noirs)
     setStyleSheet(
         "QDialog { background-color: #f8fafc; }"
-        "QLabel  { color: #1e293b; }"
+        "QLabel { color: #1e293b; }"
         "QGroupBox {"
-        "    font-weight: bold; font-size: 14px;"
+        "    font-weight: 600; font-size: 13px;"
         "    border: 1px solid #e2e8f0; border-radius: 10px;"
         "    margin-top: 12px; padding-top: 12px;"
         "    background-color: white;"
         "}"
         "QGroupBox::title {"
-        "    subcontrol-origin: margin; left: 14px; padding: 0 8px;"
-        "    color: #3b82f6;"
+        "    subcontrol-origin: margin; left: 14px; padding: 0 8px; color: #3b82f6;"
         "}"
-        );
+    );
 
     QVBoxLayout *mainLayout = new QVBoxLayout(this);
-    mainLayout->setSpacing(20);
-    mainLayout->setContentsMargins(30, 30, 30, 30);
+    mainLayout->setSpacing(0);
+    mainLayout->setContentsMargins(0, 0, 0, 0);
 
-    QVBoxLayout *headerLayout = new QVBoxLayout();
-    headerLayout->setSpacing(10);
-    headerLayout->setAlignment(Qt::AlignCenter);
+    // ── Header gradient ───────────────────────────────────────────────────────
+    QFrame *headerBanner = new QFrame();
+    headerBanner->setStyleSheet(
+        "QFrame { background: qlineargradient(x1:0,y1:0,x2:1,y2:0,"
+        "stop:0 #3b82f6, stop:1 #10b981); border: none; }");
+    headerBanner->setFixedHeight(110);
+
+    QVBoxLayout *bannerLayout = new QVBoxLayout(headerBanner);
+    bannerLayout->setContentsMargins(30, 18, 30, 18);
+    bannerLayout->setSpacing(6);
+    bannerLayout->setAlignment(Qt::AlignCenter);
 
     QLabel *titleLabel = new QLabel(projet.titre);
-    titleLabel->setStyleSheet("font-size: 26px; font-weight: bold; color: #ffffff;");
+    titleLabel->setStyleSheet("font-size: 22px; font-weight: 700; color: white; background: transparent;");
     titleLabel->setAlignment(Qt::AlignCenter);
     titleLabel->setWordWrap(true);
 
-    QLabel *codeLabel = new QLabel("Code: " + projet.code);
-    codeLabel->setStyleSheet("font-size: 14px; color: #a0a0a0;");
+    QLabel *codeLabel = new QLabel("Code : " + projet.code);
+    codeLabel->setStyleSheet("font-size: 13px; color: rgba(255,255,255,0.85); background: transparent;");
     codeLabel->setAlignment(Qt::AlignCenter);
 
-    headerLayout->addWidget(titleLabel);
-    headerLayout->addWidget(codeLabel);
-    mainLayout->addLayout(headerLayout);
+    bannerLayout->addWidget(titleLabel);
+    bannerLayout->addWidget(codeLabel);
+    mainLayout->addWidget(headerBanner);
 
-    QFrame *line = new QFrame();
-    line->setFrameShape(QFrame::HLine);
-    line->setStyleSheet("background-color: #e2e8f0; border: none;");
-    line->setFixedHeight(2);
-    mainLayout->addWidget(line);
+    // ── Contenu ───────────────────────────────────────────────────────────────
+    QWidget *body = new QWidget();
+    body->setStyleSheet("background-color: #f8fafc;");
+    QVBoxLayout *bodyLayout = new QVBoxLayout(body);
+    bodyLayout->setSpacing(16);
+    bodyLayout->setContentsMargins(28, 20, 28, 20);
 
     QGroupBox *infoGroup = new QGroupBox("Informations du Projet");
-    infoGroup->setStyleSheet(QString()); // hérité du dialog
-
     QGridLayout *infoLayout = new QGridLayout(infoGroup);
-    infoLayout->setSpacing(15);
-    infoLayout->setContentsMargins(20, 20, 20, 20);
+    infoLayout->setSpacing(14);
+    infoLayout->setContentsMargins(18, 18, 18, 18);
     infoLayout->setColumnStretch(1, 1);
     infoLayout->setColumnStretch(3, 1);
 
-    QString labelStyle = "color: #64748b; font-size: 13px;";
-    QString valueStyle = "color: #1e293b; font-size: 13px; font-weight: 600;";
+    const QString labelStyle = "color: #64748b; font-size: 13px;";
+    const QString valueStyle = "color: #1e293b; font-size: 13px; font-weight: 600;";
 
-    QLabel *codeLabelInfo = new QLabel("Code:");
-    codeLabelInfo->setStyleSheet(labelStyle);
-    infoLayout->addWidget(codeLabelInfo, 0, 0);
+    auto addRow = [&](int row, const QString &l1, const QString &v1,
+                      const QString &l2 = QString(), const QString &v2 = QString()) {
+        QLabel *ll1 = new QLabel(l1); ll1->setStyleSheet(labelStyle);
+        QLabel *lv1 = new QLabel(v1); lv1->setStyleSheet(valueStyle);
+        infoLayout->addWidget(ll1, row, 0);
+        infoLayout->addWidget(lv1, row, 1);
+        if (!l2.isEmpty()) {
+            QLabel *ll2 = new QLabel(l2); ll2->setStyleSheet(labelStyle);
+            QLabel *lv2 = new QLabel(v2); lv2->setStyleSheet(valueStyle);
+            infoLayout->addWidget(ll2, row, 2);
+            infoLayout->addWidget(lv2, row, 3);
+        }
+    };
 
-    QLabel *codeValue = new QLabel(projet.code);
-    codeValue->setStyleSheet(valueStyle);
-    infoLayout->addWidget(codeValue, 0, 1);
+    addRow(0, "Code :",        projet.code,
+              "Responsable :", projet.responsable.isEmpty() ? "—" : projet.responsable);
+    addRow(1, "Date début :",  projet.dateDebut.toString("dd/MM/yyyy"),
+              "Date fin :",    projet.dateFin.toString("dd/MM/yyyy"));
 
-    QLabel *respLabelInfo = new QLabel("Responsable:");
-    respLabelInfo->setStyleSheet(labelStyle);
-    infoLayout->addWidget(respLabelInfo, 0, 2);
-
-    QLabel *respValue = new QLabel(projet.responsable);
-    respValue->setStyleSheet("color: #3b82f6; font-size: 13px; font-weight: 600;");
-    infoLayout->addWidget(respValue, 0, 3);
-
-    QLabel *debutLabel = new QLabel("Début:");
-    debutLabel->setStyleSheet(labelStyle);
-    infoLayout->addWidget(debutLabel, 1, 0);
-
-    QLabel *debutValue = new QLabel(projet.dateDebut.toString("dd/MM/yyyy"));
-    debutValue->setStyleSheet(valueStyle);
-    infoLayout->addWidget(debutValue, 1, 1);
-
-    QLabel *finLabel = new QLabel("Fin:");
-    finLabel->setStyleSheet(labelStyle);
-    infoLayout->addWidget(finLabel, 1, 2);
-
-    QLabel *finValue = new QLabel(projet.dateFin.toString("dd/MM/yyyy"));
-    finValue->setStyleSheet(valueStyle);
-    infoLayout->addWidget(finValue, 1, 3);
-
-    QLabel *etatLabelInfo = new QLabel("État:");
-    etatLabelInfo->setStyleSheet(labelStyle);
-    infoLayout->addWidget(etatLabelInfo, 2, 0);
-
+    // État badge
+    QLabel *etatLbl = new QLabel("État :"); etatLbl->setStyleSheet(labelStyle);
+    infoLayout->addWidget(etatLbl, 2, 0);
     QLabel *etatBadge = new QLabel(projEtatDbToUi(projet.etat));
-    QString etatColor = projEtatColor(projEtatDbToUi(projet.etat));
     etatBadge->setStyleSheet(QString(
-                                 "background-color: %1;"
-                                 "color: white;"
-                                 "padding: 6px 16px;"
-                                 "border-radius: 6px;"
-                                 "font-weight: bold;"
-                                 "font-size: 12px;"
-                                 ).arg(etatColor));
-    etatBadge->setAlignment(Qt::AlignCenter);
+        "background-color: %1; color: white; border-radius: 6px;"
+        "padding: 4px 14px; font-weight: 600; font-size: 12px;")
+        .arg(projEtatColor(projet.etat)));  // code BDD direct : en_cours, termine, suspendu, annule
     etatBadge->setFixedWidth(100);
+    etatBadge->setAlignment(Qt::AlignCenter);
     infoLayout->addWidget(etatBadge, 2, 1, Qt::AlignLeft);
 
-    QLabel *progLabelInfo = new QLabel("Progression:");
-    progLabelInfo->setStyleSheet(labelStyle);
-    infoLayout->addWidget(progLabelInfo, 2, 2);
-
-    QHBoxLayout *progLayout = new QHBoxLayout();
-    progLayout->setSpacing(10);
-
-    QProgressBar *progressBar = new QProgressBar();
+    // Progression — barre + pourcentage côte à côte
+    QLabel *progLbl = new QLabel("Progression :"); progLbl->setStyleSheet(labelStyle);
+    infoLayout->addWidget(progLbl, 2, 2);
     QString progStr = projet.progression;
     if (progStr.endsWith('%')) progStr.chop(1);
-    int progValue = progStr.toInt();
-    progressBar->setValue(progValue);
-    progressBar->setTextVisible(false);
-    progressBar->setFixedHeight(20);
-    progressBar->setStyleSheet(QString(
-                                   "QProgressBar {"
-                                   "    border: none;"
-                                   "    border-radius: 10px;"
-                                   "    background-color: #e2e8f0;"
-                                   "    text-align: center;"
-                                   "}"
-                                   "QProgressBar::chunk {"
-                                   "    border-radius: 10px;"
-                                   "    background-color: %1;"
-                                   "}"
-                                   ).arg(projProgressionColor(progValue)));
+    int progVal = progStr.toInt();
+
+    QWidget *progWidget = new QWidget();
+    progWidget->setStyleSheet("background: transparent;");
+    QHBoxLayout *progHLayout = new QHBoxLayout(progWidget);
+    progHLayout->setContentsMargins(0, 0, 0, 0);
+    progHLayout->setSpacing(8);
+
+    QProgressBar *progBar = new QProgressBar();
+    progBar->setValue(progVal);
+    progBar->setTextVisible(false);
+    progBar->setFixedHeight(18);
+    progBar->setStyleSheet(QString(
+        "QProgressBar { border: none; border-radius: 9px; background: #e2e8f0; }"
+        "QProgressBar::chunk { border-radius: 9px; background: %1; }")
+        .arg(projProgressionColor(progVal)));
 
     QLabel *progText = new QLabel(projet.progression);
-    progText->setStyleSheet("color: #1e293b; font-weight: bold; font-size: 13px;");
-    progText->setFixedWidth(45);
+    progText->setStyleSheet("color: #1e293b; font-size: 13px; font-weight: 600;"
+                            " background: transparent; border: none;");
+    progText->setFixedWidth(38);
 
-    progLayout->addWidget(progressBar, 1);
-    progLayout->addWidget(progText);
-    infoLayout->addLayout(progLayout, 2, 3);
+    progHLayout->addWidget(progBar, 1);
+    progHLayout->addWidget(progText);
+    infoLayout->addWidget(progWidget, 2, 3);
 
-    mainLayout->addWidget(infoGroup);
+    bodyLayout->addWidget(infoGroup);
 
-    QGroupBox *descGroup = new QGroupBox("Description");
-    descGroup->setStyleSheet(QString()); // hérité du dialog
+    // Description
+    if (!projet.description.isEmpty()) {
+        QGroupBox *descGroup = new QGroupBox("Description");
+        QVBoxLayout *descLayout = new QVBoxLayout(descGroup);
+        descLayout->setContentsMargins(18, 14, 18, 14);
+        QLabel *descLabel = new QLabel(projet.description);
+        descLabel->setStyleSheet("color: #475569; font-size: 13px; line-height: 1.5;");
+        descLabel->setWordWrap(true);
+        descLayout->addWidget(descLabel);
+        bodyLayout->addWidget(descGroup);
+    }
 
-    QVBoxLayout *descLayout = new QVBoxLayout(descGroup);
-    descLayout->setContentsMargins(15, 20, 15, 15);
+    bodyLayout->addStretch();
+    mainLayout->addWidget(body, 1);
 
-    QTextBrowser *descBrowser = new QTextBrowser();
-    descBrowser->setPlainText(projet.description.isEmpty() ? "Aucune description disponible." : projet.description);
-    descBrowser->setStyleSheet(
-        "QTextBrowser {"
-        "    border: 1px solid #e2e8f0;"
-        "    border-radius: 8px;"
-        "    padding: 15px;"
-        "    background-color: #f8fafc;"
-        "    color: #334155;"
-        "    font-size: 14px;"
-        "    line-height: 1.6;"
-        "}"
-        );
-    descBrowser->setMinimumHeight(150);
-    descBrowser->setReadOnly(true);
-    descLayout->addWidget(descBrowser);
+    // ── Footer ────────────────────────────────────────────────────────────────
+    QFrame *footer = new QFrame();
+    footer->setStyleSheet("background-color: white; border-top: 1px solid #e2e8f0;");
+    footer->setFixedHeight(62);
+    QHBoxLayout *footerLayout = new QHBoxLayout(footer);
+    footerLayout->setContentsMargins(22, 0, 22, 0);
+    footerLayout->setSpacing(10);
 
-    mainLayout->addWidget(descGroup, 1);
+    // Bouton Export PDF — à gauche
+    QPushButton *btnPdf = new QPushButton("📄  Exporter en PDF");
+    btnPdf->setFixedHeight(38);
+    btnPdf->setMinimumWidth(160);
+    btnPdf->setCursor(Qt::PointingHandCursor);
+    btnPdf->setStyleSheet(
+        "QPushButton{background-color:white;color:#334155;"
+        "border:1.5px solid #e2e8f0;border-radius:8px;"
+        "font-size:13px;font-weight:600;padding:0px 16px;}"
+        "QPushButton:hover{background-color:#eff6ff;"
+        "border-color:#3b82f6;color:#1d4ed8;}");
 
-    QHBoxLayout *buttonLayout = new QHBoxLayout();
-    buttonLayout->addStretch();
+    connect(btnPdf, &QPushButton::clicked, this, [this, projet]() {
+        QString safeTitre = projet.titre;
+        safeTitre.replace(" ", "_");
+        const QString fileName = QFileDialog::getSaveFileName(
+            this, "Exporter Projet — PDF",
+            QDir::homePath() + "/Projet_" + safeTitre + ".pdf",
+            "Fichiers PDF (*.pdf)");
+        if (fileName.isEmpty()) return;
 
-    QPushButton *closeButton = new QPushButton("Fermer");
-    closeButton->setFixedSize(120, 45);
-    closeButton->setCursor(Qt::PointingHandCursor);
-    closeButton->setStyleSheet(
-        "QPushButton {"
-        "    background-color: #3b82f6;"
-        "    color: white;"
-        "    border: none;"
-        "    border-radius: 8px;"
-        "    font-size: 14px;"
-        "    font-weight: bold;"
-        "}"
-        "QPushButton:hover {"
-        "    background-color: #2563eb;"
-        "}"
-        );
-    connect(closeButton, &QPushButton::clicked, this, &QDialog::accept);
+        QPrinter printer(QPrinter::HighResolution);
+        printer.setOutputFormat(QPrinter::PdfFormat);
+        printer.setOutputFileName(fileName);
+        printer.setPageSize(QPageSize(QPageSize::A4));
+        printer.setPageOrientation(QPageLayout::Portrait);
 
-    buttonLayout->addWidget(closeButton);
-    buttonLayout->addStretch();
+        QPainter painter;
+        if (!painter.begin(&printer)) {
+            QMessageBox::critical(this, "Erreur PDF",
+                                  "Impossible d'initialiser le fichier PDF.");
+            return;
+        }
 
-    mainLayout->addLayout(buttonLayout);
+        const double res = printer.resolution();
+        const double cm  = res / 2.54;
+        int x = (int)(1.8 * cm);
+        int y = (int)(1.5 * cm);
+
+        QLinearGradient grad(x, y, x + (int)(17.4 * cm), y);
+        grad.setColorAt(0.0, QColor("#3b82f6"));
+        grad.setColorAt(1.0, QColor("#10b981"));
+        painter.setPen(Qt::NoPen);
+        painter.setBrush(grad);
+        painter.drawRoundedRect(x, y, (int)(17.4 * cm), (int)(3.2 * cm), 14, 14);
+        painter.setPen(Qt::white);
+        painter.setFont(QFont("Segoe UI", 20, QFont::Bold));
+        painter.drawText(x + (int)(0.6 * cm), y + (int)(1.3 * cm), projet.titre);
+        painter.setFont(QFont("Segoe UI", 12));
+        painter.drawText(x + (int)(0.6 * cm), y + (int)(2.1 * cm),
+                         QString("Code : %1").arg(projet.code));
+        y += (int)(4.0 * cm);
+
+        auto drawSection = [&](const QString &titre) {
+            painter.setPen(Qt::NoPen);
+            painter.setBrush(QColor("#f1f5f9"));
+            painter.drawRoundedRect(x, y - (int)(0.05 * cm),
+                                    (int)(17.4 * cm), (int)(0.75 * cm), 6, 6);
+            painter.setFont(QFont("Segoe UI", 12, QFont::Bold));
+            painter.setPen(QColor("#1e293b"));
+            painter.drawText(x + (int)(0.5 * cm), y + (int)(0.52 * cm), titre);
+            y += (int)(1.1 * cm);
+        };
+
+        auto drawField = [&](const QString &label, const QString &value) {
+            painter.setFont(QFont("Segoe UI", 11, QFont::Bold));
+            painter.setPen(QColor("#64748b"));
+            painter.drawText(x + (int)(0.4 * cm), y, label);
+            painter.setFont(QFont("Segoe UI", 11));
+            painter.setPen(QColor("#1e293b"));
+            painter.drawText(x + (int)(5.5 * cm), y, value.isEmpty() ? "—" : value);
+            y += (int)(0.75 * cm);
+        };
+
+        drawSection("Informations du Projet");
+        drawField("Code :",        projet.code);
+        drawField("Titre :",       projet.titre);
+        drawField("Responsable :", projet.responsable.isEmpty() ? "—" : projet.responsable);
+        drawField("Date début :",  projet.dateDebut.toString("dd/MM/yyyy"));
+        drawField("Date fin :",    projet.dateFin.toString("dd/MM/yyyy"));
+        drawField("État :",        projEtatDbToUi(projet.etat));
+        drawField("Progression :", projet.progression);
+
+        if (!projet.description.isEmpty()) {
+            y += (int)(0.5 * cm);
+            drawSection("Description");
+            painter.setFont(QFont("Segoe UI", 11));
+            painter.setPen(QColor("#475569"));
+            QRect descRect(x + (int)(0.4 * cm), y,
+                           (int)(16.6 * cm), (int)(6.0 * cm));
+            painter.drawText(descRect,
+                             Qt::AlignLeft | Qt::AlignTop | Qt::TextWordWrap,
+                             projet.description);
+        }
+
+        int footerY = (int)(27.8 * cm);
+        painter.setPen(QColor("#e2e8f0"));
+        painter.drawLine(x, footerY, x + (int)(17.4 * cm), footerY);
+        painter.setFont(QFont("Segoe UI", 9));
+        painter.setPen(QColor("#94a3b8"));
+        painter.drawText(x, footerY + (int)(0.45 * cm),
+                         QString("SmartPub — Projet exporté le %1")
+                             .arg(QDate::currentDate().toString("dd/MM/yyyy")));
+
+        painter.end();
+        QMessageBox::information(this, "Export PDF",
+                                 "✅  Projet exporté avec succès !\n" + fileName);
+    });
+
+    footerLayout->addWidget(btnPdf);
+    footerLayout->addStretch();
+
+    QPushButton *closeBtn = new QPushButton("Fermer");
+    closeBtn->setFixedSize(110, 38);
+    closeBtn->setCursor(Qt::PointingHandCursor);
+    closeBtn->setStyleSheet(
+        "QPushButton { background: qlineargradient(x1:0,y1:0,x2:1,y2:0,"
+        "stop:0 #3b82f6,stop:1 #10b981); color: white; border: none;"
+        "border-radius: 8px; font-size: 13px; font-weight: 600; }"
+        "QPushButton:hover { background: qlineargradient(x1:0,y1:0,x2:1,y2:0,"
+        "stop:0 #2563eb,stop:1 #059669); }");
+    connect(closeBtn, &QPushButton::clicked, this, &QDialog::accept);
+    footerLayout->addWidget(closeBtn);
+    mainLayout->addWidget(footer);
 }
 
 // ==================== STATISTIQUES DIALOG ====================
@@ -1461,8 +1533,10 @@ static QString projBuildSelectProjetsSql()
         ? QStringLiteral("TRIM(NVL(c.NOM,'') || ' ' || NVL(c.PRENOM,''))")
         : QStringLiteral("TRIM(NVL(c.NOM,''))");
 
+    // Colonne 9 = respName, colonne 10 = DESCRIPTION (NVL pour compatibilité si colonne absente)
     return QStringLiteral(
-               "SELECT p.ID_PROJET, p.%1, p.%2, p.%3, p.%4, p.%5, %6, %7, %8 "
+               "SELECT p.ID_PROJET, p.%1, p.%2, p.%3, p.%4, p.%5, %6, %7, %8,"
+               " NVL(TO_CHAR(p.DESCRIPTION),'') "
                "FROM %9 p LEFT JOIN CHERCHEUR c ON c.ID_CHERCHEUR = p.%10 "
                "ORDER BY 2")
         .arg(m.code)
@@ -1491,6 +1565,11 @@ static bool projExecInsertProjet(QSqlQuery &query, const Projet &projet, double 
         cols << m.progression;
         ph << QStringLiteral(":prog");
     }
+    // Ajouter DESCRIPTION si non vide
+    if (!projet.description.trimmed().isEmpty()) {
+        cols << QStringLiteral("DESCRIPTION");
+        ph << QStringLiteral(":desc");
+    }
     const QString sql = QStringLiteral("INSERT INTO %1 (%2) VALUES (%3)")
                             .arg(m.table, cols.join(QLatin1Char(',')), ph.join(QLatin1Char(',')));
     projLogSql("INSERT", sql);
@@ -1507,6 +1586,8 @@ static bool projExecInsertProjet(QSqlQuery &query, const Projet &projet, double 
         query.bindValue(QStringLiteral(":etat"), projet.etat);
     if (!m.progression.isEmpty())
         query.bindValue(QStringLiteral(":prog"), progVal);
+    if (!projet.description.trimmed().isEmpty())
+        query.bindValue(QStringLiteral(":desc"), projet.description);
     const bool ok = query.exec();
     if (!ok)
         qDebug() << QStringLiteral("[PROJET SQL] INSERT lastError:") << query.lastError().text();
@@ -1532,6 +1613,7 @@ static bool projExecUpdateProjet(QSqlQuery &query, const Projet &projet, double 
         sets << QStringLiteral("%1 = :etat").arg(m.etat);
     if (!m.progression.isEmpty())
         sets << QStringLiteral("%1 = :prog").arg(m.progression);
+    sets << QStringLiteral("DESCRIPTION = :desc");
     const QString sql = QStringLiteral("UPDATE %1 SET %2 WHERE ID_PROJET = :id")
                             .arg(m.table, sets.join(QLatin1String(", ")));
     projLogSql("UPDATE", sql);
@@ -1548,6 +1630,7 @@ static bool projExecUpdateProjet(QSqlQuery &query, const Projet &projet, double 
         query.bindValue(QStringLiteral(":etat"), projet.etat);
     if (!m.progression.isEmpty())
         query.bindValue(QStringLiteral(":prog"), progVal);
+    query.bindValue(QStringLiteral(":desc"), projet.description);
     query.bindValue(QStringLiteral(":id"), idProjet);
     const bool ok = query.exec();
     if (!ok)
@@ -1676,12 +1759,12 @@ void SmartPub::projSetupStatistiquesButton()
 
 void SmartPub::projSetupAIButton()
 {
-    // PAS de parent "this" sinon le bouton flotte sur la fenetre principale
-    QPushButton *btnAI = new QPushButton("🤖");
+    QPushButton *btnAI = new QPushButton("🤖  IA");
     btnAI->setObjectName("btnAIRecommandations");
-    btnAI->setFixedSize(44, 44);
+    btnAI->setFixedHeight(44);
+    btnAI->setMinimumWidth(80);
     btnAI->setCursor(Qt::PointingHandCursor);
-    btnAI->setToolTip("Recommandations IA");
+    btnAI->setToolTip("Générer des recommandations intelligentes basées sur vos projets existants");
 
     btnAI->setStyleSheet(
         "QPushButton {"
@@ -1689,8 +1772,9 @@ void SmartPub::projSetupAIButton()
         "    color: white;"
         "    border: none;"
         "    border-radius: 10px;"
-        "    font-size: 20px;"
+        "    font-size: 13px;"
         "    font-weight: 600;"
+        "    padding: 0px 16px;"
         "}"
         "QPushButton:hover {"
         "    background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #2563eb, stop:1 #059669);"
@@ -1721,9 +1805,90 @@ void SmartPub::projSetupAIButton()
     if (index >= 0) {
         row1->insertWidget(index + 1, btnAI);
     } else {
-        // Fallback : inserer apres le separateur (position 5)
         row1->insertWidget(5, btnAI);
     }
+
+    // ── Bouton Trier — même style que module Chercheur, inséré avant btnFiltresProjets ──
+    QPushButton *btnTri = new QPushButton("⇅  Trier");
+    btnTri->setObjectName("btnTrierProjets");
+    btnTri->setFixedHeight(44);
+    btnTri->setMinimumWidth(90);
+    btnTri->setCursor(Qt::PointingHandCursor);
+    btnTri->setToolTip("Trier les projets");
+    btnTri->setStyleSheet(
+        "QPushButton {"
+        "    background-color: #ffffff;"
+        "    color: #475569;"
+        "    border: 1.5px solid #e2e8f0;"
+        "    border-radius: 10px;"
+        "    font-size: 13px;"
+        "    font-weight: 500;"
+        "    padding: 0px 16px;"
+        "}"
+        "QPushButton:hover {"
+        "    background-color: #f1f5f9;"
+        "    border-color: #94a3b8;"
+        "    color: #1e293b;"
+        "}");
+
+    connect(btnTri, &QPushButton::clicked, this, [this]() {
+        QMenu *menu = new QMenu(this);
+        menu->setStyleSheet(
+            "QMenu {"
+            "    background-color: white;"
+            "    border: 1px solid #e2e8f0;"
+            "    border-radius: 12px;"
+            "    padding: 8px;"
+            "    min-width: 250px;"
+            "}"
+            "QMenu::item {"
+            "    padding: 12px 20px;"
+            "    border-radius: 8px;"
+            "    color: #334155;"
+            "    font-size: 14px;"
+            "    font-weight: 500;"
+            "}"
+            "QMenu::item:selected {"
+            "    background-color: #eff6ff;"
+            "    color: #3b82f6;"
+            "}"
+            "QMenu::separator {"
+            "    height: 1px;"
+            "    background-color: #e2e8f0;"
+            "    margin: 8px 16px;"
+            "}");
+
+        menu->addAction("📅  Date Début (Plus ancien → récent)", this,
+            [this]() { projSortProjetsBy(2, Qt::AscendingOrder); });
+        menu->addAction("📅  Date Fin (Plus proche → lointaine)", this,
+            [this]() { projSortProjetsBy(3, Qt::AscendingOrder); });
+        menu->addSeparator();
+        menu->addAction("📊  État (A → Z)", this,
+            [this]() { projSortProjetsBy(5, Qt::AscendingOrder); });
+        menu->addAction("📊  État (Z → A)", this,
+            [this]() { projSortProjetsBy(5, Qt::DescendingOrder); });
+        menu->addSeparator();
+        menu->addAction("📈  Progression (Croissant)", this,
+            [this]() { projSortProjetsBy(6, Qt::AscendingOrder); });
+        menu->addAction("📉  Progression (Décroissant)", this,
+            [this]() { projSortProjetsBy(6, Qt::DescendingOrder); });
+
+        menu->exec(QCursor::pos());
+    });
+
+    // Insérer btnTri juste avant btnFiltresProjets
+    int filtreIndex = -1;
+    for (int i = 0; i < row1->count(); ++i) {
+        QLayoutItem *item = row1->itemAt(i);
+        if (item && item->widget() == ui->btnFiltresProjets) {
+            filtreIndex = i;
+            break;
+        }
+    }
+    if (filtreIndex >= 0)
+        row1->insertWidget(filtreIndex, btnTri);
+    else
+        row1->addWidget(btnTri);
 }
 
 void SmartPub::projSetupSidebarProfile()
@@ -1914,6 +2079,13 @@ void SmartPub::projSetupUI()
     ui->btnTriEtat->setStyleSheet(triBtnStyle);
     ui->btnTriProgression->setStyleSheet(triBtnStyle);
 
+    // Masquer la row2 (boutons tri individuels) — remplacés par le bouton "⇅ Trier"
+    ui->btnTriDateDebut->setVisible(false);
+    ui->btnTriDateFin->setVisible(false);
+    ui->btnTriEtat->setVisible(false);
+    ui->btnTriProgression->setVisible(false);
+    if (ui->labelTrierPar) ui->labelTrierPar->setVisible(false);
+
     // Style initial des boutons CRUD
     projSetActiveCrudButton(0);
 
@@ -1941,6 +2113,57 @@ void SmartPub::projSetupUI()
     }
 
     projSetupFormValidationWidgets();
+
+    // ── Forcer fond blanc sur le formContainer pour contrer le thème sombre ──
+    if (auto *fc = ui->scrollAreaWidgetContents->findChild<QFrame*>("formContainer")) {
+        fc->setStyleSheet(
+            "QFrame#formContainer {"
+            "    background-color: #ffffff;"
+            "    border-radius: 12px;"
+            "    border: 1px solid #e2e8f0;"
+            "}"
+            // Tous les champs enfants héritent du fond blanc
+            "QLineEdit, QTextEdit {"
+            "    background-color: #f8fafc;"
+            "    color: #1e293b;"
+            "    border: 1.5px solid #e2e8f0;"
+            "    border-radius: 8px;"
+            "    padding: 8px 14px;"
+            "    font-size: 13px;"
+            "}"
+            "QLineEdit:focus, QTextEdit:focus {"
+            "    background-color: #ffffff;"
+            "    border: 2px solid #3b82f6;"
+            "}"
+            "QDateEdit {"
+            "    background-color: #f8fafc;"
+            "    color: #1e293b;"
+            "    border: 1.5px solid #e2e8f0;"
+            "    border-radius: 8px;"
+            "    padding: 8px 14px;"
+            "    font-size: 13px;"
+            "}"
+            "QDateEdit:focus { background-color: #ffffff; border: 2px solid #3b82f6; }"
+            "QDateEdit::drop-down { border: none; width: 24px; }"
+            "QComboBox {"
+            "    background-color: #f8fafc;"
+            "    color: #1e293b;"
+            "    border: 1.5px solid #e2e8f0;"
+            "    border-radius: 8px;"
+            "    padding: 8px 14px;"
+            "    font-size: 13px;"
+            "    min-height: 38px;"
+            "}"
+            "QComboBox:focus { background-color: #ffffff; border: 2px solid #3b82f6; }"
+            "QComboBox::drop-down { border: none; width: 28px; }"
+            "QComboBox QAbstractItemView {"
+            "    background-color: #ffffff; color: #1e293b;"
+            "    selection-background-color: #eff6ff; selection-color: #1e293b;"
+            "    border: 1px solid #e2e8f0; outline: none;"
+            "}"
+            "QLabel { color: #334155; background: transparent; border: none; }"
+        );
+    }
 }
 
 void SmartPub::projSetupFormValidationWidgets()
@@ -2170,8 +2393,10 @@ void SmartPub::projSetupConnections()
     connect(ui->btnExporterProjets, &QPushButton::clicked, this, &SmartPub::on_exporterClicked);
 
     if (!ui->lineEditCodeForm->validator()) {
-        ui->lineEditCodeForm->setValidator(
-            new QRegularExpressionValidator(projetCodeExactRx(), ui->lineEditCodeForm));
+        // Masque de saisie : PRJ- est fixe, l'utilisateur saisit YYYY-LL-NN
+        // Format : PRJ-2026-GZ-11
+        ui->lineEditCodeForm->setInputMask("\\P\\R\\J-9999-AA-99;_");
+        ui->lineEditCodeForm->setPlaceholderText("PRJ-2026-GZ-11");
     }
     connect(ui->lineEditCodeForm, &QLineEdit::textChanged, this, [this](const QString &) {
         if (!projErrCodeLabel || isEditing)
@@ -2407,7 +2632,7 @@ void SmartPub::projChargerProjets()
                 p.etat = query.value(6).toString();
                 double prog = query.value(7).toDouble();
                 p.progression = QStringLiteral("%1%").arg(qRound(prog));
-                p.description.clear();
+                p.description = query.value(9).toString(); // DESCRIPTION (colonne 9)
                 projets.append(p);
             }
         } else {
@@ -2924,24 +3149,25 @@ void SmartPub::projAppliquerFiltres()
     for (const auto &projet : projets) {
         bool match = true;
 
-        if (!filtreEtat.isEmpty() && projet.etat != filtreEtat) {
+        if (!filtreEtat.isEmpty() && projet.etat != filtreEtat)
             match = false;
-        }
 
-        if (!filtreResponsable.isEmpty() && projet.responsable != filtreResponsable) {
+        if (!filtreResponsable.isEmpty() && projet.responsable != filtreResponsable)
             match = false;
-        }
 
-        if (projet.dateDebut < filtreDateDebutMin || projet.dateDebut > filtreDateDebutMax) {
+        if (projet.dateDebut < filtreDateDebutMin || projet.dateDebut > filtreDateDebutMax)
             match = false;
-        }
 
-        if (match) {
+        if (match)
             projetsFiltres.append(projet);
-        }
     }
 
-    projChargerProjets();
+    // Afficher les résultats filtrés sans recharger depuis Oracle
+    projViderTable();
+    const QVector<Projet> &src = filtresActifs ? projetsFiltres : projets;
+    for (int i = 0; i < src.size(); ++i)
+        projAjouterProjetTable(src[i], i);
+    projAjusterColonnesTable();
 }
 
 void SmartPub::projMettreAJourBadgeFiltres()
@@ -2991,8 +3217,64 @@ void SmartPub::handleProjetExporter()
 
 void SmartPub::projAfficherFormulaire(bool isEdit)
 {
-    ui->labelFormTitle->setText(isEdit ? "Modifier le Projet" : "Nouveau Projet");
+    ui->labelFormTitle->setText(isEdit ? "✏️  Modifier le Projet" : "➕  Nouveau Projet");
     ui->lineEditCodeForm->setReadOnly(isEdit);
+    ui->btnEnregistrerForm->setText(isEdit ? "Modifier" : "Ajouter");
+
+    // ── Style uniforme sur tous les champs — écrase le thème sombre global ────
+    const QString inputStyle =
+        "background-color: #ffffff;"
+        "color: #1e293b;"
+        "border: 1.5px solid #cbd5e1;"
+        "border-radius: 8px;"
+        "padding: 8px 14px;"
+        "font-size: 13px;";
+
+    const QString inputFocusStyle =
+        "background-color: #ffffff;"
+        "color: #1e293b;"
+        "border: 2px solid #3b82f6;"
+        "border-radius: 8px;"
+        "padding: 8px 14px;"
+        "font-size: 13px;";
+
+    // QLineEdit
+    for (QLineEdit *w : {ui->lineEditCodeForm, ui->lineEditTitreForm}) {
+        w->setStyleSheet(
+            "QLineEdit { " + inputStyle + " }"
+            "QLineEdit:focus { " + inputFocusStyle + " }"
+            "QLineEdit:read-only { background-color: #f1f5f9; color: #64748b; border-color: #e2e8f0; }"
+        );
+    }
+
+    // QDateEdit
+    for (QDateEdit *w : {ui->dateEditDebutForm, ui->dateEditFinForm}) {
+        w->setStyleSheet(
+            "QDateEdit { " + inputStyle + " }"
+            "QDateEdit:focus { " + inputFocusStyle + " }"
+            "QDateEdit::drop-down { border: none; width: 24px; }"
+        );
+    }
+
+    // QComboBox
+    const QString comboStyle =
+        "QComboBox { " + inputStyle + " min-height: 38px; }"
+        "QComboBox:focus { " + inputFocusStyle + " }"
+        "QComboBox::drop-down { border: none; width: 28px; }"
+        "QComboBox QAbstractItemView {"
+        "    background-color: #ffffff; color: #1e293b;"
+        "    selection-background-color: #eff6ff; selection-color: #1e293b;"
+        "    border: 1px solid #e2e8f0; outline: none; padding: 4px;"
+        "}";
+    ui->comboBoxResponsableForm->setStyleSheet(comboStyle);
+    ui->comboBoxEtatForm->setStyleSheet(comboStyle);
+
+    // QTextEdit
+    ui->textEditDescriptionForm->setStyleSheet(
+        "QTextEdit { " + inputStyle + " }"
+        "QTextEdit:focus { " + inputFocusStyle + " }"
+    );
+
     ui->stackedWidgetProjets->setCurrentIndex(1);
 }
 
@@ -3043,6 +3325,7 @@ void SmartPub::projViderFormulaire()
         const QSignalBlocker b5(ui->comboBoxResponsableForm);
         const QSignalBlocker b6(ui->comboBoxEtatForm);
         ui->lineEditCodeForm->clear();
+        ui->lineEditCodeForm->setText(QStringLiteral("PRJ-"));
         ui->lineEditTitreForm->clear();
         ui->dateEditDebutForm->setDate(QDate::currentDate());
         ui->dateEditFinForm->setDate(QDate::currentDate().addDays(30));
@@ -3067,7 +3350,7 @@ Projet SmartPub::projGetProjetFromForm() const
     if (projet.progression.isEmpty())
         projet.progression = QStringLiteral("0%");
 
-    projet.code = ui->lineEditCodeForm->text().trimmed();
+    projet.code = ui->lineEditCodeForm->text().trimmed().remove(QLatin1Char('_'));
     projet.titre = ui->lineEditTitreForm->text().trimmed();
     projet.dateDebut = ui->dateEditDebutForm->date();
     projet.dateFin = ui->dateEditFinForm->date();
@@ -3101,8 +3384,14 @@ bool SmartPub::projValidateCode(bool forSubmit)
         return true;
     if (!forSubmit && !projTouchedCode)
         return true;
-    const QString codeTxt = ui->lineEditCodeForm->text().trimmed();
-    if (codeTxt.isEmpty()) {
+
+    // Avec inputMask, text() retourne les underscores pour les positions vides
+    // On utilise displayText() ou on nettoie les underscores
+    QString codeTxt = ui->lineEditCodeForm->text().trimmed();
+    // Supprimer les underscores résiduels du masque
+    codeTxt.remove(QLatin1Char('_'));
+
+    if (codeTxt.isEmpty() || codeTxt == QStringLiteral("PRJ-")) {
         if (forSubmit) {
             projShowLineFieldError(ui->lineEditCodeForm, projErrCodeLabel,
                                    QStringLiteral("Veuillez renseigner ce champ."));
@@ -3113,7 +3402,7 @@ bool SmartPub::projValidateCode(bool forSubmit)
     }
     if (!projetCodeExactRx().match(codeTxt).hasMatch()) {
         projShowLineFieldError(ui->lineEditCodeForm, projErrCodeLabel,
-                               QStringLiteral("Code invalide. Format : PRJ-2024-AI-01"));
+                               QStringLiteral("Code invalide. Format : PRJ-2026-GZ-11"));
         return false;
     }
     projHideLineFieldError(ui->lineEditCodeForm, projErrCodeLabel);

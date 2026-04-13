@@ -13,69 +13,7 @@ LoginDialog::LoginDialog(QWidget *parent)
     setMinimumSize(400, 500);
     resize(450, 550);
     setModal(true);
-
-    setupAccounts();
     setupUI();
-}
-
-void LoginDialog::setupAccounts()
-{
-    // Initialize default accounts for different modules
-    accounts.append({
-        "admin@smartpub.com",
-        "admin123",
-        "Tous les modules",
-        UserRole::Admin,
-        "Administrateur"
-    });
-
-    accounts.append({
-        "chercheur@smartpub.com",
-        "chercheur123",
-        "Chercheurs",
-        UserRole::Admin,
-        "Gestionnaire Chercheurs"
-    });
-
-    accounts.append({
-        "publications@smartpub.com",
-        "pub123",
-        "Publications",
-        UserRole::Admin,
-        "Gestionnaire Publications"
-    });
-
-    accounts.append({
-        "finances@smartpub.com",
-        "fin123",
-        "Finances",
-        UserRole::Admin,
-        "Gestionnaire Finances"
-    });
-
-    accounts.append({
-        "evenements@smartpub.com",
-        "event123",
-        "Evenements",
-        UserRole::Admin,
-        "Gestionnaire Événements"
-    });
-
-    accounts.append({
-        "projets@smartpub.com",
-        "proj123",
-        "Projets",
-        UserRole::Admin,
-        "Gestionnaire Projets"
-    });
-
-    accounts.append({
-        "laboratoires@smartpub.com",
-        "lab123",
-        "Laboratoires",
-        UserRole::Admin,
-        "Dr de recherche"
-    });
 }
 
 void LoginDialog::setupUI()
@@ -233,10 +171,14 @@ void LoginDialog::setupUI()
 
     // Info label at bottom
     QLabel *infoLabel = new QLabel(
-        "Comptes de test:\n"
-        "admin@smartpub.com / admin123\n"
-        "chercheur@smartpub.com / chercheur123\n"
-        "laboratoires@smartpub.com / lab123"
+        "Comptes disponibles:\n"
+        "admin@gmail.com / admin123\n"
+        "smartpub.chercheur@gmail.com / chercheur123\n"
+        "smartpub.publications@gmail.com / pub123\n"
+        "smartpub.evenement@gmail.com / evenement123\n"
+        "smartpub.finance@gmail.com / fin123\n"
+        "smartpub.laboratoire@gmail.com / lab123\n"
+        "smartpub.projet@gmail.com / projet123\n"
     );
     infoLabel->setAlignment(Qt::AlignCenter);
     infoLabel->setStyleSheet(
@@ -265,29 +207,30 @@ void LoginDialog::setupUI()
 
 void LoginDialog::onLoginClicked()
 {
-    QString email = emailEdit->text().trimmed();
-    QString password = passwordEdit->text();
-
     errorLabel->hide();
 
-    if (email.isEmpty() || password.isEmpty()) {
-        errorLabel->setText("⚠ Veuillez remplir tous les champs");
-        errorLabel->show();
+    AppUserAccount acc;
+    QString errMsg;
+
+    if (m_authService.authenticate(emailEdit->text(), passwordEdit->text(),
+                                   &acc, &errMsg))
+    {
+        loggedInUser = UserAccount{
+            acc.email,
+            acc.password,
+            acc.allowedModule,
+            UserRole::Admin,
+            acc.displayName,
+            acc.moduleIndex
+        };
+        loggedIn = true;
+        accept();
         return;
     }
 
-    // Check credentials
-    for (const UserAccount &account : accounts) {
-        if (account.email == email && account.password == password) {
-            loggedInUser = account;
-            loggedIn = true;
-            accept();
-            return;
-        }
-    }
-
-    // Invalid credentials
-    errorLabel->setText("❌ Email ou mot de passe incorrect");
+    errorLabel->setText("❌ " + (errMsg.isEmpty()
+                                     ? QStringLiteral("Email ou mot de passe incorrect")
+                                     : errMsg));
     errorLabel->show();
     passwordEdit->clear();
     passwordEdit->setFocus();
@@ -328,23 +271,41 @@ SettingsDialog::SettingsDialog(QWidget *parent)
     setMinimumSize(500, 600);
     resize(500, 600);
 
+    // Style complet — écrase le thème global du QMainWindow
     setStyleSheet(
         "QDialog {"
         "    background-color: #f8fafc;"
         "    font-family: 'Segoe UI', 'Roboto', sans-serif;"
         "}"
-        "QLabel {"
-        "    color: #1e293b;"
-        "    font-size: 14px;"
-        "}"
-        "QPushButton {"
-        "    border: none;"
-        "    border-radius: 8px;"
-        "    padding: 12px 24px;"
-        "    font-size: 14px;"
-        "    font-weight: 600;"
-        "}"
-        );
+        "QLabel { color: #1e293b; font-size: 14px; background: transparent; }"
+        "QPushButton { border: none; border-radius: 8px; padding: 12px 24px;"
+        "    font-size: 14px; font-weight: 600; }"
+        "QComboBox {"
+        "    background-color: #f8fafc; border: 2px solid #e2e8f0;"
+        "    border-radius: 8px; padding: 10px; min-height: 40px;"
+        "    font-size: 13px; color: #1e293b; }"
+        "QComboBox:focus { border-color: #3b82f6; }"
+        "QComboBox::drop-down { border: none; width: 30px; }"
+        "QComboBox QAbstractItemView {"
+        "    background-color: white; color: #1e293b;"
+        "    selection-background-color: #eff6ff; border: 1px solid #e2e8f0; }"
+        "QCheckBox { spacing: 8px; font-size: 13px; color: #334155; }"
+        "QCheckBox::indicator { width: 18px; height: 18px; border-radius: 4px;"
+        "    border: 2px solid #cbd5e1; background-color: white; }"
+        "QCheckBox::indicator:checked { background-color: #3b82f6; border-color: #3b82f6; }"
+        "QCheckBox::indicator:unchecked:hover { border-color: #3b82f6; }"
+        "QSpinBox {"
+        "    background-color: #f8fafc; border: 2px solid #e2e8f0;"
+        "    border-radius: 8px; padding: 8px; min-height: 40px;"
+        "    min-width: 80px; font-size: 13px; color: #1e293b; }"
+        "QSpinBox:focus { border-color: #3b82f6; }"
+        "QGroupBox {"
+        "    font-weight: bold; border: 1px solid #e2e8f0; border-radius: 12px;"
+        "    margin-top: 15px; padding: 20px; background-color: white; }"
+        "QGroupBox::title {"
+        "    subcontrol-origin: margin; left: 15px; padding: 0 10px;"
+        "    color: #3b82f6; font-size: 14px; }"
+    );
 
     setupUI();
 }
@@ -930,8 +891,30 @@ void SmartPub::setupSidebar() {
         }
     )");
     connect(btnLogout, &QPushButton::clicked, this, [this]() {
-        mainStack->setCurrentIndex(0);
+        // Réinitialiser l'utilisateur courant
+        currentUser = UserAccount{
+            QString(), QString(), QStringLiteral("ALL"),
+            UserRole::Guest, QStringLiteral("Invité"), -1
+        };
         isUserLoggedIn = false;
+
+        // Réactiver tous les boutons sidebar avant de retourner au login
+        const QList<QPushButton*> sidebarBtns = {
+            ui->btnChercheurs, ui->btnPublications, ui->btnFinances,
+            ui->btnEvenements, ui->btnProjets, ui->btnLaboratoires
+        };
+        for (QPushButton *btn : sidebarBtns) {
+            if (btn) {
+                btn->setEnabled(true);
+                btn->setToolTip(QString());
+            }
+        }
+
+        // Vider les champs de login
+        if (ui->cherchLineEditLoginEmail)    ui->cherchLineEditLoginEmail->clear();
+        if (ui->cherchLineEditLoginPassword) ui->cherchLineEditLoginPassword->clear();
+
+        mainStack->setCurrentIndex(0);
     });
     profileMainLayout->addWidget(btnLogout);
 
@@ -972,36 +955,44 @@ void SmartPub::setupConnections() {
             &SmartPub::on_btnEvenements_clicked);
 }
 
-void SmartPub::checkPermissions() {
-    // Si l'utilisateur est un invité, désactiver tous les boutons de modification
-    if (currentUser.role == UserRole::Guest) {
-        applyGuestRestrictions();
-    }
+void SmartPub::checkPermissions()
+{
+    applyModuleRestrictions();
 }
 
-void SmartPub::applyGuestRestrictions() {
-    // Parcourir tous les boutons et désactiver ceux qui contiennent des mots-clés
-    // CRUD
-    QList<QPushButton *> allButtons = this->findChildren<QPushButton *>();
-    QStringList crudKeywords = {"add",     "edit",        "delete",
-                                "save",    "supprimer",   "modifier",
-                                "ajouter", "enregistrer", "annuler"};
+void SmartPub::applyModuleRestrictions()
+{
+    const bool fullAccess = (currentUser.module == QStringLiteral("ALL")
+                             || currentUser.moduleIndex == -1);
 
-    for (QPushButton *btn : allButtons) {
-        QString btnName = btn->objectName().toLower();
-        QString btnText = btn->text().toLower();
+    // Correspondance bouton sidebar → index module
+    // IMPORTANT : cet ordre doit correspondre exactement à stackedWidgetModules
+    struct SidebarEntry { QPushButton *btn; int moduleIdx; };
+    const QList<SidebarEntry> entries = {
+                                         { ui->btnChercheurs,   0 },
+                                         { ui->btnPublications, 1 },
+                                         { ui->btnFinances,     2 },
+                                         { ui->btnEvenements,   3 },
+                                         { ui->btnProjets,      4 },
+                                         { ui->btnLaboratoires, 5 },
+                                         };
 
-        // Vérifier si le nom ou le texte contient un mot-clé CRUD
-        bool isCrudButton = false;
-        for (const QString &keyword : crudKeywords) {
-            if (btnName.contains(keyword) || btnText.contains(keyword)) {
-                isCrudButton = true;
-                break;
-            }
-        }
+    const QString disabledStyle = QStringLiteral(
+        "QPushButton { color: #475569; background-color: transparent;"
+        " border: none; border-radius: 12px; padding: 14px 20px;"
+        " font-size: 16px; font-weight: 500; text-align: center; }"
+        );
 
-        if (isCrudButton) {
-            btn->setEnabled(false);
+    for (const SidebarEntry &e : entries) {
+        if (!e.btn) continue;
+        const bool allowed = fullAccess || (currentUser.moduleIndex == e.moduleIdx);
+        e.btn->setEnabled(allowed);
+        if (!allowed) {
+            e.btn->setStyleSheet(disabledStyle);
+            e.btn->setToolTip(QStringLiteral("Accès restreint à votre module"));
+        } else {
+            e.btn->setToolTip(QString());
+            // Le style actif/inactif sera re-appliqué par setActiveNavigationButton
         }
     }
 }
@@ -1306,7 +1297,59 @@ void SmartPub::setActiveNavigationButton(int index) {
 
 void SmartPub::onSettingsClicked() {
     SettingsDialog dialog(this);
-    dialog.exec();
+    if (dialog.exec() == QDialog::Accepted) {
+        const QString theme = dialog.getSelectedTheme();
+        if (theme == QStringLiteral("dark")) {
+            // ── Thème sombre ──────────────────────────────────────────────────
+            qApp->setStyleSheet(
+                "QMainWindow, QWidget { background-color: #0f172a; color: #e2e8f0; }"
+                "QFrame { background-color: #1e293b; border-color: #334155; }"
+                "QTableWidget { background-color: #1e293b; color: #e2e8f0;"
+                "    gridline-color: #334155; selection-background-color: #3b82f6; }"
+                "QTableWidget::item { color: #e2e8f0; border-bottom: 1px solid #334155; }"
+                "QHeaderView::section { background-color: #0f172a; color: #94a3b8;"
+                "    border: none; padding: 8px; }"
+                "QLineEdit, QTextEdit, QComboBox, QDateEdit, QSpinBox {"
+                "    background-color: #1e293b; color: #e2e8f0;"
+                "    border: 1.5px solid #334155; border-radius: 8px; padding: 8px; }"
+                "QLineEdit:focus, QTextEdit:focus, QComboBox:focus, QDateEdit:focus {"
+                "    border-color: #3b82f6; }"
+                "QComboBox QAbstractItemView { background-color: #1e293b; color: #e2e8f0;"
+                "    selection-background-color: #3b82f6; border: 1px solid #334155; }"
+                "QScrollBar:vertical { background: #1e293b; width: 8px; border-radius: 4px; }"
+                "QScrollBar::handle:vertical { background: #475569; border-radius: 4px; }"
+                "QLabel { color: #e2e8f0; background: transparent; }"
+                "QPushButton { border-radius: 8px; }"
+                "QGroupBox { background-color: #1e293b; border: 1px solid #334155;"
+                "    border-radius: 10px; color: #e2e8f0; }"
+                "QGroupBox::title { color: #3b82f6; }"
+                "QCheckBox { color: #e2e8f0; }"
+                "QCheckBox::indicator { background-color: #1e293b; border: 2px solid #475569;"
+                "    border-radius: 4px; width: 16px; height: 16px; }"
+                "QCheckBox::indicator:checked { background-color: #3b82f6; border-color: #3b82f6; }"
+                "QListWidget { background-color: #1e293b; color: #e2e8f0;"
+                "    border: 1px solid #334155; }"
+                "QListWidget::item:selected { background-color: #3b82f6; }"
+                "QToolTip { background-color: #1e293b; color: #e2e8f0;"
+                "    border: 1px solid #334155; }"
+            );
+        } else {
+            // ── Thème clair (défaut) ──────────────────────────────────────────
+            qApp->setStyleSheet(
+                "QMainWindow { background-color: #f8fafc; }"
+                "QWidget { font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif; }"
+                "QScrollArea { border: none; background-color: transparent; }"
+                "QScrollBar:vertical { border: none; background: #f1f5f9; width: 8px;"
+                "    border-radius: 4px; }"
+                "QScrollBar::handle:vertical { background: #cbd5e1; border-radius: 4px; }"
+                "QScrollBar::handle:vertical:hover { background: #94a3b8; }"
+                "QScrollBar:horizontal { border: none; background: #f1f5f9; height: 8px;"
+                "    border-radius: 4px; }"
+                "QScrollBar::handle:horizontal { background: #cbd5e1; border-radius: 4px; }"
+                "QScrollBar::handle:horizontal:hover { background: #94a3b8; }"
+            );
+        }
+    }
 }
 
 void SmartPub::on_btnChercheurs_clicked() { handleChercheursNavigation(); }

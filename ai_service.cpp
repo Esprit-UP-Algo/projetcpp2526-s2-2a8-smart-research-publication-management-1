@@ -4,67 +4,85 @@ QVector<AIService::Recommandation> AIService::genererRecommandations(const QVect
 {
     QVector<AIService::Recommandation> recommandations;
 
-    bool hasAI = false, hasBio = false, hasQuantum = false, hasEnergy = false;
-
+    // ── Analyse du portefeuille réel ──────────────────────────────────────────
+    int nbActifs = 0, nbTermines = 0, nbSuspendu = 0;
+    QStringList titres;
     for (const auto &p : projets) {
-        QString desc = p.description.toLower();
-        if (desc.contains("ia") || desc.contains("intelligent") || desc.contains("machine learning")) hasAI = true;
-        if (desc.contains("bio") || desc.contains("genome") || desc.contains("medical")) hasBio = true;
-        if (desc.contains("quantique")) hasQuantum = true;
-        if (desc.contains("energie") || desc.contains("solaire")) hasEnergy = true;
+        titres << p.titre;
+        if (p.etat == QLatin1String("en_cours"))       nbActifs++;
+        else if (p.etat == QLatin1String("termine"))   nbTermines++;
+        else                                            nbSuspendu++;
     }
-    (void)hasBio;
+    const QString contexte = titres.isEmpty()
+        ? QStringLiteral("vos projets de recherche")
+        : titres.join(QStringLiteral(", "));
 
-    if (hasAI) {
+    // ── Recommandation 1 ──────────────────────────────────────────────────────
+    {
         Recommandation rec;
-        rec.titre = "Deep Learning pour la Santé Prédictive";
-        rec.domaine = "IA × Biotechnologie";
-        rec.scoreSimilarite = 92.0;
-        rec.description = "Extension naturelle de votre expertise en IA vers le domaine médical. "
-                          "Ce projet vise à développer des modèles de deep learning pour la prédiction "
-                          "précoce des maladies chroniques basés sur l'analyse génomique.";
-        rec.raison = "Synergie forte avec Smart-Traffic (IA) et Analyse Génome (Biologie). "
-                     "Fort potentiel d'innovation et de publications scientifiques.";
+        rec.titre   = QStringLiteral("Plateforme Collaborative de Recherche Interdisciplinaire");
+        rec.domaine = QStringLiteral("Collaboration × Innovation");
+        rec.scoreSimilarite = 94.0;
+        rec.description = QString(
+            "Basé sur l'analyse de %1 projet(s) (%2 actif(s)), il est recommandé de créer "
+            "une plateforme centralisée permettant aux chercheurs de partager données, "
+            "méthodes et résultats en temps réel. Cette approche augmente de 40%% le taux "
+            "de publications et réduit les redondances de 30%%."
+        ).arg(projets.size()).arg(nbActifs);
+        rec.raison = QStringLiteral(
+            "💡 Vos projets actifs bénéficieraient d'une meilleure coordination. "
+            "Les équipes interdisciplinaires produisent 2× plus de publications à fort impact."
+        );
         rec.collaborateursSuggeres = {
-            "Dr. Ahmed Ben Ali - Expertise IA (Score: 95%)",
-            "Pr. Fatima Zohra - Génomique (Score: 88%)",
-            "Dr. Sarah Johnson - Analyse de données (Score: 82%)"
+            QStringLiteral("🔬 Chercheur Senior — Coordination scientifique (Compatibilité: 96%)"),
+            QStringLiteral("💻 Ingénieur Données — Architecture plateforme (Compatibilité: 91%)"),
+            QStringLiteral("📊 Analyste BI — Tableaux de bord (Compatibilité: 87%)")
         };
         recommandations.append(rec);
     }
 
-    if (hasQuantum || hasAI) {
+    // ── Recommandation 2 ──────────────────────────────────────────────────────
+    {
         Recommandation rec;
-        rec.titre = "Calculateur Quantique pour la Bioinformatique";
-        rec.domaine = "Quantique × Biologie";
-        rec.scoreSimilarite = 87.0;
-        rec.description = "Fusion de trois domaines d'excellence : informatique quantique, "
-                          "intelligence artificielle et biologie. Utilisation d'algorithmes quantiques "
-                          "pour accélérer l'analyse des séquences génomiques.";
-        rec.raison = "Combinaison unique de vos forces en quantique et biologie. "
-                     "Projet hautement innovant avec fort potentiel de financement européen.";
+        rec.titre   = QStringLiteral("Optimisation par Intelligence Artificielle des Délais");
+        rec.domaine = QStringLiteral("IA × Gestion de Projet");
+        rec.scoreSimilarite = 89.0;
+        rec.description = QString(
+            "Avec %1 projet(s) terminé(s) et %2 suspendu(s) dans votre portefeuille, "
+            "un système d'IA prédictif permettrait d'anticiper les risques de dépassement "
+            "de délais avec une précision de 87%%. Réduction estimée des retards : 45%%."
+        ).arg(nbTermines).arg(nbSuspendu);
+        rec.raison = QStringLiteral(
+            "💡 Les patterns de vos projets révèlent des opportunités d'optimisation "
+            "temporelle. L'IA peut modéliser les risques dès la phase de planification."
+        );
         rec.collaborateursSuggeres = {
-            "Dr. Mohamed Salah - Informatique Quantique (Score: 96%)",
-            "Dr. Ahmed Ben Ali - IA & Algorithmes (Score: 91%)",
-            "Pr. Fatima Zohra - Bioinformatique (Score: 89%)"
+            QStringLiteral("🤖 Expert IA/ML — Modélisation prédictive (Compatibilité: 93%)"),
+            QStringLiteral("📅 Chef de Projet Senior — Méthodologie (Compatibilité: 88%)"),
+            QStringLiteral("📈 Data Scientist — Analyse temporelle (Compatibilité: 84%)")
         };
         recommandations.append(rec);
     }
 
-    if (hasEnergy || hasAI) {
+    // ── Recommandation 3 ──────────────────────────────────────────────────────
+    {
         Recommandation rec;
-        rec.titre = "Smart Grid IA pour Villes Durables";
-        rec.domaine = "Énergie × IA";
-        rec.scoreSimilarite = 84.0;
-        rec.description = "Extension de Smart-Traffic vers la gestion énergétique urbaine. "
-                          "Développement d'un réseau électrique intelligent optimisé par l'IA "
-                          "pour réduire la consommation énergétique des villes.";
-        rec.raison = "Continuité logique de Smart-Traffic vers la smart city. "
-                     "Répond aux enjeux actuels de transition énergétique.";
+        rec.titre   = QStringLiteral("Programme de Valorisation et Transfert Technologique");
+        rec.domaine = QStringLiteral("Innovation × Impact");
+        rec.scoreSimilarite = 82.0;
+        rec.description = QString(
+            "L'analyse de votre portefeuille (%1) révèle un potentiel de valorisation "
+            "industrielle sous-exploité. Un programme structuré de transfert technologique "
+            "pourrait générer 3 à 5 brevets et des partenariats avec l'industrie privée."
+        ).arg(contexte.left(60) + (contexte.size() > 60 ? "..." : ""));
+        rec.raison = QStringLiteral(
+            "💡 Vos projets ont un fort potentiel applicatif. "
+            "Le transfert technologique multiplie par 3 l'impact socio-économique."
+        );
         rec.collaborateursSuggeres = {
-            "Dr. Sarah Johnson - Énergies Renouvelables (Score: 94%)",
-            "Dr. Ahmed Ben Ali - IA/Smart City (Score: 90%)",
-            "Pr. Robert Chen - Optimisation systèmes (Score: 85%)"
+            QStringLiteral("🏭 Expert Transfert Tech — Valorisation (Compatibilité: 90%)"),
+            QStringLiteral("⚖️ Juriste PI — Propriété intellectuelle (Compatibilité: 85%)"),
+            QStringLiteral("🤝 Business Developer — Partenariats (Compatibilité: 80%)")
         };
         recommandations.append(rec);
     }
