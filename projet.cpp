@@ -1213,8 +1213,8 @@ void StatistiquesDialog::setupUI()
         return layout;
     };
 
-    detailsLayout->addLayout(createDetailItem("📋", "Planifiés", "#8b5cf6", &labelProjetsPlanifies));
-    detailsLayout->addLayout(createDetailItem("⏸️", "En pause", "#f59e0b", &labelProjetsPause));
+    detailsLayout->addLayout(createDetailItem("🚫", "Annulés",   "#ef4444", &labelProjetsPlanifies));
+    detailsLayout->addLayout(createDetailItem("⏸️", "Suspendus", "#f59e0b", &labelProjetsPause));
     detailsLayout->addStretch();
 
     contentLayout->addWidget(detailsGroup);
@@ -1225,15 +1225,28 @@ void StatistiquesDialog::setupUI()
 
     QFrame *footerFrame = new QFrame();
     footerFrame->setStyleSheet("background-color: white; border-top: 1px solid #e2e8f0;");
-    footerFrame->setFixedHeight(70);
+    footerFrame->setFixedHeight(80);
 
     QHBoxLayout *footerLayout = new QHBoxLayout(footerFrame);
-    footerLayout->setContentsMargins(30, 0, 30, 0);
+    footerLayout->setContentsMargins(30, 15, 30, 15);
     footerLayout->addStretch();
 
-    QPushButton *closeButton = new QPushButton("Fermer");
-    closeButton->setFixedSize(140, 45);
+    QPushButton *closeButton = new QPushButton("✕  Fermer");
+    closeButton->setFixedSize(160, 44);
     closeButton->setCursor(Qt::PointingHandCursor);
+    closeButton->setStyleSheet(
+        "QPushButton {"
+        "    background: qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 #3b82f6,stop:1 #10b981);"
+        "    color: white;"
+        "    border: none;"
+        "    border-radius: 10px;"
+        "    font-size: 14px;"
+        "    font-weight: 600;"
+        "}"
+        "QPushButton:hover {"
+        "    background: qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 #2563eb,stop:1 #059669);"
+        "}"
+    );
     connect(closeButton, &QPushButton::clicked, this, &QDialog::accept);
 
     footerLayout->addWidget(closeButton);
@@ -1242,65 +1255,68 @@ void StatistiquesDialog::setupUI()
 
 void StatistiquesDialog::calculerStatistiques()
 {
-    int actifs = 0, termines = 0, pause = 0, planifies = 0;
+    int actifs = 0, termines = 0, suspendus = 0, annules = 0;
     double progressionTotale = 0;
-    int nbProjetsActifsOuPause = 0;
     int projetsEnRetard = 0;
 
     for (const auto &p : m_projets) {
-        if (p.etat == QLatin1String("en_cours")) actifs++;
+        if (p.etat == QLatin1String("en_cours"))   actifs++;
         else if (p.etat == QLatin1String("termine")) termines++;
-        else if (p.etat == QLatin1String("suspendu")) pause++;
-        else if (p.etat == QLatin1String("annule")) planifies++;
+        else if (p.etat == QLatin1String("suspendu")) suspendus++;
+        else if (p.etat == QLatin1String("annule"))  annules++;
 
-        if (p.etat != QLatin1String("termine") && p.etat != QLatin1String("annule")) {
-            QString progStr = p.progression;
-            if (progStr.endsWith('%')) progStr.chop(1);
-            progressionTotale += progStr.toInt();
-            nbProjetsActifsOuPause++;
+        // Progression moyenne sur TOUS les projets
+        QString progStr = p.progression;
+        if (progStr.endsWith('%')) progStr.chop(1);
+        progressionTotale += progStr.toDouble();
 
-            if (QDate::currentDate() > p.dateFin) {
-                projetsEnRetard++;
-            }
+        // En retard : uniquement les projets 'en_cours' dont la date de fin est dépassée
+        if (p.etat == QLatin1String("en_cours") && p.dateFin.isValid()
+            && QDate::currentDate() > p.dateFin) {
+            projetsEnRetard++;
         }
     }
 
-    double progressionMoyenne = nbProjetsActifsOuPause > 0 ?
-                                    progressionTotale / nbProjetsActifsOuPause : 0;
+    double progressionMoyenne = m_projets.isEmpty() ? 0.0
+                                                     : progressionTotale / m_projets.size();
 
-    if (labelTotalProjets) labelTotalProjets->setText(QString::number(m_projets.size()));
-    if (labelProjetsActifs) labelProjetsActifs->setText(QString::number(actifs));
-    if (labelProjetsTermines) labelProjetsTermines->setText(QString::number(termines));
+    if (labelTotalProjets)       labelTotalProjets->setText(QString::number(m_projets.size()));
+    if (labelProjetsActifs)      labelProjetsActifs->setText(QString::number(actifs));
+    if (labelProjetsTermines)    labelProjetsTermines->setText(QString::number(termines));
     if (labelProgressionMoyenne) labelProgressionMoyenne->setText(QString::number(qRound(progressionMoyenne)) + "%");
-    if (labelProjetsRetard) labelProjetsRetard->setText(QString::number(projetsEnRetard));
-    if (labelProjetsPause) labelProjetsPause->setText(QString::number(pause));
-    if (labelProjetsPlanifies) labelProjetsPlanifies->setText(QString::number(planifies));
+    if (labelProjetsRetard)      labelProjetsRetard->setText(QString::number(projetsEnRetard));
+    if (labelProjetsPause)       labelProjetsPause->setText(QString::number(suspendus));
+    if (labelProjetsPlanifies)   labelProjetsPlanifies->setText(QString::number(annules));
 }
 
 void StatistiquesDialog::creerGraphiques()
 {
-    QPieSeries *seriesEtat = new QPieSeries();
-
-    int actifs = 0, termines = 0, pause = 0, planifies = 0;
+    // ── Pie chart : répartition par état ─────────────────────────────────────
+    int actifs = 0, termines = 0, suspendus = 0, annules = 0;
     for (const auto &p : m_projets) {
-        if (p.etat == QLatin1String("en_cours")) actifs++;
+        if (p.etat == QLatin1String("en_cours"))    actifs++;
         else if (p.etat == QLatin1String("termine")) termines++;
-        else if (p.etat == QLatin1String("suspendu")) pause++;
-        else if (p.etat == QLatin1String("annule")) planifies++;
+        else if (p.etat == QLatin1String("suspendu")) suspendus++;
+        else if (p.etat == QLatin1String("annule"))  annules++;
     }
 
-    if (actifs > 0) seriesEtat->append("Actifs", actifs);
-    if (termines > 0) seriesEtat->append("Terminés", termines);
-    if (pause > 0) seriesEtat->append("En pause", pause);
-    if (planifies > 0) seriesEtat->append("Planifiés", planifies);
+    QPieSeries *seriesEtat = new QPieSeries();
+    if (actifs > 0)    seriesEtat->append("En cours",  actifs);
+    if (termines > 0)  seriesEtat->append("Terminés",  termines);
+    if (suspendus > 0) seriesEtat->append("Suspendus", suspendus);
+    if (annules > 0)   seriesEtat->append("Annulés",   annules);
+    if (seriesEtat->count() == 0)
+        seriesEtat->append("Aucun projet", 1);
 
-    QList<QColor> colors = { QColor("#10b981"), QColor("#3b82f6"), QColor("#f59e0b"), QColor("#8b5cf6") };
+    const QList<QColor> colors = { QColor("#10b981"), QColor("#3b82f6"),
+                                   QColor("#f59e0b"), QColor("#ef4444") };
     for (int i = 0; i < seriesEtat->count() && i < colors.size(); ++i) {
-        seriesEtat->slices().at(i)->setColor(colors[i]);
-        seriesEtat->slices().at(i)->setLabelVisible(true);
-        seriesEtat->slices().at(i)->setLabel(QString("%1 (%2%)")
-                                                 .arg(seriesEtat->slices().at(i)->label())
-                                                 .arg(qRound(seriesEtat->slices().at(i)->percentage() * 100)));
+        auto *slice = seriesEtat->slices().at(i);
+        slice->setColor(colors[i]);
+        slice->setLabelVisible(true);
+        slice->setLabel(QString("%1 (%2%)")
+                            .arg(slice->label())
+                            .arg(qRound(slice->percentage() * 100)));
     }
 
     QChart *chartEtat = new QChart();
@@ -1308,28 +1324,34 @@ void StatistiquesDialog::creerGraphiques()
     chartEtat->setTitle("Répartition des projets par état");
     chartEtat->setAnimationOptions(QChart::SeriesAnimations);
     chartEtat->legend()->setAlignment(Qt::AlignRight);
-    chartEtat->setBackgroundBrush(QBrush(QColor("transparent")));
+    chartEtat->setBackgroundBrush(QBrush(Qt::transparent));
     chartEtatView->setChart(chartEtat);
 
+    // ── Bar chart : progression par projet ───────────────────────────────────
     QBarSeries *seriesProgression = new QBarSeries();
     QBarSet *setProgression = new QBarSet("Progression %");
-
     QStringList categories;
+
     for (const auto &p : m_projets) {
         QString progStr = p.progression;
         if (progStr.endsWith('%')) progStr.chop(1);
-        *setProgression << progStr.toInt();
-        categories << p.code;
+        *setProgression << progStr.toDouble();
+        // Afficher le titre tronqué (plus lisible que le code)
+        QString label = p.titre.length() > 15 ? p.titre.left(13) + "…" : p.titre;
+        categories << label;
     }
 
-    seriesProgression->append(setProgression);
     setProgression->setColor(QColor("#3b82f6"));
+    seriesProgression->append(setProgression);
+    seriesProgression->setLabelsVisible(true);
+    seriesProgression->setLabelsFormat("@value%");
+    seriesProgression->setLabelsPosition(QAbstractBarSeries::LabelsOutsideEnd);
 
     QChart *chartProgression = new QChart();
     chartProgression->addSeries(seriesProgression);
-    chartProgression->setTitle("Progression par projet");
+    chartProgression->setTitle("Progression par projet (%)");
     chartProgression->setAnimationOptions(QChart::SeriesAnimations);
-    chartProgression->setBackgroundBrush(QBrush(QColor("transparent")));
+    chartProgression->setBackgroundBrush(QBrush(Qt::transparent));
 
     QBarCategoryAxis *axisX = new QBarCategoryAxis();
     axisX->append(categories);
@@ -1339,47 +1361,58 @@ void StatistiquesDialog::creerGraphiques()
     QValueAxis *axisY = new QValueAxis();
     axisY->setRange(0, 100);
     axisY->setLabelFormat("%d%%");
+    axisY->setTickCount(6); // 0, 20, 40, 60, 80, 100
     chartProgression->addAxis(axisY, Qt::AlignLeft);
     seriesProgression->attachAxis(axisY);
 
     chartProgression->legend()->setVisible(false);
     chartProgressionView->setChart(chartProgression);
 
-    QLineSeries *seriesTimeline = new QLineSeries();
-    seriesTimeline->setName("Projets démarrés");
-    seriesTimeline->setColor(QColor("#10b981"));
-    seriesTimeline->setPen(QPen(QColor("#10b981"), 3));
-
+    // ── Line chart : timeline chronologique des projets ───────────────────────
+    // Trier par dateDebut puis grouper par mois/année
     QVector<Projet> projetsSorted = m_projets;
     std::sort(projetsSorted.begin(), projetsSorted.end(),
               [](const Projet &a, const Projet &b) { return a.dateDebut < b.dateDebut; });
 
-    QMap<QString, int> projetsParMois;
+    // Utiliser QMap<QDate, int> pour un tri chronologique garanti
+    QMap<QDate, int> projetsParMois;
     for (const auto &p : projetsSorted) {
-        QString mois = p.dateDebut.toString("MMM yyyy");
-        projetsParMois[mois]++;
+        if (!p.dateDebut.isValid()) continue;
+        // Clé = premier jour du mois → tri chronologique correct
+        QDate clesMois(p.dateDebut.year(), p.dateDebut.month(), 1);
+        projetsParMois[clesMois]++;
     }
 
-    int i = 0;
-    for (auto it = projetsParMois.begin(); it != projetsParMois.end(); ++it, ++i) {
-        seriesTimeline->append(i, it.value());
+    QLineSeries *seriesTimeline = new QLineSeries();
+    seriesTimeline->setColor(QColor("#10b981"));
+    seriesTimeline->setPen(QPen(QColor("#10b981"), 3));
+
+    QStringList labelsTimeline;
+    int idx = 0;
+    for (auto it = projetsParMois.constBegin(); it != projetsParMois.constEnd(); ++it, ++idx) {
+        seriesTimeline->append(idx, it.value());
+        labelsTimeline << it.key().toString("MMM yyyy");
     }
 
     QChart *chartTimeline = new QChart();
     chartTimeline->addSeries(seriesTimeline);
-    chartTimeline->setTitle("Nombre de projets démarrés par mois");
+    chartTimeline->setTitle("Projets démarrés par mois");
     chartTimeline->setAnimationOptions(QChart::SeriesAnimations);
-    chartTimeline->setBackgroundBrush(QBrush(QColor("transparent")));
+    chartTimeline->setBackgroundBrush(QBrush(Qt::transparent));
 
-    QValueAxis *axisXTime = new QValueAxis();
-    axisXTime->setRange(0, projetsParMois.size() - 1);
-    axisXTime->setLabelFormat("%d");
-    chartTimeline->addAxis(axisXTime, Qt::AlignBottom);
-    seriesTimeline->attachAxis(axisXTime);
+    if (!labelsTimeline.isEmpty()) {
+        QBarCategoryAxis *axisXTime = new QBarCategoryAxis();
+        axisXTime->append(labelsTimeline);
+        chartTimeline->addAxis(axisXTime, Qt::AlignBottom);
+        seriesTimeline->attachAxis(axisXTime);
+    }
 
+    int maxVal = projetsParMois.isEmpty() ? 1
+                 : *std::max_element(projetsParMois.constBegin(), projetsParMois.constEnd());
     QValueAxis *axisYTime = new QValueAxis();
-    axisYTime->setRange(0, *std::max_element(projetsParMois.begin(), projetsParMois.end()) + 1);
+    axisYTime->setRange(0, maxVal + 1);
     axisYTime->setLabelFormat("%d");
+    axisYTime->setTickCount(qMin(maxVal + 2, 6));
     chartTimeline->addAxis(axisYTime, Qt::AlignLeft);
     seriesTimeline->attachAxis(axisYTime);
 
@@ -2847,10 +2880,17 @@ void SmartPub::handleProjetEnregistrerForm()
         } else {
             QString em = query.lastError().text();
             qDebug() << QStringLiteral("PROJET UPDATE:") << em;
-            if (em.size() > 120)
-                em = em.left(117) + QLatin1String("...");
-            projShowLineFieldError(ui->lineEditCodeForm, projErrCodeLabel,
-                                   QStringLiteral("Enregistrement impossible : %1").arg(em));
+            if (query.lastError().nativeErrorCode() == QLatin1String("1") ||
+                em.contains(QLatin1String("UNQ_PROJET_CODE"), Qt::CaseInsensitive) ||
+                em.contains(QLatin1String("ORA-00001"), Qt::CaseInsensitive)) {
+                projShowLineFieldError(ui->lineEditCodeForm, projErrCodeLabel,
+                                       QStringLiteral("Ce code projet existe déjà. Veuillez en choisir un autre."));
+            } else {
+                if (em.size() > 120)
+                    em = em.left(117) + QLatin1String("...");
+                projShowLineFieldError(ui->lineEditCodeForm, projErrCodeLabel,
+                                       QStringLiteral("Enregistrement impossible : %1").arg(em));
+            }
             return;
         }
     } else {
@@ -2860,10 +2900,18 @@ void SmartPub::handleProjetEnregistrerForm()
         } else {
             QString em = query.lastError().text();
             qDebug() << QStringLiteral("PROJET INSERT:") << em;
-            if (em.size() > 120)
-                em = em.left(117) + QLatin1String("...");
-            projShowLineFieldError(ui->lineEditCodeForm, projErrCodeLabel,
-                                   QStringLiteral("Enregistrement impossible : %1").arg(em));
+            // ORA-00001 : contrainte unique violée → code projet déjà existant
+            if (query.lastError().nativeErrorCode() == QLatin1String("1") ||
+                em.contains(QLatin1String("UNQ_PROJET_CODE"), Qt::CaseInsensitive) ||
+                em.contains(QLatin1String("ORA-00001"), Qt::CaseInsensitive)) {
+                projShowLineFieldError(ui->lineEditCodeForm, projErrCodeLabel,
+                                       QStringLiteral("Ce code projet existe déjà. Veuillez en choisir un autre."));
+            } else {
+                if (em.size() > 120)
+                    em = em.left(117) + QLatin1String("...");
+                projShowLineFieldError(ui->lineEditCodeForm, projErrCodeLabel,
+                                       QStringLiteral("Enregistrement impossible : %1").arg(em));
+            }
             return;
         }
     }

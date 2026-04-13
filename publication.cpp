@@ -158,20 +158,32 @@ private:
 
         contentLayout->addLayout(chartsLayout);
 
+        contentLayout->addStretch();
+        scrollArea->setWidget(contentWidget);
+        mainLayout->addWidget(scrollArea, 1);
+
         QFrame *footerFrame = new QFrame();
         footerFrame->setStyleSheet("background-color: white; border-top: 1px solid #e2e8f0;");
-        footerFrame->setFixedHeight(70);
+        footerFrame->setFixedHeight(80);
         QHBoxLayout *footerLayout = new QHBoxLayout(footerFrame);
+        footerLayout->setContentsMargins(30, 15, 30, 15);
         footerLayout->addStretch();
-        QPushButton *closeButton = new QPushButton("Fermer");
-        closeButton->setFixedSize(140, 45);
+        QPushButton *closeButton = new QPushButton("✕  Fermer");
+        closeButton->setFixedSize(160, 44);
         closeButton->setCursor(Qt::PointingHandCursor);
+        closeButton->setStyleSheet(
+            "QPushButton {"
+            "    background: qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 #3b82f6,stop:1 #10b981);"
+            "    color: white; border: none; border-radius: 10px;"
+            "    font-size: 14px; font-weight: 600;"
+            "}"
+            "QPushButton:hover {"
+            "    background: qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 #2563eb,stop:1 #059669);"
+            "}"
+        );
         connect(closeButton, &QPushButton::clicked, this, &QDialog::accept);
         footerLayout->addWidget(closeButton);
         mainLayout->addWidget(footerFrame);
-
-        scrollArea->setWidget(contentWidget);
-        mainLayout->addWidget(scrollArea, 1);
     }
 
     void calculerStatistiques() {
