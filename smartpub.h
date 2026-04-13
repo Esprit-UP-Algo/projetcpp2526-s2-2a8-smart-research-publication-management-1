@@ -76,6 +76,9 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QUrl>
+// arduino
+#include "arduino.h"
+#include "scenario1.h"
 
 QT_BEGIN_NAMESPACE
 class QPieSeries;
@@ -675,6 +678,9 @@ private:
     bool cherchTouchedEmail = false;
     bool cherchTouchedGrade = false;
     QTimer *cherchEmailDebounceTimer = nullptr;
+
+    Arduino* arduino;
+    Scenario1* scenarioAcces;
 };
 
 #endif // SMARTPUB_H

@@ -56,8 +56,13 @@ void AppAuthService::setupAccounts()
             3
         },
         {
+<<<<<<< HEAD
             QStringLiteral("smartpub.projet@gmail.com"),
             QStringLiteral("projet123."),
+=======
+            QStringLiteral("smartpub.projets@gmail.com"),
+            QStringLiteral("proj123"),
+>>>>>>> ac2be2f5713eb4a7788dcb2193c071415b496159
             QStringLiteral("Chef de Projet"),
             QStringLiteral("Projets"),
             4
