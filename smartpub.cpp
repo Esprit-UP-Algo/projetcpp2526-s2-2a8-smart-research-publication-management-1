@@ -606,24 +606,98 @@ SmartPub::SmartPub(QWidget *parent)
     // Initialiser l'interface utilisateur
     setupUI();
 
+
     // =====================================================================
-    // ARDUINO
+    // ARDUINO — Scenario 1 (acces labo) + Scenario 2 (cloture projet)
+    //         + Scenario 3 (verification chercheur RFID)
     // =====================================================================
 
-    // Initialisation de l’Arduino
+    // Initialiser les pointeurs a nullptr par securite
+    arduino                = nullptr;
+    scenarioAcces          = nullptr;
+    scenarioCloture        = nullptr;
+    scenarioIdentification = nullptr;
+    labelRfidStatus        = nullptr;
+
+    // Label RFID affiche dans le module Chercheurs
+    labelRfidStatus = new QLabel("En attente de carte RFID...");
+    labelRfidStatus->setAlignment(Qt::AlignCenter);
+    labelRfidStatus->setFixedHeight(44);
+    labelRfidStatus->setStyleSheet(
+        "QLabel { color: #64748b; font-size: 13px; font-weight: 600;"
+        " padding: 8px 16px; border-radius: 8px;"
+        " background: #f1f5f9; border: 1px solid #e2e8f0; }");
+
     arduino = new Arduino();
     if (arduino->connect_arduino() == 0) {
-        qDebug() << "Arduino connecté sur" << arduino->getarduino_port_name();
+        qDebug() << "[SmartPub] Arduino connecte sur"
+                 << arduino->getarduino_port_name();
 
-        // Création du scénario pour le laboratoire d’ID 1 (à adapter selon votre base)
-        scenarioAcces = new Scenario1(arduino, 1);  // 1 = ID_LABORATOIRE du labo créé
+        // --- Scenario 1 : controle acces laboratoire (ID labo = 1) ---
+        scenarioAcces = new Scenario1(arduino, 1);
 
-        // Quand des données arrivent du port série, on traite l’accès
-        connect(arduino->getserial(), &QSerialPort::readyRead, this, [this]() {
-            scenarioAcces->processAccess();
+        // --- Scenario 2 : cloture de projet via Arduino ---
+        scenarioCloture = new Scenario2(arduino);
+
+        // --- Scenario 3 : verification existence chercheur par carte RFID ---
+        scenarioIdentification = new Scenario3(arduino);
+
+        // --- Routage readyRead selon le module actif ---
+        // Index stackedWidgetModules :
+        //   0 = Chercheurs   -> Scenario 3 (verif RFID chercheur)
+        //   4 = Projets      -> Scenario 2 (cloture projet)
+        //   autres           -> Scenario 1 (acces labo)
+        connect(arduino->getserial(), &QSerialPort::readyRead,
+                this, [this]() {
+
+            const int moduleActif = ui->stackedWidgetModules->currentIndex();
+
+            if (moduleActif == 0) {
+                // Module Chercheurs -> Scenario 3
+                scenarioIdentification->processIdentification();
+
+                if (scenarioIdentification->dernierResultat()) {
+                    labelRfidStatus->setText(
+                        "Chercheur trouve : "
+                        + scenarioIdentification->dernierNom());
+                    labelRfidStatus->setStyleSheet(
+                        "QLabel { color: white; font-size: 13px;"
+                        " font-weight: 700; padding: 8px 16px;"
+                        " border-radius: 8px; background: #16a34a; }");
+                } else {
+                    labelRfidStatus->setText(
+                        "Acces bloque - CIN inconnu : "
+                        + scenarioIdentification->dernierCin());
+                    labelRfidStatus->setStyleSheet(
+                        "QLabel { color: white; font-size: 13px;"
+                        " font-weight: 700; padding: 8px 16px;"
+                        " border-radius: 8px; background: #dc2626; }");
+                }
+
+                // Reset automatique du label apres 4 secondes
+                QTimer::singleShot(4000, this, [this]() {
+                    if (labelRfidStatus) {
+                        labelRfidStatus->setText("En attente de carte RFID...");
+                        labelRfidStatus->setStyleSheet(
+                            "QLabel { color: #64748b; font-size: 13px;"
+                            " font-weight: 600; padding: 8px 16px;"
+                            " border-radius: 8px; background: #f1f5f9;"
+                            " border: 1px solid #e2e8f0; }");
+                    }
+                });
+
+            } else if (moduleActif == 4) {
+                // Module Projets -> Scenario 2 (cloture)
+                scenarioCloture->processCloture();
+
+            } else {
+                // Autres modules -> Scenario 1 (acces labo)
+                scenarioAcces->processAccess();
+            }
         });
+
     } else {
-        qDebug() << "Échec de connexion à l’Arduino";
+        qDebug() << "[SmartPub] Echec de connexion a l Arduino";
     }
 
     // === ARCHITECTURE LOGIN GLOBAL ===
