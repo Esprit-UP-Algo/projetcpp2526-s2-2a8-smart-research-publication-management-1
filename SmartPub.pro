@@ -15,9 +15,6 @@ SOURCES += \
     connection.cpp \
     main.cpp \
     scenario1.cpp \
-    scenario2.cpp \
-    scenario3.cpp \
-    rfid_journal.cpp \
     smartpub.cpp \
     chercheur.cpp \
     publication.cpp \
@@ -38,9 +35,6 @@ HEADERS += \
     arduino.h \
     connection.h \
     scenario1.h \
-    scenario2.h \
-    scenario3.h \
-    rfid_journal.h \
     smartpub.h \
     ai_service.h \
     reminder.h \
