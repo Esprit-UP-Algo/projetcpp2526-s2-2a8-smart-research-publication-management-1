@@ -30,7 +30,8 @@ SOURCES += \
     matchmakingengine.cpp \
     scoringengine.cpp \
     collaborationengine.cpp \
-    trans_secure.cpp
+    trans_secure.cpp \
+    calender.cpp
 
 HEADERS += \
     arduino.h \
@@ -46,6 +47,7 @@ HEADERS += \
     scoringengine.h \
     collaborationengine.h \
     trans_secure.h \
+    calender.h \
     chercheur.h \
     publication.h \
     projet.h \

@@ -1,29 +1,103 @@
 #include "trans_secure.h"
+#include "connection.h"
 
 #include <QApplication>
 #include <QDateTime>
 #include <QDialog>
 #include <QDir>
 #include <QFile>
+#include <QFileInfo>
 #include <QFont>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QPushButton>
-#include <QScrollArea>
+#include <QSqlQuery>
+#include <QSqlError>
 #include <QStandardPaths>
 #include <QTextEdit>
 #include <QTextStream>
 #include <QVBoxLayout>
 
 // ============================================================================
-// Chemin du fichier journal
+// Chemin du fichier journal — avec fallbacks si OneDrive bloque l'écriture
 // ============================================================================
 
 QString TransSecure::cheminFichier()
 {
-    // Placé dans le dossier Documents de l'utilisateur
-    const QString dir = QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation);
-    return dir + QDir::separator() + "transactions_securite.txt";
+    // Liste de chemins candidats par ordre de préférence
+    QStringList candidats;
+
+    // 1. Dossier Documents standard
+    candidats << QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation)
+                     + QDir::separator() + "transactions_securite.txt";
+
+    // 2. Dossier Home de l'utilisateur
+    candidats << QDir::homePath() + QDir::separator() + "transactions_securite.txt";
+
+    // 3. Dossier temporaire de l'application
+    candidats << QStandardPaths::writableLocation(QStandardPaths::AppDataLocation)
+                     + QDir::separator() + "transactions_securite.txt";
+
+    // 4. Dossier temp système
+    candidats << QDir::tempPath() + QDir::separator() + "transactions_securite.txt";
+
+    // Si le fichier existe déjà dans un des chemins, on le retourne
+    for (const QString &path : candidats) {
+        if (QFile::exists(path))
+            return path;
+    }
+
+    // Sinon, tester lequel est accessible en écriture
+    for (const QString &path : candidats) {
+        QFileInfo fi(path);
+        QDir dir = fi.absoluteDir();
+        // Créer le dossier si nécessaire (ex: AppDataLocation)
+        if (!dir.exists())
+            dir.mkpath(".");
+        QFile test(path);
+        if (test.open(QIODevice::WriteOnly | QIODevice::Append)) {
+            test.close();
+            // Si le fichier était vide (juste créé), on le supprime pour laisser
+            // initialiserFichier() le recréer proprement
+            if (QFileInfo(path).size() == 0)
+                QFile::remove(path);
+            return path;
+        }
+    }
+
+    // Dernier recours : Documents (même si ça échoue, on retourne quelque chose)
+    return candidats.first();
+}
+
+// ============================================================================
+// Initialisation du fichier journal (créé s'il n'existe pas)
+// ============================================================================
+
+void TransSecure::initialiserFichier()
+{
+    const QString path = cheminFichier();
+    if (QFile::exists(path))
+        return;
+
+    // S'assurer que le dossier parent existe
+    QFileInfo fi(path);
+    fi.absoluteDir().mkpath(".");
+
+    QFile file(path);
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Text))
+        return;
+
+    QTextStream out(&file);
+    out.setEncoding(QStringConverter::Utf8);
+
+    const QString ligne = QString(70, '=');
+    out << ligne << "\n";
+    out << "  JOURNAL DE SECURITE — TRANSACTIONS FINANCIERES\n";
+    out << "  Cree le : " << QDateTime::currentDateTime().toString("dd/MM/yyyy HH:mm:ss") << "\n";
+    out << "  Ce fichier est permanent. Les entrees ne sont jamais supprimees.\n";
+    out << ligne << "\n\n";
+
+    file.close();
 }
 
 // ============================================================================
@@ -40,6 +114,8 @@ void TransSecure::logTransaction(const QString &action,
                                  const QString &projet,
                                  const QString &description)
 {
+    initialiserFichier();
+
     QFile file(cheminFichier());
     if (!file.open(QIODevice::Append | QIODevice::Text))
         return;
@@ -48,9 +124,9 @@ void TransSecure::logTransaction(const QString &action,
     out.setEncoding(QStringConverter::Utf8);
 
     const QString horodatage = QDateTime::currentDateTime().toString("dd/MM/yyyy HH:mm:ss");
-    const QString separateur = QString(70, '-');
+    const QString sep = QString(70, '-');
 
-    out << separateur << "\n";
+    out << sep << "\n";
     out << QString("  ACTION      : %1\n").arg(action);
     out << QString("  Horodatage  : %1\n").arg(horodatage);
     out << QString("  ID          : %1\n").arg(id);
@@ -62,9 +138,51 @@ void TransSecure::logTransaction(const QString &action,
     out << QString("  Projet      : %1\n").arg(projet.isEmpty() ? "—" : projet);
     if (!description.isEmpty())
         out << QString("  Description : %1\n").arg(description);
-    out << separateur << "\n\n";
+    out << sep << "\n\n";
 
     file.close();
+}
+
+// ============================================================================
+// Charge les transactions depuis la BD et les écrit dans le fichier
+// (appelé une seule fois si le fichier vient d'être créé)
+// ============================================================================
+
+static void chargerTransactionsBD()
+{
+    QSqlDatabase db = Connection::instance()->getDatabase();
+    if (!db.isOpen())
+        return;
+
+    QSqlQuery q(db);
+    const QString sql =
+        "SELECT f.ID_TRANSACTION, f.MONTANT, f.TYPE_TRANS, f.CATEGORIE, "
+        "f.DATE_TRANSACTION, f.STATUT, f.DESCRIPTION, p.TITRE "
+        "FROM FINANCE f LEFT JOIN PROJET p ON p.ID_PROJET = f.ID_PROJET "
+        "ORDER BY f.ID_TRANSACTION";
+
+    if (!q.exec(sql))
+        return;
+
+    while (q.next()) {
+        int    id          = q.value(0).toInt();
+        double montant     = q.value(1).toDouble();
+        QString type       = q.value(2).toString();
+        QString categorie  = q.value(3).toString();
+        QString date;
+        QVariant dv = q.value(4);
+        QDate d = dv.toDate();
+        if (!d.isValid() && dv.toDateTime().isValid())
+            d = dv.toDateTime().date();
+        date = d.isValid() ? d.toString("dd/MM/yyyy") : dv.toString();
+        QString statut      = q.value(5).toString();
+        QString description = q.value(6).toString();
+        QString projet      = q.value(7).toString();
+
+        TransSecure::logTransaction("EXISTANT (chargé depuis BD)",
+                                    id, type, montant, date,
+                                    categorie, statut, projet, description);
+    }
 }
 
 // ============================================================================
@@ -73,6 +191,15 @@ void TransSecure::logTransaction(const QString &action,
 
 void TransSecure::afficherJournal(QWidget *parent)
 {
+    // Créer le fichier s'il n'existe pas
+    const bool estNouveau = !QFile::exists(cheminFichier());
+    initialiserFichier();
+
+    // Si le fichier vient d'être créé, on charge les transactions existantes en BD
+    if (estNouveau) {
+        chargerTransactionsBD();
+    }
+
     QDialog *dialog = new QDialog(parent);
     dialog->setWindowTitle("Journal de Sécurité des Transactions");
     dialog->setMinimumSize(750, 550);
@@ -110,19 +237,24 @@ void TransSecure::afficherJournal(QWidget *parent)
 
     const QString path = cheminFichier();
     QFile file(path);
-    if (file.exists() && file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+    if (file.open(QIODevice::ReadOnly | QIODevice::Text)) {
         QTextStream in(&file);
         in.setEncoding(QStringConverter::Utf8);
         const QString contenu = in.readAll();
         file.close();
 
-        if (contenu.trimmed().isEmpty()) {
-            textEdit->setPlainText("  Aucune transaction enregistrée pour le moment.");
+        const bool aDesTransactions = contenu.contains("ACTION      :");
+
+        if (!aDesTransactions) {
+            textEdit->setPlainText(
+                "  Aucune transaction enregistrée pour le moment.\n\n"
+                "  Les transactions apparaîtront ici dès qu'un ajout,\n"
+                "  une modification ou une suppression sera effectuée.");
         } else {
-            // Colorisation légère via HTML
             QString html = "<pre style='font-family:Courier New; font-size:10pt; color:#e2e8f0;'>";
             for (const QString &line : contenu.split('\n')) {
                 QString escaped = line.toHtmlEscaped();
+
                 if (line.startsWith("  ACTION")) {
                     if (line.contains("AJOUT"))
                         escaped = "<span style='color:#34d399; font-weight:bold;'>" + escaped + "</span>";
@@ -130,11 +262,18 @@ void TransSecure::afficherJournal(QWidget *parent)
                         escaped = "<span style='color:#60a5fa; font-weight:bold;'>" + escaped + "</span>";
                     else if (line.contains("SUPPRESSION"))
                         escaped = "<span style='color:#f87171; font-weight:bold;'>" + escaped + "</span>";
+                    else if (line.contains("EXISTANT"))
+                        escaped = "<span style='color:#a78bfa; font-weight:bold;'>" + escaped + "</span>";
                 } else if (line.startsWith("  Horodatage")) {
                     escaped = "<span style='color:#94a3b8;'>" + escaped + "</span>";
-                } else if (line.startsWith(QString(70, '-').left(3))) {
+                } else if (line.startsWith("  ID") || line.startsWith("  Montant")) {
+                    escaped = "<span style='color:#fbbf24;'>" + escaped + "</span>";
+                } else if (line.trimmed().startsWith("---")) {
                     escaped = "<span style='color:#475569;'>" + escaped + "</span>";
+                } else if (line.trimmed().startsWith("===")) {
+                    escaped = "<span style='color:#334155;'>" + escaped + "</span>";
                 }
+
                 html += escaped + "\n";
             }
             html += "</pre>";
@@ -142,9 +281,9 @@ void TransSecure::afficherJournal(QWidget *parent)
         }
     } else {
         textEdit->setPlainText(
-            "  Fichier journal introuvable.\n\n"
-            "  Il sera créé automatiquement lors de la première opération sur une transaction.\n\n"
-            "  Chemin attendu :\n  " + path);
+            "  Impossible d'ouvrir le fichier journal.\n\n"
+            "  Chemin tenté :\n  " + path + "\n\n"
+            "  Vérifiez les permissions d'écriture sur ce dossier.");
     }
 
     mainLayout->addWidget(textEdit);

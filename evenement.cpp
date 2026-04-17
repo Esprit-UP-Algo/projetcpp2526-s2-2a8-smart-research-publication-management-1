@@ -1,8 +1,17 @@
 #include "smartpub.h"
 #include "ui_smartpub.h"
 #include "connection.h"
+#include "calender.h"
 
 #include <algorithm>
+#include <QApplication>
+#include <QScreen>
+#include <QPrinter>
+#include <QPainter>
+#include <QPageSize>
+#include <QPageLayout>
+#include <QTextStream>
+#include <QDateTime>
 
 // ============================================================================
 // MODULE EVENEMENTS
@@ -57,6 +66,20 @@ void SmartPub::evSetupUI() {
         ui->evTableSearchEvents->setSizePolicy(QSizePolicy::Expanding,
                                                QSizePolicy::Expanding);
     }
+
+    // === Bouton Calculateur d'Impact → remplacé par Calendrier ===
+    // On réutilise le slot evBtnCalculImpact pour afficher le calendrier
+    ui->evBtnCalculImpact->setText("📅  Calendrier");
+    ui->evBtnCalculImpact->setCursor(Qt::PointingHandCursor);
+    ui->evBtnCalculImpact->setStyleSheet(
+        "QPushButton { background: qlineargradient(x1:0,y1:0,x2:1,y2:0,"
+        " stop:0 #1e40af, stop:1 #0ea5e9); color: white; border: none;"
+        " border-radius: 8px; padding: 8px 18px; font-size: 13px; font-weight: 600; }"
+        "QPushButton:hover { background: qlineargradient(x1:0,y1:0,x2:1,y2:0,"
+        " stop:0 #1d4ed8, stop:1 #0284c7); }");
+
+    // === Masquer le bouton Livre des Résumés ===
+    ui->evBtnLivreResumes->setVisible(false);
 }
 
 void SmartPub::evConnectSignals() {
@@ -452,11 +475,169 @@ void SmartPub::handleEvBtnTrierDateClicked() {
 void SmartPub::handleEvBtnRechercheLieuClicked() { evRechercherParLieu(); }
 
 void SmartPub::handleEvBtnExportCalendrierClicked() {
+    // Charger les événements depuis la BD
+    QSqlDatabase db = Connection::instance()->getDatabase();
+    if (!db.isOpen()) {
+        QMessageBox::warning(this, "Erreur", "Base de données non connectée.");
+        return;
+    }
+
+    QSqlQuery query(db);
+    if (!query.exec("SELECT CODE_EVENEMENT, NOM, LIEU, DATE_EVENEMENT FROM EVENEMENT ORDER BY DATE_EVENEMENT")) {
+        QMessageBox::warning(this, "Erreur", "Impossible de charger les événements : " + query.lastError().text());
+        return;
+    }
+
+    // Collecter les événements
+    struct EvExport { QString code, nom, lieu, date; };
+    QList<EvExport> liste;
+    while (query.next()) {
+        EvExport e;
+        e.code = QString::number(query.value(0).toLongLong());
+        e.nom  = query.value(1).toString();
+        e.lieu = query.value(2).toString();
+        QVariant dv = query.value(3);
+        QDate d = dv.toDate();
+        if (!d.isValid() && dv.toDateTime().isValid()) d = dv.toDateTime().date();
+        if (!d.isValid()) {
+            QString s = dv.toString();
+            if (s.contains("T")) s = s.left(10);
+            d = QDate::fromString(s.left(10), "yyyy-MM-dd");
+        }
+        e.date = d.isValid() ? d.toString("dd/MM/yyyy") : dv.toString();
+        liste.append(e);
+    }
+
+    if (liste.isEmpty()) {
+        QMessageBox::information(this, "Export", "Aucun événement à exporter.");
+        return;
+    }
+
+    // Choix du fichier — TXT, PDF ou CSV
     QString fileName = QFileDialog::getSaveFileName(
-        this, "Exporter le calendrier", QDir::homePath(), "iCalendar (*.ics)");
-    if (!fileName.isEmpty()) {
-        QMessageBox::information(this, "Export",
-                                 "Calendrier exporté avec succès !");
+        this,
+        "Exporter les événements",
+        QDir::homePath() + "/evenements_export",
+        "Fichier texte (*.txt);;PDF (*.pdf);;CSV (*.csv)");
+
+    if (fileName.isEmpty())
+        return;
+
+    // ── Export TXT ────────────────────────────────────────────────────────────
+    if (fileName.endsWith(".txt", Qt::CaseInsensitive) || fileName.endsWith(".csv", Qt::CaseInsensitive)) {
+        QFile file(fileName);
+        if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
+            QMessageBox::critical(this, "Erreur", "Impossible de créer le fichier : " + fileName);
+            return;
+        }
+        QTextStream out(&file);
+        out.setEncoding(QStringConverter::Utf8);
+
+        if (fileName.endsWith(".csv", Qt::CaseInsensitive)) {
+            out << "Code;Nom;Lieu;Date\n";
+            for (const EvExport &e : liste)
+                out << e.code << ";" << e.nom << ";" << e.lieu << ";" << e.date << "\n";
+        } else {
+            const QString sep = QString(60, '=');
+            out << sep << "\n";
+            out << "  LISTE DES EVENEMENTS — SmartPub\n";
+            out << "  Exporté le : " << QDateTime::currentDateTime().toString("dd/MM/yyyy HH:mm:ss") << "\n";
+            out << "  Nombre d'événements : " << liste.size() << "\n";
+            out << sep << "\n\n";
+            int num = 1;
+            for (const EvExport &e : liste) {
+                out << QString("  [%1] Code    : %2\n").arg(num).arg(e.code);
+                out << QString("       Nom     : %1\n").arg(e.nom);
+                out << QString("       Lieu    : %1\n").arg(e.lieu);
+                out << QString("       Date    : %1\n").arg(e.date);
+                out << QString(60, '-') << "\n";
+                ++num;
+            }
+        }
+        file.close();
+        QMessageBox::information(this, "Export réussi",
+                                 QString("Fichier exporté avec succès !\n\n%1").arg(fileName));
+        return;
+    }
+
+    // ── Export PDF ────────────────────────────────────────────────────────────
+    if (fileName.endsWith(".pdf", Qt::CaseInsensitive)) {
+        QPrinter printer(QPrinter::HighResolution);
+        printer.setOutputFormat(QPrinter::PdfFormat);
+        printer.setOutputFileName(fileName);
+        printer.setPageSize(QPageSize(QPageSize::A4));
+        printer.setPageOrientation(QPageLayout::Portrait);
+        printer.setPageMargins(QMarginsF(15, 15, 15, 15), QPageLayout::Millimeter);
+
+        QPainter p;
+        if (!p.begin(&printer)) {
+            QMessageBox::critical(this, "Erreur", "Impossible d'initialiser le moteur PDF.");
+            return;
+        }
+
+        const QRect page  = printer.pageRect(QPrinter::DevicePixel).toRect();
+        const int W       = page.width();
+        const int margin  = 60;
+        const int colW    = W - 2 * margin;
+        int y             = margin;
+
+        auto font = [](int sz, bool bold = false) {
+            QFont f("Arial", sz); f.setBold(bold); return f;
+        };
+        auto checkPage = [&](int needed) {
+            if (y + needed > page.height() - margin - 40) {
+                printer.newPage(); y = margin;
+            }
+        };
+
+        // En-tête
+        QLinearGradient grad(margin, y, margin + colW, y);
+        grad.setColorAt(0, QColor("#1e40af")); grad.setColorAt(1, QColor("#0ea5e9"));
+        p.setPen(Qt::NoPen); p.setBrush(grad);
+        p.drawRoundedRect(margin, y, colW, 110, 10, 10);
+        p.setFont(font(18, true)); p.setPen(Qt::white);
+        p.drawText(QRect(margin + 24, y + 14, colW - 48, 50), Qt::AlignVCenter | Qt::AlignLeft,
+                   "SmartPub — Liste des Événements");
+        p.setFont(font(9)); p.setPen(QColor(255,255,255,200));
+        p.drawText(QRect(margin + 24, y + 66, colW - 48, 30), Qt::AlignVCenter | Qt::AlignLeft,
+                   QString("Exporté le %1  •  %2 événement(s)")
+                       .arg(QDate::currentDate().toString("dd/MM/yyyy")).arg(liste.size()));
+        y += 130;
+
+        // En-tête tableau
+        const QList<int> cols = { int(colW*.10), int(colW*.32), int(colW*.30), int(colW*.28) };
+        const QStringList headers = { "Code", "Nom", "Lieu", "Date" };
+        p.setPen(Qt::NoPen); p.setBrush(QColor("#1e293b"));
+        p.drawRect(margin, y, colW, 32);
+        int x = margin;
+        for (int i = 0; i < 4; ++i) {
+            p.setFont(font(9, true)); p.setPen(Qt::white);
+            p.drawText(QRect(x + 6, y, cols[i] - 8, 32), Qt::AlignVCenter | Qt::AlignLeft, headers[i]);
+            x += cols[i];
+        }
+        y += 32;
+
+        // Lignes
+        bool odd = false;
+        for (const EvExport &e : liste) {
+            checkPage(28);
+            if (odd) { p.setPen(Qt::NoPen); p.setBrush(QColor("#f1f5f9")); p.drawRect(margin, y, colW, 28); }
+            x = margin;
+            QStringList cells = { e.code, e.nom, e.lieu, e.date };
+            for (int i = 0; i < 4; ++i) {
+                p.setFont(font(8)); p.setPen(QColor("#334155"));
+                p.drawText(QRect(x + 6, y, cols[i] - 8, 28), Qt::AlignVCenter | Qt::AlignLeft, cells[i]);
+                x += cols[i];
+            }
+            p.setPen(QPen(QColor("#e2e8f0"), 1));
+            p.drawLine(margin, y + 28, margin + colW, y + 28);
+            y += 28;
+            odd = !odd;
+        }
+
+        p.end();
+        QMessageBox::information(this, "Export réussi",
+                                 QString("PDF exporté avec succès !\n\n%1").arg(fileName));
     }
 }
 
@@ -466,92 +647,317 @@ void SmartPub::handleEvBtnLivreResumesClicked() {
 }
 
 void SmartPub::handleEvBtnCalculImpactClicked() {
-    QMessageBox::information(this, "Calculateur d'Impact",
-                             "Calcul de l'impact carbone - À implémenter");
+    CalendarDialog *dlg = new CalendarDialog(this);
+    dlg->exec();
 }
 
 void SmartPub::handleEvBtnStatsParticipationClicked() {
-    QDialog dialog(this);
-    dialog.setWindowTitle("Statistiques de participation");
-    dialog.setMinimumSize(600, 450);
-    dialog.resize(700, 500);
-
-    QVBoxLayout *layout = new QVBoxLayout(&dialog);
-
-    // Nombre total de participants (simulé : 50 + hash du code pour variété)
-    int totalParticipants = 0;
-    QMap<QString, int> participantsParDate;
-    for (auto it = evEventsMap.begin(); it != evEventsMap.end(); ++it) {
-        int nb = 50 + qHash(it.value().code) % 100;
-        if (nb < 20) nb = 50;
-        totalParticipants += nb;
-        participantsParDate[it.value().date] += nb;
+    QSqlDatabase db = Connection::instance()->getDatabase();
+    if (!db.isOpen()) {
+        QMessageBox::warning(this, "Erreur", "Base de données non connectée.");
+        return;
     }
 
-    QLabel *labelTotal = new QLabel(QString("Nombre total de participants : <b>%1</b>").arg(totalParticipants));
-    labelTotal->setStyleSheet("font-size: 16px; color: #334155; padding: 10px;");
-    layout->addWidget(labelTotal);
+    // ── Charger les données depuis la BD ──────────────────────────────────────
+    QSqlQuery q(db);
+    q.exec("SELECT CODE_EVENEMENT, NOM, LIEU, DATE_EVENEMENT FROM EVENEMENT ORDER BY DATE_EVENEMENT");
 
-    // Courbe : nombre de participants par date
-    QChartView *chartView = new QChartView(&dialog);
-    chartView->setRenderHint(QPainter::Antialiasing);
+    QMap<QString, int> parLieu;
+    QMap<QString, int> parMois;
+    QMap<QString, int> parAnnee;
+    int total = 0;
 
-    QLineSeries *series = new QLineSeries();
-    series->setName("Participants par date");
-    series->setColor(QColor("#3b82f6"));
-    series->setPen(QPen(QColor("#3b82f6"), 3));
+    while (q.next()) {
+        QString lieu = q.value(2).toString().trimmed();
+        if (lieu.isEmpty()) lieu = "(non renseigné)";
+        parLieu[lieu]++;
 
-    QStringList datesTriees = participantsParDate.keys();
-    std::sort(datesTriees.begin(), datesTriees.end(), [](const QString &a, const QString &b) {
-        QDate da = QDate::fromString(a, "dd/MM/yyyy");
-        QDate db = QDate::fromString(b, "dd/MM/yyyy");
-        return da < db;
-    });
-
-    int idx = 0;
-    for (const QString &d : datesTriees) {
-        series->append(idx, participantsParDate[d]);
-        idx++;
+        QVariant dv = q.value(3);
+        QDate d = dv.toDate();
+        if (!d.isValid() && dv.toDateTime().isValid()) d = dv.toDateTime().date();
+        if (!d.isValid()) {
+            QString s = dv.toString();
+            if (s.contains("T")) s = s.left(10);
+            d = QDate::fromString(s.left(10), "yyyy-MM-dd");
+        }
+        if (d.isValid()) {
+            const QStringList moisNoms = {"Jan","Fév","Mar","Avr","Mai","Jun",
+                                          "Jul","Aoû","Sep","Oct","Nov","Déc"};
+            parMois[moisNoms[d.month()-1] + " " + QString::number(d.year())]++;
+            parAnnee[QString::number(d.year())]++;
+        }
+        total++;
     }
 
-    QChart *chart = new QChart();
-    chart->addSeries(series);
-    chart->setTitle("Nombre de participants par date");
-    chart->setAnimationOptions(QChart::SeriesAnimations);
-    chart->setBackgroundBrush(QBrush(QColor("white")));
+    // ── Créer le dialog ───────────────────────────────────────────────────────
+    QDialog *dialog = new QDialog(this);
+    dialog->setWindowTitle("Statistiques — Événements");
+    dialog->setAttribute(Qt::WA_DeleteOnClose);
 
-    QBarCategoryAxis *axisX = new QBarCategoryAxis();
-    axisX->append(datesTriees);
-    chart->addAxis(axisX, Qt::AlignBottom);
-    series->attachAxis(axisX);
+    QScreen *screen = QApplication::primaryScreen();
+    if (screen) {
+        QRect av = screen->availableGeometry();
+        int w = qMax(860, qRound(av.width()  * 0.85));
+        int h = qMax(600, qRound(av.height() * 0.85));
+        dialog->resize(w, h);
+        dialog->move(av.center() - QPoint(w/2, h/2));
+    } else {
+        dialog->resize(960, 680);
+    }
+    dialog->setMinimumSize(760, 540);
+    dialog->setStyleSheet(R"(
+        QDialog { background-color: #f8fafc; }
+        QLabel  { color: #1e293b; background: transparent; border: none; }
+        QTabWidget::pane {
+            border: 2px solid #e2e8f0; border-radius: 12px;
+            background-color: white; margin-top: -1px;
+        }
+        QTabBar::tab {
+            padding: 10px 20px; font-weight: 600; color: #64748b;
+            background-color: #f1f5f9; border: 1px solid #e2e8f0;
+            border-bottom: none; border-radius: 8px 8px 0 0;
+            margin-right: 4px; min-width: 140px;
+        }
+        QTabBar::tab:selected {
+            color: #1e40af; background-color: #ffffff;
+            border-bottom: 3px solid #3b82f6;
+        }
+        QTabBar::tab:hover:!selected { background-color: #e2e8f0; color: #334155; }
+        QScrollBar:vertical {
+            border: none; background: #f8fafc; width: 10px; border-radius: 5px;
+        }
+        QScrollBar::handle:vertical {
+            background: #cbd5e1; min-height: 30px; border-radius: 5px;
+        }
+        QScrollBar::handle:vertical:hover { background: #94a3b8; }
+        QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0px; }
+    )");
 
-    QValueAxis *axisY = new QValueAxis();
-    int maxPart = 0;
-    for (int v : participantsParDate)
-        if (v > maxPart) maxPart = v;
-    axisY->setRange(0, maxPart + 10);
-    axisY->setLabelFormat("%d");
-    chart->addAxis(axisY, Qt::AlignLeft);
-    series->attachAxis(axisY);
+    QVBoxLayout *mainLayout = new QVBoxLayout(dialog);
+    mainLayout->setSpacing(16);
+    mainLayout->setContentsMargins(24, 24, 24, 24);
 
-    chart->legend()->setVisible(false);
-    chartView->setChart(chart);
-    layout->addWidget(chartView);
+    // Titre
+    QLabel *titleLabel = new QLabel("Tableau de bord — Événements");
+    titleLabel->setStyleSheet("font-size: 22px; font-weight: 700; color: #1e293b;");
+    mainLayout->addWidget(titleLabel);
 
+    // ── Cartes KPI ────────────────────────────────────────────────────────────
+    auto createStatCard = [](const QString &title, const QString &value,
+                             const QString &color) -> QFrame* {
+        QFrame *card = new QFrame();
+        card->setStyleSheet("QFrame { background-color: white; border-radius: 16px;"
+                            " border: 1px solid #e2e8f0; }");
+        card->setMinimumHeight(120);
+        QVBoxLayout *l = new QVBoxLayout(card);
+        l->setContentsMargins(20,20,20,20); l->setSpacing(8);
+        QLabel *t = new QLabel(title);
+        t->setStyleSheet("color: #64748b; font-size: 13px; font-weight: 600;");
+        QLabel *v = new QLabel(value);
+        v->setStyleSheet(QString("color: %1; font-size: 40px; font-weight: 700;").arg(color));
+        l->addWidget(t); l->addWidget(v); l->addStretch();
+        return card;
+    };
+
+    int nbLieux = parLieu.size();
+    int nbAnnees = parAnnee.size();
+
+    QGridLayout *kpiGrid = new QGridLayout();
+    kpiGrid->setSpacing(16);
+    kpiGrid->addWidget(createStatCard("Total événements",  QString::number(total),   "#3b82f6"), 0, 0);
+    kpiGrid->addWidget(createStatCard("Lieux distincts",   QString::number(nbLieux), "#10b981"), 0, 1);
+    kpiGrid->addWidget(createStatCard("Années couvertes",  QString::number(nbAnnees),"#f59e0b"), 0, 2);
+
+    // ── Helper : créer un bar chart ───────────────────────────────────────────
+    auto makeBarChart = [](const QString &title, const QStringList &cats,
+                           const QList<double> &vals, const QString &colorHex,
+                           const QString &yLabel) -> QChartView* {
+        QBarSet *set = new QBarSet("Valeur");
+        for (double v : vals) *set << v;
+        set->setColor(QColor(colorHex));
+        set->setBorderColor(QColor(colorHex).darker(110));
+
+        QBarSeries *series = new QBarSeries();
+        series->append(set);
+        series->setBarWidth(0.65);
+
+        QChart *chart = new QChart();
+        chart->addSeries(series);
+        chart->setTitle(title);
+        chart->setTitleFont(QFont("Segoe UI", 11, QFont::DemiBold));
+        chart->setTitleBrush(QBrush(QColor("#1e293b")));
+        chart->setAnimationOptions(QChart::SeriesAnimations);
+        chart->setBackgroundBrush(QBrush(Qt::transparent));
+        chart->setPlotAreaBackgroundBrush(QBrush(Qt::white));
+        chart->setPlotAreaBackgroundVisible(true);
+        chart->legend()->setVisible(false);
+        chart->setMargins(QMargins(8,8,8,8));
+
+        QBarCategoryAxis *axX = new QBarCategoryAxis();
+        for (const QString &c : cats) axX->append(c);
+        axX->setLabelsAngle(-25);
+        axX->setLabelsBrush(QBrush(QColor("#475569")));
+        axX->setGridLinePen(QPen(QColor("#f1f5f9")));
+        chart->addAxis(axX, Qt::AlignBottom);
+        series->attachAxis(axX);
+
+        QValueAxis *axY = new QValueAxis();
+        double vmax = 1.0;
+        for (double v : vals) vmax = qMax(vmax, v);
+        axY->setRange(0, vmax * 1.2 + 0.5);
+        axY->setLabelFormat("%.0f");
+        axY->setTitleText(yLabel);
+        axY->setLabelsBrush(QBrush(QColor("#475569")));
+        axY->setGridLinePen(QPen(QColor("#f1f5f9")));
+        chart->addAxis(axY, Qt::AlignLeft);
+        series->attachAxis(axY);
+
+        QChartView *cv = new QChartView();
+        cv->setChart(chart);
+        cv->setRenderHint(QPainter::Antialiasing);
+        cv->setMinimumHeight(300);
+        cv->setStyleSheet("background: transparent; border: none;");
+        cv->setBackgroundBrush(QBrush(Qt::transparent));
+        return cv;
+    };
+
+    // ── Helper : créer un pie chart ───────────────────────────────────────────
+    auto makePieChart = [](const QString &title,
+                           const QMap<QString,int> &data) -> QChartView* {
+        QPieSeries *series = new QPieSeries();
+        const QStringList colors = {"#3b82f6","#10b981","#f59e0b","#ef4444",
+                                    "#8b5cf6","#06b6d4","#f97316","#84cc16"};
+        int ci = 0;
+        for (auto it = data.constBegin(); it != data.constEnd(); ++it, ++ci) {
+            QPieSlice *slice = series->append(
+                QString("%1 (%2)").arg(it.key()).arg(it.value()), it.value());
+            slice->setColor(QColor(colors[ci % colors.size()]));
+            slice->setLabelVisible(true);
+            slice->setLabelColor(QColor("#334155"));
+        }
+        series->setHoleSize(0.38);
+
+        QChart *chart = new QChart();
+        chart->addSeries(series);
+        chart->setTitle(title);
+        chart->setTitleFont(QFont("Segoe UI", 11, QFont::DemiBold));
+        chart->setTitleBrush(QBrush(QColor("#1e293b")));
+        chart->setAnimationOptions(QChart::SeriesAnimations);
+        chart->setBackgroundBrush(QBrush(Qt::transparent));
+        chart->legend()->setAlignment(Qt::AlignRight);
+        chart->setMargins(QMargins(8,8,8,8));
+
+        QChartView *cv = new QChartView();
+        cv->setChart(chart);
+        cv->setRenderHint(QPainter::Antialiasing);
+        cv->setMinimumHeight(300);
+        cv->setStyleSheet("background: transparent; border: none;");
+        cv->setBackgroundBrush(QBrush(Qt::transparent));
+        return cv;
+    };
+
+    // ── Onglets ───────────────────────────────────────────────────────────────
+    QTabWidget *tabs = new QTabWidget(dialog);
+    tabs->setDocumentMode(true);
+
+    // --- Onglet Vue d'ensemble ---
+    QWidget *tabOverview = new QWidget();
+    tabOverview->setStyleSheet("background-color: #f8fafc;");
+    QScrollArea *scrollOv = new QScrollArea();
+    scrollOv->setWidgetResizable(true);
+    scrollOv->setFrameShape(QFrame::NoFrame);
+    QWidget *ovContent = new QWidget();
+    ovContent->setStyleSheet("background-color: #f8fafc;");
+    QVBoxLayout *ovLay = new QVBoxLayout(ovContent);
+    ovLay->setSpacing(20); ovLay->setContentsMargins(0,8,0,8);
+    ovLay->addLayout(kpiGrid);
+
+    // Graphique : événements par lieu
+    if (!parLieu.isEmpty()) {
+        QStringList lieux; QList<double> cntLieux;
+        for (auto it = parLieu.constBegin(); it != parLieu.constEnd(); ++it) {
+            lieux << it.key(); cntLieux << it.value();
+        }
+        QFrame *f = new QFrame();
+        f->setStyleSheet("QFrame { background: white; border-radius: 16px; border: 1px solid #e2e8f0; }");
+        QVBoxLayout *fl = new QVBoxLayout(f); fl->setContentsMargins(16,16,16,16);
+        QLabel *ft = new QLabel("Événements par lieu");
+        ft->setStyleSheet("font-size: 17px; font-weight: 600; color: #1e293b;");
+        fl->addWidget(ft);
+        fl->addWidget(makeBarChart("", lieux, cntLieux, "#3b82f6", "Nombre"));
+        ovLay->addWidget(f);
+    }
+
+    // Graphique : événements par année
+    if (!parAnnee.isEmpty()) {
+        QStringList annees; QList<double> cntAnnees;
+        QStringList anneesTriees = parAnnee.keys();
+        std::sort(anneesTriees.begin(), anneesTriees.end());
+        for (const QString &a : anneesTriees) { annees << a; cntAnnees << parAnnee[a]; }
+        QFrame *f = new QFrame();
+        f->setStyleSheet("QFrame { background: white; border-radius: 16px; border: 1px solid #e2e8f0; }");
+        QVBoxLayout *fl = new QVBoxLayout(f); fl->setContentsMargins(16,16,16,16);
+        QLabel *ft = new QLabel("Événements par année");
+        ft->setStyleSheet("font-size: 17px; font-weight: 600; color: #1e293b;");
+        fl->addWidget(ft);
+        fl->addWidget(makeBarChart("", annees, cntAnnees, "#10b981", "Nombre"));
+        ovLay->addWidget(f);
+    }
+
+    ovLay->addStretch();
+    scrollOv->setWidget(ovContent);
+    QVBoxLayout *ovTabLay = new QVBoxLayout(tabOverview);
+    ovTabLay->setContentsMargins(0,0,0,0);
+    ovTabLay->addWidget(scrollOv);
+    tabs->addTab(tabOverview, "📊  Vue d'ensemble");
+
+    // --- Onglet Répartition par lieu (pie) ---
+    if (!parLieu.isEmpty()) {
+        QWidget *tabLieu = new QWidget();
+        tabLieu->setStyleSheet("background-color: #f8fafc;");
+        QVBoxLayout *lieuLay = new QVBoxLayout(tabLieu);
+        lieuLay->setContentsMargins(16,16,16,16);
+        QLabel *lt = new QLabel("Répartition des événements par lieu");
+        lt->setStyleSheet("font-size: 17px; font-weight: 600; color: #1e293b;");
+        lieuLay->addWidget(lt);
+        lieuLay->addWidget(makePieChart("", parLieu));
+        tabs->addTab(tabLieu, "📍  Par lieu");
+    }
+
+    // --- Onglet Chronologie par mois ---
+    if (!parMois.isEmpty()) {
+        QWidget *tabMois = new QWidget();
+        tabMois->setStyleSheet("background-color: #f8fafc;");
+        QVBoxLayout *moisLay = new QVBoxLayout(tabMois);
+        moisLay->setContentsMargins(16,16,16,16);
+        QLabel *mt = new QLabel("Chronologie mensuelle des événements");
+        mt->setStyleSheet("font-size: 17px; font-weight: 600; color: #1e293b;");
+        moisLay->addWidget(mt);
+
+        QStringList moisKeys = parMois.keys();
+        QList<double> moisVals;
+        for (const QString &k : moisKeys) moisVals << parMois[k];
+        moisLay->addWidget(makeBarChart("", moisKeys, moisVals, "#8b5cf6", "Nombre"));
+        tabs->addTab(tabMois, "📅  Par mois");
+    }
+
+    mainLayout->addWidget(tabs, 1);
+
+    // Bouton Fermer
     QPushButton *btnFermer = new QPushButton("Fermer");
+    btnFermer->setFixedSize(120, 40);
     btnFermer->setCursor(Qt::PointingHandCursor);
     btnFermer->setStyleSheet(
-        "QPushButton { background-color: #3b82f6; color: white; border: none; "
-        "border-radius: 8px; padding: 10px 24px; font-weight: 600; }"
+        "QPushButton { background-color: #3b82f6; color: white; border: none;"
+        " border-radius: 8px; font-size: 14px; font-weight: 600; }"
         "QPushButton:hover { background-color: #2563eb; }");
-    connect(btnFermer, &QPushButton::clicked, &dialog, &QDialog::accept);
-    QHBoxLayout *btnLayout = new QHBoxLayout();
-    btnLayout->addStretch();
-    btnLayout->addWidget(btnFermer);
-    btnLayout->addStretch();
-    layout->addLayout(btnLayout);
+    connect(btnFermer, &QPushButton::clicked, dialog, &QDialog::accept);
+    QHBoxLayout *footerLay = new QHBoxLayout();
+    footerLay->addStretch();
+    footerLay->addWidget(btnFermer);
+    mainLayout->addLayout(footerLay);
 
-    dialog.exec();
+    dialog->exec();
 }
 
 void SmartPub::handleEvenementsNavigation() {

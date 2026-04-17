@@ -3,11 +3,13 @@
 
 #include <QString>
 #include <QWidget>
+#include <QSqlDatabase>
 
 // ============================================================================
 // TransSecure — Journal de sécurité des transactions financières
 // Toutes les opérations (ajout, modification, suppression) sont tracées
 // automatiquement dans un fichier texte horodaté.
+// Le fichier est créé automatiquement dès la première ouverture du journal.
 // ============================================================================
 
 class TransSecure {
@@ -29,6 +31,9 @@ public:
 
     // Retourne le chemin absolu du fichier journal
     static QString cheminFichier();
+
+    // Crée le fichier journal s'il n'existe pas encore (avec en-tête)
+    static void initialiserFichier();
 };
 
 #endif // TRANS_SECURE_H
