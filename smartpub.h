@@ -79,9 +79,7 @@
 // arduino
 #include "arduino.h"
 #include "scenario1.h"
-#include "scenario2.h"
-#include "scenario3.h"
-#include "rfid_journal.h"
+#include "demi_scenario2.h"
 
 QT_BEGIN_NAMESPACE
 class QPieSeries;
@@ -684,8 +682,7 @@ private:
 
     Arduino*    arduino;
     Scenario1*  scenarioAcces;          // Scénario 1 : accès laboratoire (RFID → projet/labo)
-    Scenario2*  scenarioCloture;        // Scénario 2 : clôture de projet via Arduino
-    Scenario3*  scenarioIdentification; // Scénario 3 : vérification chercheur par carte RFID
+    DemiScenario2* scenarioProgramme;   // Scénario 2 : affichage programme LED par module
     QLabel*     labelRfidStatus;        // Affichage résultat RFID dans le module Chercheurs
 };
 

@@ -614,6 +614,7 @@ SmartPub::SmartPub(QWidget *parent)
 
     arduino       = nullptr;
     scenarioAcces = nullptr;
+    scenarioProgramme = nullptr;
 
     arduino = new Arduino();
     if (arduino->connect_arduino() == 0) {
@@ -628,6 +629,9 @@ SmartPub::SmartPub(QWidget *parent)
                 this, [this]() {
                     scenarioAcces->processAccess();
                 });
+
+        // --- Demi Scenario 2 : affichage programme LED ---
+        scenarioProgramme = new DemiScenario2(arduino);
 
     } else {
         qDebug() << "[SmartPub] Echec de connexion a l'Arduino";
