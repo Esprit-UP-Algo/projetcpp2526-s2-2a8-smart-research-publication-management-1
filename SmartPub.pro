@@ -31,12 +31,8 @@ SOURCES += \
     scoringengine.cpp \
     collaborationengine.cpp \
     trans_secure.cpp \
-<<<<<<< HEAD
-    calender.cpp
-=======
     calender.cpp \
     upload.cpp
->>>>>>> 31a812a (ses modifications)
 
 HEADERS += \
     arduino.h \
