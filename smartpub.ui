@@ -3028,6 +3028,36 @@ QComboBox QAbstractItemView {
                     </spacer>
                    </item>
                    <item>
+                    <widget class="QPushButton" name="btnUploadPDF">
+                     <property name="minimumSize">
+                      <size>
+                       <width>160</width>
+                       <height>50</height>
+                      </size>
+                     </property>
+                     <property name="cursor">
+                      <cursorShape>PointingHandCursor</cursorShape>
+                     </property>
+                     <property name="styleSheet">
+                      <string notr="true">QPushButton {
+    background-color: #f59e0b;
+    color: white;
+    border: none;
+    border-radius: 12px;
+    padding: 14px 32px;
+    font-size: 15px;
+    font-weight: 600;
+}
+QPushButton:hover {
+    background-color: #d97706;
+}</string>
+                     </property>
+                     <property name="text">
+                      <string>📄 Importer PDF</string>
+                     </property>
+                    </widget>
+                   </item>
+                   <item>
                     <widget class="QPushButton" name="SR_btnAnnulerAjout">
                      <property name="minimumSize">
                       <size>

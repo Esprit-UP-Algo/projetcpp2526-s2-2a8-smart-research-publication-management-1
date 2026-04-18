@@ -31,7 +31,12 @@ SOURCES += \
     scoringengine.cpp \
     collaborationengine.cpp \
     trans_secure.cpp \
+<<<<<<< HEAD
     calender.cpp
+=======
+    calender.cpp \
+    upload.cpp
+>>>>>>> 31a812a (ses modifications)
 
 HEADERS += \
     arduino.h \
@@ -53,7 +58,8 @@ HEADERS += \
     projet.h \
     evenement.h \
     laboratoire.h \
-    finance.h
+    finance.h \
+    upload.h
 
 FORMS += \
     smartpub.ui

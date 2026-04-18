@@ -245,6 +245,7 @@ private slots:
     void on_SR_btnStatistiques_clicked();
     void on_SR_btnAjouterPublication_clicked();
     void on_SR_btnAnnulerAjout_clicked();
+    void on_btnUploadPDF_clicked();
     void on_SR_modifierPublication_clicked();
     void on_SR_supprimerPublication_clicked();
     void SR_applyFilterListe();

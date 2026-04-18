@@ -1,5 +1,6 @@
 #include "smartpub.h"
 #include "ui_smartpub.h"
+#include "upload.h"
 #include <QFocusEvent>
 
 // ============================================================================
@@ -1531,3 +1532,114 @@ void SmartPub::on_optimiserChargeClicked() {
 void SmartPub::on_iaRecommanderClicked() { handleProjetIARecommander(); }
 void SmartPub::on_filtresClicked() { handleProjetFiltres(); }
 void SmartPub::on_exporterClicked() { handleProjetExporter(); }
+
+void SmartPub::on_btnUploadPDF_clicked() {
+    // Open file dialog to select PDF
+    QString filePath = QFileDialog::getOpenFileName(
+        this,
+        "Sélectionner un fichier PDF",
+        QString(),
+        "PDF Files (*.pdf)"
+    );
+    
+    if (filePath.isEmpty()) {
+        return; // User cancelled
+    }
+    
+    // Process the PDF file
+    PDFUploadHandler uploadHandler;
+    if (!uploadHandler.processUploadedFile(filePath)) {
+        QMessageBox::critical(this, "Erreur", uploadHandler.getLastError());
+        return;
+    }
+    
+    QMap<QString, QString> extractedFields = uploadHandler.getExtractedFields();
+    
+    if (extractedFields.isEmpty()) {
+        QMessageBox::information(this, "Information", "Aucun champ reconnu trouvé dans le PDF.");
+        return;
+    }
+    
+    // Build confirmation message
+    QString confirmMessage = "Informations extraites du PDF:\n\n";
+    
+    if (extractedFields.contains("titre")) {
+        confirmMessage += QString("Titre: %1\n").arg(extractedFields["titre"]);
+    }
+    if (extractedFields.contains("date_de_publication")) {
+        confirmMessage += QString("Date: %1\n").arg(extractedFields["date_de_publication"]);
+    }
+    if (extractedFields.contains("revue_journal")) {
+        confirmMessage += QString("Revue/Journal: %1\n").arg(extractedFields["revue_journal"]);
+    }
+    if (extractedFields.contains("statut")) {
+        confirmMessage += QString("Statut: %1\n").arg(extractedFields["statut"]);
+    }
+    
+    confirmMessage += "\nVoulez-vous remplir le formulaire avec ces informations?";
+    
+    // Show confirmation dialog
+    QMessageBox::StandardButton reply = QMessageBox::question(
+        this,
+        "Confirmer les informations extraites",
+        confirmMessage,
+        QMessageBox::Yes | QMessageBox::No,
+        QMessageBox::Yes
+    );
+    
+    if (reply == QMessageBox::Yes) {
+        // Fill the form fields (but NOT auteurs)
+        if (extractedFields.contains("titre")) {
+            ui->SR_lineEditTitre->setText(extractedFields["titre"]);
+        }
+        
+        if (extractedFields.contains("revue_journal")) {
+            ui->SR_lineEditRevue->setText(extractedFields["revue_journal"]);
+        }
+        
+        if (extractedFields.contains("date_de_publication")) {
+            QString dateStr = extractedFields["date_de_publication"];
+            // Try to parse the date - handle various formats
+            QDate parsedDate;
+            QStringList dateFormats = {"yyyy-MM-dd", "dd/MM/yyyy", "MM/dd/yyyy", "dd-MM-yyyy", "yyyy/MM/dd"};
+            
+            for (const QString& format : dateFormats) {
+                parsedDate = QDate::fromString(dateStr, format);
+                if (parsedDate.isValid()) {
+                    break;
+                }
+            }
+            
+            if (parsedDate.isValid()) {
+                ui->SR_dateEditPublication->setDate(parsedDate);
+            }
+        }
+        
+        if (extractedFields.contains("statut")) {
+            QString statut = extractedFields["statut"];
+            // Map to the combobox values
+            int index = -1;
+            if (statut == "publié") {
+                index = ui->SR_comboBoxStatut->findText("Publié");
+            } else if (statut == "accepté") {
+                index = ui->SR_comboBoxStatut->findText("Accepté");
+            } else if (statut == "soumis") {
+                index = ui->SR_comboBoxStatut->findText("Soumis");
+            } else if (statut == "en révision") {
+                index = ui->SR_comboBoxStatut->findText("En révision");
+            } else if (statut == "rejeté") {
+                index = ui->SR_comboBoxStatut->findText("Rejeté");
+            }
+            
+            if (index >= 0) {
+                ui->SR_comboBoxStatut->setCurrentIndex(index);
+            }
+        }
+        
+        // Note: We deliberately do NOT touch the auteurs field as per requirements
+        
+        QMessageBox::information(this, "Succès", 
+            "Les champs ont été remplis avec les informations extraites.\n"
+            "Veuillez vérifier les informations et cliquer sur 'Ajouter la Publication' pour enregistrer.");
+    }
+}
