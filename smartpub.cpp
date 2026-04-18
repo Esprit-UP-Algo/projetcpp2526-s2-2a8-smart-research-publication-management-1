@@ -629,6 +629,9 @@ SmartPub::SmartPub(QWidget *parent)
         connect(arduino->getserial(), &QSerialPort::readyRead,
                 this, [this]() {
                     scenarioAcces->processAccess();
+                    if (scenarioProgramme)
+                        scenarioProgramme->processInput();
+
                 });
 
         // --- Demi Scenario 2 : affichage programme LED ---
