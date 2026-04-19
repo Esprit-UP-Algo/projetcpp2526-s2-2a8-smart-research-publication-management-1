@@ -2,6 +2,9 @@
 #include "ui_smartpub.h"
 #include "connection.h"
 #include "trans_secure.h"
+#include "osnotification.h"
+#include <QDoubleValidator>
+#include <QLocale>
 #include <QPrinter>
 #include <QPainter>
 #include <QPageSize>
@@ -68,6 +71,13 @@ void SmartPub::finSetupUI() {
     ui->finComboBoxType->addItem(QStringLiteral("Autre"), QStringLiteral("autre"));
 
     finRemplirComboProjets();
+
+    // === Validation numerique du champ Montant (chiffres et point decimal uniquement) ===
+    QDoubleValidator *montantValidator = new QDoubleValidator(0.0, 999999999.99, 2, ui->finLineEditMontant);
+    montantValidator->setLocale(QLocale::C);
+    montantValidator->setNotation(QDoubleValidator::StandardNotation);
+    ui->finLineEditMontant->setValidator(montantValidator);
+    ui->finLineEditMontant->setPlaceholderText(QStringLiteral("Ex: 150.00"));
 
     // === Bouton Journal de Sécurité ===
     // Cherche si un bouton existe déjà (évite les doublons au rechargement)
@@ -161,6 +171,76 @@ void SmartPub::finChargerTransactionsDepuisOracle()
         finTransactionsMap.insert(t.id, t);
     }
     finAfficherListeTransactions();
+    finVerifierBudgets();   // surveillance intelligente du budget
+}
+
+// ============================================================================
+// SURVEILLANCE INTELLIGENTE DU BUDGET
+// ============================================================================
+//
+// Calcule les dépenses totales par projet (types non-recettes).
+// Déclenche une notification OS si un projet dépasse son seuil critique.
+//
+// Seuil par défaut : 10 000 TND (configurable via BUDGET_SEUIL_DEFAUT).
+// Pour un seuil par projet, il faudrait un champ BUDGET dans la table PROJET.
+// ============================================================================
+
+void SmartPub::finVerifierBudgets()
+{
+    // Seuil d'alerte par défaut (TND) — modifiable selon vos données
+    static constexpr double BUDGET_SEUIL_DEFAUT = 10000.0;
+
+    // Types considérés comme DÉPENSES (pas des recettes)
+    auto estDepense = [](const QString &type) -> bool {
+        const QString t = type.trimmed().toLower();
+        return t != QLatin1String("subvention") && t != QLatin1String("remboursement");
+    };
+
+    // Calculer les dépenses totales par projet
+    QMap<QString, double> depensesParProjet;  // nom projet → total dépenses
+    for (auto it = finTransactionsMap.constBegin(); it != finTransactionsMap.constEnd(); ++it) {
+        const TransactionData &t = it.value();
+        if (!estDepense(t.type)) continue;
+        const QString nom = t.projet.isEmpty()
+                                ? QStringLiteral("Projet #%1").arg(t.idProjet)
+                                : t.projet;
+        depensesParProjet[nom] += t.montant;
+    }
+
+    // Vérifier les dépassements et émettre les notifications OS
+    bool alerteEmise = false;
+    for (auto it = depensesParProjet.constBegin(); it != depensesParProjet.constEnd(); ++it) {
+        const QString &projetNom    = it.key();
+        const double   totalDepense = it.value();
+
+        if (totalDepense >= BUDGET_SEUIL_DEFAUT) {
+            qDebug().noquote()
+                << QStringLiteral("[BUDGET] ALERTE — Projet '%1' : %2 TND >= seuil %3 TND")
+                       .arg(projetNom,
+                            QString::number(totalDepense, 'f', 2),
+                            QString::number(BUDGET_SEUIL_DEFAUT, 'f', 2));
+
+            OsNotification::instance()->alertBudget(projetNom, totalDepense, BUDGET_SEUIL_DEFAUT);
+            alerteEmise = true;
+
+        } else if (totalDepense >= BUDGET_SEUIL_DEFAUT * 0.80) {
+            // Avertissement à 80 % du seuil
+            const QString title = QString::fromUtf8("\U0001f4ca Budget \u00e0 80\u0025");
+            const QString msg   = QString::fromUtf8(
+                "Projet : %1\nD\u00e9penses : %2 TND (%3\u0025 du seuil de %4 TND)")
+                .arg(projetNom,
+                     QString::number(totalDepense, 'f', 2),
+                     QString::number(totalDepense / BUDGET_SEUIL_DEFAUT * 100.0, 'f', 0),
+                     QString::number(BUDGET_SEUIL_DEFAUT, 'f', 0));
+
+            OsNotification::instance()->show(title, msg, QSystemTrayIcon::Warning, 7000);
+            alerteEmise = true;
+        }
+    }
+
+    if (!alerteEmise) {
+        qDebug() << "[BUDGET] Tous les projets sont dans les limites budgetaires.";
+    }
 }
 
 void SmartPub::finConnectSignals() {
