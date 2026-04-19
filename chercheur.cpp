@@ -2031,145 +2031,223 @@ QComboBox, QSpinBox {
     ovScrollLay->setSpacing(20);
     ovScrollLay->setContentsMargins(0, 8, 0, 8);
 
-    QHBoxLayout *chartsRow = new QHBoxLayout();
-    chartsRow->setSpacing(16);
-
     QSqlDatabase db = Connection::instance()->getDatabase();
-    QStringList labNames;
-    QList<double> labCounts;
-    QStringList labNamesSat;
-    QList<double> labSurcharge;
+
+    // ── Données par laboratoire : chercheurs + publications ───────────────────
+    // Schéma : LABORATOIRE.ID_PROJET → CONTRIBUER.ID_PROJET → ID_CHERCHEUR
+    //          PUBLICATION.ID_CHERCHEUR
+    struct LabStat { QString nom; int nbChercheurs = 0; int nbPublications = 0; };
+    QList<LabStat> labStats;
 
     if (db.isOpen()) {
+        // Chercheurs par labo : chercheurs qui contribuent au projet du labo
         QSqlQuery qLab(db);
-        const QString sqlEffectifs =
-            QStringLiteral("SELECT L.NOM, COUNT(DISTINCT C.ID_CHERCHEUR) AS NB "
-                           "FROM LABORATOIRE L "
-                           "INNER JOIN CONTRIBUER C ON C.ID_PROJET = L.ID_PROJET "
-                           "GROUP BY L.ID_LABORATOIRE, L.NOM ORDER BY L.NOM");
-        if (qLab.exec(sqlEffectifs)) {
+        if (qLab.exec(QStringLiteral(
+                "SELECT L.NOM, COUNT(DISTINCT C.ID_CHERCHEUR) AS NB_CHERCH "
+                "FROM LABORATOIRE L "
+                "INNER JOIN CONTRIBUER C ON C.ID_PROJET = L.ID_PROJET "
+                "GROUP BY L.ID_LABORATOIRE, L.NOM "
+                "ORDER BY L.NOM"))) {
             while (qLab.next()) {
-                labNames << qLab.value(0).toString();
-                labCounts << qLab.value(1).toDouble();
+                LabStat s;
+                s.nom = qLab.value(0).toString();
+                s.nbChercheurs = qLab.value(1).toInt();
+                labStats.append(s);
             }
         }
-        QSqlQuery qSat(db);
-        const QString sqlSat =
-            QStringLiteral("SELECT L.NOM, AVG(LEAST(cnt * 25, 100)) AS SAT "
-                           "FROM ( "
-                           "  SELECT L2.ID_LABORATOIRE, C.ID_CHERCHEUR, COUNT(DISTINCT C.ID_PROJET) AS cnt "
-                           "  FROM LABORATOIRE L2 "
-                           "  INNER JOIN CONTRIBUER C ON C.ID_PROJET = L2.ID_PROJET "
-                           "  GROUP BY L2.ID_LABORATOIRE, C.ID_CHERCHEUR "
-                           ") X "
-                           "JOIN LABORATOIRE L ON L.ID_LABORATOIRE = X.ID_LABORATOIRE "
-                           "GROUP BY L.ID_LABORATOIRE, L.NOM ORDER BY L.NOM");
-        if (qSat.exec(sqlSat)) {
-            while (qSat.next()) {
-                labNamesSat << qSat.value(0).toString();
-                labSurcharge << qSat.value(1).toDouble();
+        // Publications par labo : publications des chercheurs du projet du labo
+        QSqlQuery qPub(db);
+        if (qPub.exec(QStringLiteral(
+                "SELECT L.NOM, COUNT(DISTINCT P.ID_PUBLICATION) AS NB_PUB "
+                "FROM LABORATOIRE L "
+                "INNER JOIN CONTRIBUER C  ON C.ID_PROJET = L.ID_PROJET "
+                "INNER JOIN PUBLICATION P ON P.ID_CHERCHEUR = C.ID_CHERCHEUR "
+                "GROUP BY L.ID_LABORATOIRE, L.NOM "
+                "ORDER BY L.NOM"))) {
+            while (qPub.next()) {
+                const QString nom = qPub.value(0).toString();
+                const int nbPub   = qPub.value(1).toInt();
+                for (LabStat &s : labStats) {
+                    if (s.nom == nom) { s.nbPublications = nbPub; break; }
+                }
             }
         }
     }
 
-    auto makeBarChartView = [](const QString &title, const QStringList &categories,
-                               const QList<double> &values, const QString &colorHex,
-                               const QString &yLabel) -> QChartView * {
-        QChartView *cv = new QChartView();
-        cv->setRenderHint(QPainter::Antialiasing);
-        cv->setMinimumHeight(320);
-
-        QBarSet *set = new QBarSet("Valeur");
-        for (double v : values)
-            *set << v;
-        set->setColor(QColor(colorHex));
-        set->setBorderColor(QColor(colorHex).darker(110));
-
-        QBarSeries *series = new QBarSeries();
-        series->append(set);
-        series->setBarWidth(0.65);
-
-        QChart *chart = new QChart();
-        chart->addSeries(series);
-        chart->setTitle(title);
-        chart->setTitleFont(QFont("Segoe UI", 11, QFont::DemiBold));
-        chart->setTitleBrush(QBrush(QColor("#1e293b")));
-        chart->setAnimationOptions(QChart::SeriesAnimations);
-        chart->setBackgroundRoundness(0);
-        chart->setBackgroundBrush(QBrush(Qt::transparent));
-        chart->setPlotAreaBackgroundBrush(QBrush(QColor("#ffffff")));
-        chart->setPlotAreaBackgroundVisible(true);
-        chart->legend()->setVisible(false);
-        chart->setMargins(QMargins(8, 8, 8, 8));
-
-        QBarCategoryAxis *axisX = new QBarCategoryAxis();
-        for (const QString &c : categories)
-            axisX->append(c);
-        axisX->setLabelsAngle(-25);
-        axisX->setLabelsBrush(QBrush(QColor("#475569")));
-        axisX->setLinePenColor(QColor("#e2e8f0"));
-        axisX->setGridLinePen(QPen(QColor("#f1f5f9")));
-        chart->addAxis(axisX, Qt::AlignBottom);
-        series->attachAxis(axisX);
-
-        QValueAxis *axisY = new QValueAxis();
-        double vmax = 1.0;
-        for (double v : values)
-            vmax = qMax(vmax, v);
-        axisY->setRange(0, vmax * 1.15 + 0.5);
-        axisY->setLabelFormat("%.0f");
-        axisY->setTitleText(yLabel);
-        axisY->setLabelsBrush(QBrush(QColor("#475569")));
-        axisY->setTitleBrush(QBrush(QColor("#64748b")));
-        axisY->setLinePenColor(QColor("#e2e8f0"));
-        axisY->setGridLinePen(QPen(QColor("#f1f5f9")));
-        chart->addAxis(axisY, Qt::AlignLeft);
-        series->attachAxis(axisY);
-
-        cv->setChart(chart);
-        cv->setStyleSheet("background: transparent; border: none;");
-        cv->setBackgroundBrush(QBrush(Qt::transparent));
-        return cv;
-    };
-
-    if (!labNames.isEmpty() && labCounts.size() == labNames.size()) {
-        chartsRow->addWidget(makeBarChartView(
-            "Effectifs par laboratoire", labNames, labCounts,
-            "#3b82f6", "Nombre de chercheurs"));
-    } else {
-        QFrame *emptyFrame = new QFrame();
-        emptyFrame->setStyleSheet(
-            "QFrame { background-color: #fff7ed; border: 1px solid #fed7aa; "
-            "border-radius: 12px; }");
-        QHBoxLayout *emptyLay = new QHBoxLayout(emptyFrame);
-        emptyLay->setContentsMargins(16, 14, 16, 14);
-        QLabel *empty = new QLabel(
-            "⚠️  Aucune donnée laboratoire ");
-        empty->setWordWrap(true);
-        empty->setStyleSheet(
-            "color: #92400e; font-size: 13px; font-weight: 500; "
-            "background: transparent; border: none;");
-        emptyLay->addWidget(empty);
-        chartsRow->addWidget(emptyFrame);
-    }
-
-    if (!labNamesSat.isEmpty() && labSurcharge.size() == labNamesSat.size()) {
-        chartsRow->addWidget(makeBarChartView(
-            "Taux de charge moyen par laboratoire", labNamesSat,
-            labSurcharge, "#8b5cf6", "Score sur 100"));
-    }
-
+    // ── Graphe groupé : Chercheurs & Publications par laboratoire ─────────────
     QFrame *chartsFrame = new QFrame();
     chartsFrame->setStyleSheet(
         "QFrame { background-color: #ffffff; border-radius: 16px; border: 1px solid #e2e8f0; }");
     QVBoxLayout *chartsFrameLay = new QVBoxLayout(chartsFrame);
-    chartsFrameLay->setContentsMargins(16, 16, 16, 16);
+    chartsFrameLay->setContentsMargins(20, 20, 20, 20);
+    chartsFrameLay->setSpacing(12);
+
     QLabel *chartsTitle = new QLabel("Statistiques par laboratoire");
     chartsTitle->setStyleSheet(
         "font-size: 17px; font-weight: 600; color: #1e293b; "
         "background: transparent; border: none;");
     chartsFrameLay->addWidget(chartsTitle);
-    chartsFrameLay->addLayout(chartsRow);
+
+    if (labStats.isEmpty()) {
+        QLabel *emptyLbl = new QLabel(
+            "⚠️  Aucune donnée disponible — vérifiez que des laboratoires sont liés à des projets "
+            "et que des chercheurs y contribuent.");
+        emptyLbl->setWordWrap(true);
+        emptyLbl->setStyleSheet(
+            "color: #92400e; font-size: 13px; font-weight: 500; "
+            "background: #fff7ed; border: 1px solid #fed7aa; border-radius: 10px; "
+            "padding: 12px 16px;");
+        chartsFrameLay->addWidget(emptyLbl);
+    } else {
+        // Séries groupées
+        QBarSet *setCherch = new QBarSet("Chercheurs");
+        QBarSet *setPub    = new QBarSet("Publications");
+        setCherch->setColor(QColor("#3b82f6"));
+        setCherch->setBorderColor(QColor("#2563eb"));
+        setPub->setColor(QColor("#10b981"));
+        setPub->setBorderColor(QColor("#059669"));
+
+        QStringList labLabels;
+        double vmax = 1.0;
+        for (const LabStat &s : labStats) {
+            // Tronquer les noms longs pour l'axe X
+            QString shortName = s.nom.length() > 18
+                                    ? s.nom.left(16) + "…"
+                                    : s.nom;
+            labLabels << shortName;
+            *setCherch << s.nbChercheurs;
+            *setPub    << s.nbPublications;
+            vmax = qMax(vmax, (double)qMax(s.nbChercheurs, s.nbPublications));
+        }
+
+        QBarSeries *series = new QBarSeries();
+        series->append(setCherch);
+        series->append(setPub);
+        series->setBarWidth(0.6);
+        series->setLabelsVisible(true);
+        series->setLabelsFormat("@value");
+        series->setLabelsPosition(QAbstractBarSeries::LabelsOutsideEnd);
+
+        QChart *chart = new QChart();
+        chart->addSeries(series);
+        chart->setTitle(QString());
+        chart->setAnimationOptions(QChart::SeriesAnimations);
+        chart->setAnimationDuration(600);
+        chart->setBackgroundRoundness(0);
+        chart->setBackgroundBrush(QBrush(Qt::transparent));
+        chart->setPlotAreaBackgroundBrush(QBrush(QColor("#fafafa")));
+        chart->setPlotAreaBackgroundVisible(true);
+        chart->setMargins(QMargins(4, 4, 4, 4));
+
+        // Légende
+        chart->legend()->setVisible(true);
+        chart->legend()->setAlignment(Qt::AlignTop);
+        chart->legend()->setFont(QFont("Segoe UI", 10));
+        chart->legend()->setLabelColor(QColor("#334155"));
+
+        // Axe X — noms des labos
+        QBarCategoryAxis *axisX = new QBarCategoryAxis();
+        for (const QString &lbl : labLabels)
+            axisX->append(lbl);
+        axisX->setLabelsAngle(labLabels.size() > 5 ? -30 : 0);
+        axisX->setLabelsBrush(QBrush(QColor("#475569")));
+        axisX->setLabelsFont(QFont("Segoe UI", 9));
+        axisX->setLinePenColor(QColor("#e2e8f0"));
+        axisX->setGridLinePen(QPen(Qt::NoPen));
+        chart->addAxis(axisX, Qt::AlignBottom);
+        series->attachAxis(axisX);
+
+        // Axe Y — valeurs entières
+        QValueAxis *axisY = new QValueAxis();
+        axisY->setRange(0, qCeil(vmax * 1.25) + 1);
+        axisY->setLabelFormat("%d");
+        axisY->setTickCount(qMin((int)vmax + 2, 8));
+        axisY->setMinorTickCount(0);
+        axisY->setTitleText("Nombre");
+        axisY->setTitleFont(QFont("Segoe UI", 9));
+        axisY->setLabelsBrush(QBrush(QColor("#475569")));
+        axisY->setTitleBrush(QBrush(QColor("#64748b")));
+        axisY->setLinePenColor(QColor("#e2e8f0"));
+        axisY->setGridLinePen(QPen(QColor("#f1f5f9"), 1, Qt::DashLine));
+        chart->addAxis(axisY, Qt::AlignLeft);
+        series->attachAxis(axisY);
+
+        QChartView *cv = new QChartView(chart);
+        cv->setRenderHint(QPainter::Antialiasing);
+        cv->setMinimumHeight(340);
+        cv->setStyleSheet("background: transparent; border: none;");
+        cv->setBackgroundBrush(QBrush(Qt::transparent));
+        chartsFrameLay->addWidget(cv);
+
+        // ── Tableau récapitulatif sous le graphe (QTableWidget pour alignement parfait) ──
+        QTableWidget *labTable = new QTableWidget(labStats.size(), 3);
+        labTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
+        labTable->setSelectionBehavior(QAbstractItemView::SelectRows);
+        labTable->setSelectionMode(QAbstractItemView::SingleSelection);
+        labTable->setShowGrid(false);
+        labTable->setAlternatingRowColors(true);
+        labTable->verticalHeader()->setVisible(false);
+        labTable->setSortingEnabled(false);
+        labTable->setHorizontalHeaderLabels(
+            QStringList() << "Laboratoire" << "Chercheurs" << "Publications");
+        // Colonne Laboratoire étirable, les deux autres fixes
+        labTable->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Stretch);
+        labTable->horizontalHeader()->setSectionResizeMode(1, QHeaderView::Fixed);
+        labTable->horizontalHeader()->setSectionResizeMode(2, QHeaderView::Fixed);
+        labTable->setColumnWidth(1, 110);
+        labTable->setColumnWidth(2, 110);
+        labTable->horizontalHeader()->setStretchLastSection(false);
+        labTable->setStyleSheet(R"(
+            QTableWidget {
+                background-color: #ffffff;
+                border: 1px solid #e2e8f0;
+                border-radius: 10px;
+                gridline-color: #f1f5f9;
+                font-size: 13px;
+                color: #334155;
+            }
+            QTableWidget::item {
+                padding: 8px 10px;
+                border-bottom: 1px solid #f1f5f9;
+            }
+            QTableWidget::item:selected {
+                background-color: #eff6ff;
+                color: #1e40af;
+            }
+            QTableWidget::item:alternate {
+                background-color: #f8fafc;
+            }
+            QHeaderView::section {
+                background-color: #f1f5f9;
+                color: #475569;
+                font-weight: 700;
+                font-size: 12px;
+                padding: 8px 10px;
+                border: none;
+                border-bottom: 2px solid #e2e8f0;
+            }
+        )");
+        // Hauteur fixe par ligne pour éviter la compression
+        labTable->verticalHeader()->setDefaultSectionSize(36);
+        // Hauteur totale = header + lignes (pas de scrollbar interne)
+        int labTableH = 36 + labStats.size() * 36 + 4;
+        labTable->setFixedHeight(qMin(labTableH, 300));
+
+        for (int i = 0; i < labStats.size(); ++i) {
+            const LabStat &s = labStats[i];
+            auto *nomItem = new QTableWidgetItem(s.nom);
+            nomItem->setFont(QFont("Segoe UI", 12, QFont::DemiBold));
+            auto *cherchItem = new QTableWidgetItem(QString::number(s.nbChercheurs));
+            cherchItem->setTextAlignment(Qt::AlignCenter);
+            auto *pubItem = new QTableWidgetItem(QString::number(s.nbPublications));
+            pubItem->setTextAlignment(Qt::AlignCenter);
+            labTable->setItem(i, 0, nomItem);
+            labTable->setItem(i, 1, cherchItem);
+            labTable->setItem(i, 2, pubItem);
+        }
+        chartsFrameLay->addWidget(labTable);
+    }
+
     ovScrollLay->addWidget(chartsFrame);
 
     QFrame *gradeFrame = new QFrame();
@@ -2652,21 +2730,21 @@ QComboBox, QSpinBox {
     tableMatch->setSelectionMode(QAbstractItemView::SingleSelection);
     tableMatch->setShowGrid(false);
     tableMatch->setAlternatingRowColors(true);
-    tableMatch->setSortingEnabled(false); // Désactive le tri automatique qui perturbe les colonnes
+    tableMatch->setSortingEnabled(false);
     tableMatch->verticalHeader()->setVisible(false);
-    tableMatch->horizontalHeader()->setSectionsMovable(false); // Empêche le déplacement des colonnes
-    tableMatch->horizontalHeader()->setSectionResizeMode(QHeaderView::Fixed); // Largeurs fixes
+    tableMatch->horizontalHeader()->setSectionsMovable(false);
     tableMatch->setHorizontalHeaderLabels(
-        QStringList() << "ID" << "Nom complet" << "Score Similarite" << "Mots-clés communs");
+        QStringList() << "ID" << "Nom complet" << "Score Similarité (/ 1)" << "Mots communs");
     tableMatch->setColumnHidden(0, true);
-    // Largeurs fixes pour chaque colonne — stable à chaque actualisation
-    tableMatch->setColumnWidth(0, 60);   // ID
-    tableMatch->setColumnWidth(1, 280);  // Nom
-    tableMatch->setColumnWidth(2, 130);  // Score Jaccard
-    tableMatch->setColumnWidth(3, 140);  // Mots communs
-    tableMatch->horizontalHeader()->setStretchLastSection(false);
-    // Étirer la colonne "Nom" pour occuper l'espace restant
+    // Colonne Nom étirable, Score et Mots communs fixes
+    tableMatch->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Fixed);
     tableMatch->horizontalHeader()->setSectionResizeMode(1, QHeaderView::Stretch);
+    tableMatch->horizontalHeader()->setSectionResizeMode(2, QHeaderView::Fixed);
+    tableMatch->horizontalHeader()->setSectionResizeMode(3, QHeaderView::Fixed);
+    tableMatch->setColumnWidth(0, 60);
+    tableMatch->setColumnWidth(2, 160);
+    tableMatch->setColumnWidth(3, 120);
+    tableMatch->horizontalHeader()->setStretchLastSection(false);
     tableMatch->setStyleSheet(R"(
         QTableWidget {
             gridline-color: #f1f5f9;
@@ -2709,11 +2787,30 @@ QComboBox, QSpinBox {
         tableMatch->setRowCount(vec.size());
         for (int i = 0; i < vec.size(); ++i) {
             const MatchCandidate &m = vec[i];
-            tableMatch->setItem(i, 0, new QTableWidgetItem(QString::number(m.idChercheur)));
-            tableMatch->setItem(i, 1, new QTableWidgetItem(m.nomComplet));
-            tableMatch->setItem(i, 2,
-                                new QTableWidgetItem(QString::number(m.scoreJaccard, 'f', 3)));
-            tableMatch->setItem(i, 3, new QTableWidgetItem(QString::number(m.nbMotsCommuns)));
+
+            auto *idItem = new QTableWidgetItem(QString::number(m.idChercheur));
+            auto *nomItem = new QTableWidgetItem(m.nomComplet);
+
+            // Score Jaccard affiché avec repère "/ 1.000" pour la lisibilité
+            QString scoreText = QString("%1 / 1.000")
+                                    .arg(m.scoreJaccard, 0, 'f', 3);
+            auto *scoreItem = new QTableWidgetItem(scoreText);
+            scoreItem->setTextAlignment(Qt::AlignCenter);
+            // Coloration selon le niveau du score
+            if (m.scoreJaccard >= 0.5)
+                scoreItem->setForeground(QColor("#059669"));       // vert — forte similarité
+            else if (m.scoreJaccard >= 0.2)
+                scoreItem->setForeground(QColor("#d97706"));       // orange — similarité moyenne
+            else
+                scoreItem->setForeground(QColor("#64748b"));       // gris — faible
+
+            auto *motsItem = new QTableWidgetItem(QString::number(m.nbMotsCommuns));
+            motsItem->setTextAlignment(Qt::AlignCenter);
+
+            tableMatch->setItem(i, 0, idItem);
+            tableMatch->setItem(i, 1, nomItem);
+            tableMatch->setItem(i, 2, scoreItem);
+            tableMatch->setItem(i, 3, motsItem);
         }
     };
     connect(btnMatch, &QPushButton::clicked, dialog, [runMatch]() { runMatch(); });

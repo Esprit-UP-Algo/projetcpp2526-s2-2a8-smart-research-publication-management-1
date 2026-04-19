@@ -49,6 +49,7 @@
 #include <QToolTip>
 #include <QVBoxLayout>
 // Qt Charts
+#include <QAbstractBarSeries>
 #include <QBarCategoryAxis>
 #include <QBarSeries>
 #include <QBarSet>
@@ -57,6 +58,7 @@
 #include <QLineSeries>
 #include <QPieSeries>
 #include <QValueAxis>
+#include <QtMath>
 // SQL
 #include <QSqlQuery>
 #include <QSqlError>
