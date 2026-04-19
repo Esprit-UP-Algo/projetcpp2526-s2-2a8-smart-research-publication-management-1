@@ -981,16 +981,9 @@ void SmartPub::on_cherchBtnRetourLogin_clicked() {
 }
 
 void SmartPub::on_cherchBtnForgotOk_clicked() {
-    QString email = ui->cherchLineEditForgotEmail->text().trimmed();
-    if (!email.isEmpty() && email.contains("@")) {
-        QMessageBox::information(this, "Email Envoyé",
-                                 "Un lien de réinitialisation a été envoyé à " +
-                                     email);
-        ui->cherchStackedWidgetLogin->setCurrentIndex(0);
-    } else {
-        QMessageBox::warning(this, "Erreur",
-                             "Veuillez entrer une adresse email valide.");
-    }
+    ui->cherchStackedWidgetLogin->setCurrentIndex(0);
+    ForgotPasswordSmsDialog dlg(this);
+    dlg.exec();
 }
 
 void SmartPub::on_cherchBtnLogin_clicked() { cherchCheckLogin(); }

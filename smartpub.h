@@ -111,6 +111,12 @@ QT_END_NAMESPACE
 #include "publicationauth.h"
 
 // ============================================================================
+// SYSTÈME DE NOTIFICATIONS OS
+// ============================================================================
+#include "osnotification.h"
+#include "upload.h"
+
+// ============================================================================
 // STRUCTURES LOGIN
 // ============================================================================
 
@@ -156,6 +162,61 @@ private:
 
     UserAccount loggedInUser;
     bool        loggedIn;
+};
+
+// ============================================================================
+// DIALOG MOT DE PASSE OUBLIÉ PAR SMS
+// ============================================================================
+//
+// Flux en 3 étapes :
+//   Étape 1 — Email + numéro tunisien (+216XXXXXXXX) → envoi OTP via TextBelt
+//   Étape 2 — Saisie du code OTP (expire après 10 min, max 3 tentatives)
+//   Étape 3 — Saisie du nouveau mot de passe + confirmation → sauvegarde SHA-256
+// ============================================================================
+
+class ForgotPasswordSmsDialog : public QDialog {
+    Q_OBJECT
+public:
+    explicit ForgotPasswordSmsDialog(QWidget *parent = nullptr);
+
+private slots:
+    void onEnvoyerCode();           // Étape 1 → valider et envoyer OTP
+    void onValiderCode();           // Étape 2 → vérifier OTP
+    void onEnregistrerMotDePasse(); // Étape 3 → sauvegarder le nouveau MDP
+
+private:
+    void setupUI();
+    void goToStep2(const QString &phone);
+    void goToStep3();
+    void sendSmsTextBelt(const QString &phone, const QString &otp);
+    static QString genererOtp();
+    static bool validerNumeroTunisien(const QString &phone);
+
+    // ── Layout multi-étapes ─────────────────────────────────────────────
+    QStackedWidget *m_stack;
+
+    // Étape 1
+    QLineEdit *m_emailEdit;
+    QLineEdit *m_phoneEdit;
+    QLabel    *m_error1;
+
+    // Étape 2
+    QLabel    *m_infoLabel2;
+    QLineEdit *m_otpEdit;
+    QLabel    *m_error2;
+
+    // Étape 3
+    QLineEdit *m_newPassEdit;
+    QLineEdit *m_confirmPassEdit;
+    QLabel    *m_error3;
+
+    // État interne
+    QString   m_otp;
+    QString   m_email;
+    QDateTime m_otpExpiry;   // OTP expire après 10 minutes
+    int       m_attempts;    // nombre de tentatives OTP
+
+    QNetworkAccessManager *m_nam = nullptr;
 };
 
 // ============================================================================
@@ -245,9 +306,9 @@ private slots:
     void on_SR_btnStatistiques_clicked();
     void on_SR_btnAjouterPublication_clicked();
     void on_SR_btnAnnulerAjout_clicked();
-    void on_btnUploadPDF_clicked();
     void on_SR_modifierPublication_clicked();
     void on_SR_supprimerPublication_clicked();
+    void on_btnUploadPDF_clicked();
     void SR_applyFilterListe();
     void SR_reinitFilterListe();
 
@@ -514,6 +575,8 @@ private:
     void handleFinBtnModifierTransactionClicked();
     void handleFinBtnSupprimerTransactionClicked();
     void handleFinLineEditRechercheTextChanged(const QString &text);
+    // Surveillance intelligente du budget (notifications OS + email)
+    void finVerifierBudgets();
 
     void handleEvBtnAjouterEventClicked();
     void handleEvBtnModifierEventClicked();

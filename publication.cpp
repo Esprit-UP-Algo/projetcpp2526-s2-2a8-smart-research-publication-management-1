@@ -483,11 +483,11 @@ void SmartPub::SR_setupUI() {
         "}"
         );
 
-    // Set input validation for titre and revue fields to accept only letters
-    QRegularExpressionValidator *lettersOnlyValidator = new QRegularExpressionValidator(QRegularExpression("[A-Za-zÀ-ÿ\\s]+"), this);
+    // Validators: titre and revue accept only letters and spaces
+    QRegularExpressionValidator *lettersOnlyValidator = new QRegularExpressionValidator(QRegularExpression("[A-Za-z\u00C0-\u00FF\\s]+"), this);
     ui->SR_lineEditTitre->setValidator(lettersOnlyValidator);
-    
-    QRegularExpressionValidator *revueValidator = new QRegularExpressionValidator(QRegularExpression("[A-Za-zÀ-ÿ\\s]+"), this);
+
+    QRegularExpressionValidator *revueValidator = new QRegularExpressionValidator(QRegularExpression("[A-Za-z\u00C0-\u00FF\\s]+"), this);
     ui->SR_lineEditRevue->setValidator(revueValidator);
 }
 
@@ -536,8 +536,6 @@ void SmartPub::SR_connectSignals() {
             &SmartPub::on_SR_btnAjouterPublication_clicked);
     connect(ui->SR_btnAnnulerAjout, &QPushButton::clicked, this,
             &SmartPub::on_SR_btnAnnulerAjout_clicked);
-    connect(ui->btnUploadPDF, &QPushButton::clicked, this,
-            &SmartPub::on_btnUploadPDF_clicked);
     connect(SR_filterTitre, &QLineEdit::textChanged, this, [this]() { handleSRApplyFilterListe(); });
     connect(SR_filterAuteur, &QLineEdit::textChanged, this, [this]() { handleSRApplyFilterListe(); });
     connect(SR_filterStatut, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this]() { handleSRApplyFilterListe(); });

@@ -2,31 +2,23 @@
 #define DEMI_SCENARIO2_H
 
 // ============================================================================
-// DEMI_SCENARIO2 — Affichage sur panneau RGB LED Matrix 64x32 (HUB75)
-//                  du programme journalier par module métier SmartPub
+// DEMI_SCENARIO2 — Affichage LED du programme journalier par module métier
 // ============================================================================
 //
-// Matériel :
-//   - Arduino Uno / Mega
-//   - Panneau RGB LED Matrix 64x32 pixels, pitch 3mm, interface HUB75
-//     (192mm × 96mm, 2048 LEDs RGB)
-//   - Alimentation 5V/4A externe pour le panneau (OBLIGATOIRE)
-//   - 1 bouton poussoir (pin 2) pour déclencher l'affichage depuis l'Arduino
+// Protocole série Qt → Arduino :
+//   "MSG:<texte>\n"   → afficher le texte sur l'écran LCD (défilement si > 16 car.)
+//   "CLEAR\n"         → effacer l'écran
+//   "DONE\n"          → fin de séquence, retour à l'écran d'attente
 //
-// Protocole série :
+// Chaque module envoie ses données sous forme de messages courts :
+//   "Evenement: <nom>"
+//   "Projet: <titre> - <etat>"
+//   "Finance: <type> <montant>"
+//   "Labo: <nom> - <statut>"
+//   "Pub: <titre>"
+//   "Chercheur: <nom> dispo"
 //
-//   Qt → Arduino :
-//     "MSG:<texte>|<couleur>\n"
-//         → faire défiler le texte sur le panneau avec la couleur indiquée
-//         → couleurs : RED / GREEN / BLUE / YELLOW / CYAN / WHITE
-//     "CLEAR\n"   → éteindre le panneau
-//     "DONE\n"    → fin de séquence, retour animation d'attente SmartPub
-//
-//   Arduino → Qt :
-//     "READY\n"        → panneau initialisé, Arduino prêt
-//     "BTN:AFFICHER\n" → bouton pressé, Qt doit lancer afficherProgrammeGlobal()
-//
-// Dépendances Qt : Arduino (connexion série), QSqlDatabase (via Connection)
+// Dépendances : Arduino (connexion série), QSqlDatabase (via Connection)
 // ============================================================================
 
 #include "arduino.h"
@@ -39,13 +31,8 @@ public:
     // Constructeur : reçoit le pointeur Arduino partagé avec scenario1
     explicit DemiScenario2(Arduino* arduino);
 
-    // ── Input : traitement des messages reçus depuis l'Arduino ───────────
-    // À appeler depuis le slot readyRead() dans SmartPub
-    void processInput();
-
-    // ── Output : fonctions par module (Qt → Arduino) ──────────────────────
-    // Chacune interroge la BD et retourne une liste de messages formatés
-    // Format : "<texte>|<couleur>"  ex: "Projet: SmartResearch|GREEN"
+    // ── Fonctions par module ──────────────────────────────────────────────
+    // Chacune interroge la BD et retourne une liste de messages courts
     QStringList afficherEvenementsSemaine();
     QStringList afficherProjetsSemaine();
     QStringList afficherFinanceSemaine();
@@ -54,20 +41,20 @@ public:
     QStringList afficherChercheursDisponibles();
 
     // ── Fonction globale ──────────────────────────────────────────────────
-    // Agrège tous les modules et envoie la séquence complète au panneau LED
+    // Agrège tous les modules et envoie la séquence complète à l'Arduino
     void afficherProgrammeGlobal();
 
 private:
     Arduino* m_arduino;
 
-    // Envoie "MSG:<texte>|<couleur>\n" au panneau via Arduino
-    void envoyerMessage(const QString& texte, const QString& couleur = "WHITE");
+    // Envoie un message court à l'Arduino (tronqué à 32 car. max)
+    void envoyerMessage(const QString& msg);
 
-    // Envoie toute une liste de messages formatés "<texte>|<couleur>"
+    // Envoie toute une liste de messages avec pause entre chaque
     void envoyerListe(const QStringList& messages);
 
-    // Nettoie et tronque un texte pour l'affichage LED (max 64 car.)
-    static QString formaterPourLed(const QString& texte, int maxLen = 64);
+    // Tronque et nettoie un texte pour l'affichage LCD
+    static QString formaterPourLed(const QString& texte, int maxLen = 32);
 };
 
 #endif // DEMI_SCENARIO2_H

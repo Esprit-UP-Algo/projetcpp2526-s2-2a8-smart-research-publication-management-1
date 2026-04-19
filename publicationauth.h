@@ -3,6 +3,12 @@
 
 #include <QString>
 #include <QList>
+#include <QCryptographicHash>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QFile>
+#include <QStandardPaths>
+#include <QDir>
 
 // ============================================================================
 // SYSTÈME D'AUTHENTIFICATION CENTRALISÉ — SmartPub
@@ -39,8 +45,20 @@ public:
     // Accès à la liste complète des comptes (lecture seule)
     const QList<AppUserAccount> &accounts() const { return m_accounts; }
 
+    // Vérifie si l'email existe dans les comptes
+    bool emailExists(const QString &email) const;
+
+    // Enregistre un nouveau mot de passe (hashé SHA-256) dans le fichier JSON
+    bool updatePassword(const QString &email, const QString &newPassword);
+
+    // Hache un mot de passe en SHA-256
+    static QString hashPassword(const QString &password);
+
 private:
     void setupAccounts();
+    QString passwordFilePath() const;
+    QString getOverridePassword(const QString &email) const;
+
     QList<AppUserAccount> m_accounts;
 };
 

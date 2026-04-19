@@ -1,163 +1,164 @@
 // =====================================================================
-// demi_scenario2.ino — Affichage programme SmartPub sur panneau
-//                      RGB LED Matrix 64x32 pixels (HUB75)
+// demi_scenario2.ino — Affichage LED du programme journalier par module
+// SmartPub — Systeme de Gestion de Recherche
 // =====================================================================
-//
-// Materiel :
-//   - Arduino Uno ou Mega
-//   - Panneau RGB LED Matrix 64x32, pitch 3mm, interface HUB75
-//   - Alimentation 5V / 4A EXTERNE pour le panneau (OBLIGATOIRE)
-//   - 1 bouton poussoir sur pin 2
-//
-// Bibliotheques requises (installer via Arduino IDE > Gerer bibliotheques) :
-//   1. "Adafruit RGB Matrix Panel"  by Adafruit
-//   2. "Adafruit GFX Library"       by Adafruit
-//
-// Cablage HUB75 → Arduino Uno :
-//   R1  → pin 2    G1  → pin 3
-//   B1  → pin 4    R2  → pin 5
-//   G2  → pin 6    B2  → pin 7
-//   A   → pin A0   B   → pin A1
-//   C   → pin A2   D   → pin A3
-//   CLK → pin 8    LAT → pin 10
-//   OE  → pin 9    GND → GND
-//   VCC → alimentation 5V externe UNIQUEMENT
-//
-// Bouton poussoir :
-//   Une patte → pin 12
-//   Autre patte → GND
 //
 // Protocole serie Qt → Arduino :
-//   "MSG:<texte>|<couleur>\n"  → defiler le texte avec la couleur
-//   "CLEAR\n"                  → eteindre le panneau
-//   "DONE\n"                   → fin sequence, retour ecran attente
+//   "MSG:<texte>\n"  → afficher le texte (defilement si > 16 car.)
+//   "CLEAR\n"        → effacer l'ecran
+//   "DONE\n"         → fin de sequence, retour ecran d'attente
 //
-// Protocole serie Arduino → Qt :
-//   "READY\n"        → panneau initialise, Arduino pret
-//   "BTN:AFFICHER\n" → bouton presse, Qt lance afficherProgrammeGlobal()
+// Materiel : Arduino Uno + ecran LCD I2C 16x2 (adresse 0x27)
 // =====================================================================
 
-#include <Adafruit_GFX.h>
-#include <RGBmatrixPanel.h>
+#include <Wire.h>
+#include <LiquidCrystal_I2C.h>
 
-// ── Pins HUB75 ──────────────────────────────────────────────────────
-#define CLK  8
-#define LAT 10
-#define OE   9
-#define A   A0
-#define B   A1
-#define C   A2
-#define D   A3
+// ---------------- OBJET LCD ----------------
+LiquidCrystal_I2C lcd(0x27, 16, 2);
 
-// Panneau 64x32 — double largeur (2 panneaux 32x32 en cascade)
-RGBmatrixPanel matrix(A, B, C, D, CLK, LAT, OE, false, 64);
-
-// ── Bouton poussoir ─────────────────────────────────────────────────
-#define BTN_PIN 12
-
-// ── Anti-rebond bouton ───────────────────────────────────────────────
-bool btnPrecedent = HIGH;
+// ---------------- CONSTANTES ----------------
+#define SCROLL_DELAY_MS   300   // delai entre chaque pas de defilement (ms)
+#define MSG_HOLD_MS      2500   // duree d'affichage d'un message court (ms)
+#define SCROLL_HOLD_MS    200   // pause apres defilement complet (ms)
 
 // =====================================================================
 void setup() {
     Serial.begin(9600);
     delay(500);
 
-    // Initialiser le panneau
-    matrix.begin();
-    matrix.setTextWrap(false);
-    matrix.fillScreen(0);      // eteindre toutes les LEDs
+    lcd.init();
+    lcd.backlight();
+    lcd.clear();
 
-    // Bouton
-    pinMode(BTN_PIN, INPUT_PULLUP);
+    // Ecran d'accueil
+    lcd.setCursor(0, 0);
+    lcd.print("   SmartPub");
+    lcd.setCursor(0, 1);
+    lcd.print(" Programme LED");
+    delay(2000);
 
-    // Message d'accueil
-    afficherTexteDefilant("SmartPub", matrix.Color333(0, 7, 0)); // vert
-
-    // Signaler a Qt que le panneau est pret
-    Serial.println("READY");
+    afficherAttente();
 }
 
 // =====================================================================
 void loop() {
-
-    // ── Lecture serie Qt → Arduino ────────────────────────────────────
     if (Serial.available()) {
         String ligne = Serial.readStringUntil('\n');
         ligne.trim();
         traiterCommande(ligne);
     }
-
-    // ── Lecture bouton Arduino → Qt ───────────────────────────────────
-    bool btnActuel = digitalRead(BTN_PIN);
-    if (btnActuel == LOW && btnPrecedent == HIGH) {
-        Serial.println("BTN:AFFICHER");
-        delay(50); // anti-rebond
-    }
-    btnPrecedent = btnActuel;
 }
 
 // =====================================================================
 // traiterCommande()
+// Dispatche selon le prefixe recu depuis Qt
 // =====================================================================
 void traiterCommande(String cmd) {
 
     if (cmd == "CLEAR") {
-        matrix.fillScreen(0);
+        lcd.clear();
         return;
     }
 
     if (cmd == "DONE") {
-        delay(500);
-        afficherTexteDefilant("En attente...", matrix.Color333(0, 7, 0));
+        delay(1000);
+        afficherAttente();
         return;
     }
 
     if (cmd.startsWith("MSG:")) {
-        // Format : "MSG:<texte>|<couleur>"
-        String contenu = cmd.substring(4);
-        int sep = contenu.lastIndexOf('|');
-
-        String texte   = (sep > 0) ? contenu.substring(0, sep)  : contenu;
-        String couleur = (sep > 0) ? contenu.substring(sep + 1) : "WHITE";
-
-        uint16_t col = resolverCouleur(couleur);
-        afficherTexteDefilant(texte, col);
+        String texte = cmd.substring(4);
+        afficherTexte(texte);
         return;
     }
-    // Commande inconnue : ignorer
+
+    // Commande inconnue : ignorer silencieusement
 }
 
 // =====================================================================
-// resolverCouleur()
-// Color333(R, G, B) — valeurs 0 a 7 par canal
+// afficherTexte()
+// Affiche un texte sur le LCD.
+// - Ligne 0 : label du module (avant le ':')
+// - Ligne 1 : contenu (apres le ':'), avec defilement si > 16 car.
 // =====================================================================
-uint16_t resolverCouleur(String nom) {
-    nom.toUpperCase();
-    if (nom == "RED")    return matrix.Color333(7, 0, 0);
-    if (nom == "GREEN")  return matrix.Color333(0, 7, 0);
-    if (nom == "BLUE")   return matrix.Color333(0, 0, 7);
-    if (nom == "YELLOW") return matrix.Color333(7, 7, 0);
-    if (nom == "CYAN")   return matrix.Color333(0, 7, 7);
-    return matrix.Color333(7, 7, 7); // WHITE
-}
+void afficherTexte(String texte) {
+    lcd.clear();
 
-// =====================================================================
-// afficherTexteDefilant()
-// Defilement de droite a gauche sur le panneau 64x32
-// Police 1 = 6x8 pixels par caractere
-// =====================================================================
-void afficherTexteDefilant(String texte, uint16_t couleur) {
-    int largeur = texte.length() * 6; // largeur totale en pixels
+    // Detecter le separateur ':'
+    int sep = texte.indexOf(':');
 
-    matrix.setTextSize(1);
-    matrix.setTextColor(couleur);
+    String ligne0 = "";
+    String ligne1 = "";
 
-    // Defiler de x=64 jusqu'a x=-largeur
-    for (int x = 64; x >= -largeur; x--) {
-        matrix.fillScreen(0);          // effacer
-        matrix.setCursor(x, 12);       // centrer verticalement
-        matrix.print(texte);
-        delay(35);                     // vitesse defilement
+    if (sep > 0 && sep < 14) {
+        // Ex: "Projet: Smart Research - En cours"
+        //     ligne0 = "Projet:"
+        //     ligne1 = " Smart Research - En cours"
+        ligne0 = texte.substring(0, sep + 1);
+        ligne1 = texte.substring(sep + 1);
+        ligne1.trim();
+    } else {
+        // Pas de separateur clair : tout sur ligne 1
+        ligne0 = "";
+        ligne1 = texte;
     }
+
+    // Afficher ligne 0 (tronquee a 16 car.)
+    lcd.setCursor(0, 0);
+    if (ligne0.length() > 16) ligne0 = ligne0.substring(0, 16);
+    lcd.print(ligne0);
+
+    // Afficher ligne 1 avec defilement si necessaire
+    if (ligne1.length() <= 16) {
+        lcd.setCursor(0, 1);
+        lcd.print(ligne1);
+        delay(MSG_HOLD_MS);
+    } else {
+        // Defilement horizontal sur la ligne 1
+        defilerLigne(ligne1, 1);
+    }
+}
+
+// =====================================================================
+// defilerLigne()
+// Fait defiler un texte long sur la ligne indiquee du LCD
+// =====================================================================
+void defilerLigne(String texte, int ligne) {
+    // Ajouter des espaces pour un defilement propre
+    String padded = "                " + texte + "                ";
+    int len = padded.length();
+
+    for (int i = 0; i <= len - 16; i++) {
+        lcd.setCursor(0, ligne);
+        lcd.print(padded.substring(i, i + 16));
+        delay(SCROLL_DELAY_MS);
+    }
+    delay(SCROLL_HOLD_MS);
+}
+
+// =====================================================================
+// afficherAttente()
+// Ecran de veille standard entre deux sequences
+// =====================================================================
+void afficherAttente() {
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("   SmartPub");
+    lcd.setCursor(0, 1);
+    lcd.print("En attente...");
+}
+
+// =====================================================================
+// centrer()
+// Centre un texte sur 16 caracteres
+// =====================================================================
+String centrer(String texte) {
+    int len = texte.length();
+    if (len >= 16) return texte.substring(0, 16);
+    int pad = (16 - len) / 2;
+    String s = "";
+    for (int i = 0; i < pad; i++) s += " ";
+    s += texte;
+    return s;
 }
