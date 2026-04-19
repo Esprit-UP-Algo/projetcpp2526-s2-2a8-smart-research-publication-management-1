@@ -950,6 +950,8 @@ void SmartPub::cherchCheckLogin()
     // S'assurer que le module Chercheurs sera en vue liste si on y navigue
     ui->cherchStackedWidget->setCurrentIndex(0);
     cherchVueListeActive = true;
+    if (targetIndex == 0)
+        cherchAfficherListeChercheurs();
 
     // Mettre à jour les styles du module Publications si c'est le module affiché
     if (targetIndex == 1)
@@ -2656,6 +2658,7 @@ QComboBox, QSpinBox {
     tableMatch->horizontalHeader()->setSectionResizeMode(QHeaderView::Fixed); // Largeurs fixes
     tableMatch->setHorizontalHeaderLabels(
         QStringList() << "ID" << "Nom complet" << "Score Similarite" << "Mots-clés communs");
+    tableMatch->setColumnHidden(0, true);
     // Largeurs fixes pour chaque colonne — stable à chaque actualisation
     tableMatch->setColumnWidth(0, 60);   // ID
     tableMatch->setColumnWidth(1, 280);  // Nom
@@ -3684,6 +3687,16 @@ void SmartPub::on_cherchVoirDetailsChercheur(int id) {
     // ── Calculer la carrière depuis le nb de projets et le grade ─────────────
     data.carriere = cherchDeterminerCarriere(data.projetsIds.size(), data.grade);
 
+    // ── Compter les publications depuis la base de données ────────────────────
+    int nbPublications = 0;
+    {
+        QSqlQuery qPub(db);
+        qPub.prepare("SELECT COUNT(*) FROM PUBLICATION WHERE ID_CHERCHEUR = :id");
+        qPub.bindValue(":id", id);
+        if (qPub.exec() && qPub.next())
+            nbPublications = qPub.value(0).toInt();
+    }
+
     // ═══════════════════════════════════════════════════════════════════════════
     // DIALOGUE DE DÉTAILS
     // ═══════════════════════════════════════════════════════════════════════════
@@ -3734,7 +3747,7 @@ void SmartPub::on_cherchVoirDetailsChercheur(int id) {
     headerLayout->addWidget(nameHeaderLbl, 0, Qt::AlignCenter);
 
     // Badge carrière dans le header
-    QLabel *careerBadge = new QLabel(data.carriere.isEmpty() ? "—" : data.carriere);
+    QLabel *careerBadge = new QLabel(QString("%1 publication(s)").arg(nbPublications));
     careerBadge->setStyleSheet(
         "background: rgba(255,255,255,0.22); color: white; "
         "border-radius: 10px; padding: 5px 16px; font-size: 12px; "
@@ -3789,7 +3802,7 @@ void SmartPub::on_cherchVoirDetailsChercheur(int id) {
     contentLayout->addWidget(createInfoRow("Grade",    data.grade,                    "🎓"));
     contentLayout->addWidget(createInfoRow("Email",    data.email,                    "✉️"));
     contentLayout->addWidget(createInfoRow("CIN",      data.cin,                      "🆔"));
-    contentLayout->addWidget(createInfoRow("Carrière", data.carriere,                 "⭐"));
+    contentLayout->addWidget(createInfoRow("Publications", QString::number(nbPublications), "📚"));
     contentLayout->addWidget(createInfoRow(
         "Projets",
         data.projetsIds.isEmpty()
@@ -3855,7 +3868,7 @@ void SmartPub::on_cherchVoirDetailsChercheur(int id) {
 
     // ── Lambda export PDF capturant id, data et projetsTitres ─────────────────
     connect(btnExport, &QPushButton::clicked, dialog,
-            [this, data, projetsTitres]() {
+            [this, data, projetsTitres, nbPublications]() {
 
                 QString safeNom = data.nom;
                 safeNom.replace(" ", "_");
@@ -3961,7 +3974,7 @@ void SmartPub::on_cherchVoirDetailsChercheur(int id) {
                 drawField("Email :",     data.email);
                 drawField("CIN :",       data.cin);
                 drawField("Grade :",     data.grade);
-                drawField("Carrière :",  data.carriere);
+                drawField("Publications :", QString::number(nbPublications));
 
                 y += (int)(0.5 * cm);
 
