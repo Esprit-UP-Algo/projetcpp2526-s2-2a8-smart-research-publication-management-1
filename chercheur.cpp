@@ -2132,7 +2132,7 @@ QComboBox, QSpinBox {
 
     if (!labNames.isEmpty() && labCounts.size() == labNames.size()) {
         chartsRow->addWidget(makeBarChartView(
-            "Effectifs par laboratoire (chercheurs distincts via projets)", labNames, labCounts,
+            "Effectifs par laboratoire", labNames, labCounts,
             "#3b82f6", "Nombre de chercheurs"));
     } else {
         QFrame *emptyFrame = new QFrame();
@@ -2153,7 +2153,7 @@ QComboBox, QSpinBox {
 
     if (!labNamesSat.isEmpty() && labSurcharge.size() == labNamesSat.size()) {
         chartsRow->addWidget(makeBarChartView(
-            "Taux de charge moyen par laboratoire (min(n×25, 100) par chercheur)", labNamesSat,
+            "Taux de charge moyen par laboratoire", labNamesSat,
             labSurcharge, "#8b5cf6", "Score sur 100"));
     }
 
@@ -2215,7 +2215,7 @@ QComboBox, QSpinBox {
         "QFrame QProgressBar { border: none; }");
     QVBoxLayout *overloadLayout = new QVBoxLayout(overloadFrame);
     overloadLayout->setContentsMargins(20, 20, 20, 20);
-    QLabel *overloadTitle = new QLabel("Indice de surcharge par chercheur (projets affectés)");
+    QLabel *overloadTitle = new QLabel("Indice de surcharge par chercheur");
     overloadTitle->setStyleSheet("font-size: 17px; font-weight: 600; color: #1e293b;");
     overloadLayout->addWidget(overloadTitle);
 
@@ -2631,7 +2631,7 @@ QComboBox, QSpinBox {
     QComboBox *comboMatch = new QComboBox();
     for (int id : idsSorted) {
         const ChercheurData &d = cherchChercheursMap[id];
-        comboMatch->addItem(QString("%1 %2 — id %3").arg(d.prenom, d.nom).arg(id), id);
+        comboMatch->addItem(QString("%1 %2").arg(d.prenom, d.nom).arg(id), id);
     }
     QPushButton *btnMatch = new QPushButton("Actualiser les suggestions");
     btnMatch->setCursor(Qt::PointingHandCursor);
@@ -2655,7 +2655,7 @@ QComboBox, QSpinBox {
     tableMatch->horizontalHeader()->setSectionsMovable(false); // Empêche le déplacement des colonnes
     tableMatch->horizontalHeader()->setSectionResizeMode(QHeaderView::Fixed); // Largeurs fixes
     tableMatch->setHorizontalHeaderLabels(
-        QStringList() << "ID" << "Nom complet" << "Indice Jaccard" << "Mots-clés communs");
+        QStringList() << "ID" << "Nom complet" << "Score Similarite" << "Mots-clés communs");
     // Largeurs fixes pour chaque colonne — stable à chaque actualisation
     tableMatch->setColumnWidth(0, 60);   // ID
     tableMatch->setColumnWidth(1, 280);  // Nom
