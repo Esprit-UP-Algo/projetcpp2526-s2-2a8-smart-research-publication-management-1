@@ -79,6 +79,143 @@ void SmartPub::finSetupUI() {
     ui->finLineEditMontant->setValidator(montantValidator);
     ui->finLineEditMontant->setPlaceholderText(QStringLiteral("Ex: 150.00"));
 
+    // ── Correction styles champs de saisie ────────────────────────────────────
+    // Les stylesheets partielles du .ui (sans règles pour le popup QComboBox)
+    // font perdre la couleur du texte sur certaines plateformes/thèmes.
+    // On applique ici des stylesheets complètes qui couvrent tous les états.
+
+    const QString finLineEditStyle = QStringLiteral(R"(
+        QLineEdit {
+            background-color: #f8fafc;
+            border: 2px solid #e2e8f0;
+            border-radius: 12px;
+            padding: 14px 16px;
+            font-size: 14px;
+            color: #334155;
+        }
+        QLineEdit:focus {
+            border-color: #3b82f6;
+            background-color: #ffffff;
+            color: #1e293b;
+        }
+        QLineEdit:disabled {
+            background-color: #f1f5f9;
+            color: #94a3b8;
+        }
+    )");
+
+    const QString finComboBoxStyle = QStringLiteral(R"(
+        QComboBox {
+            background-color: #f8fafc;
+            border: 2px solid #e2e8f0;
+            border-radius: 12px;
+            padding: 14px 16px;
+            font-size: 14px;
+            color: #334155;
+            min-height: 22px;
+        }
+        QComboBox:focus {
+            border-color: #3b82f6;
+            background-color: #ffffff;
+            color: #1e293b;
+        }
+        QComboBox:disabled {
+            background-color: #f1f5f9;
+            color: #94a3b8;
+        }
+        QComboBox::drop-down {
+            border: none;
+            width: 32px;
+        }
+        QComboBox::down-arrow {
+            image: none;
+            border-left: 5px solid transparent;
+            border-right: 5px solid transparent;
+            border-top: 6px solid #64748b;
+            width: 0;
+            height: 0;
+            margin-right: 10px;
+        }
+        QComboBox QAbstractItemView {
+            background-color: #ffffff;
+            border: 2px solid #e2e8f0;
+            border-radius: 10px;
+            selection-background-color: #eff6ff;
+            selection-color: #1e40af;
+            color: #334155;
+            outline: none;
+            padding: 4px;
+        }
+        QComboBox QAbstractItemView::item {
+            padding: 10px 14px;
+            border-radius: 6px;
+            color: #334155;
+            min-height: 28px;
+        }
+        QComboBox QAbstractItemView::item:hover {
+            background-color: #f1f5f9;
+            color: #1e293b;
+        }
+        QComboBox QAbstractItemView::item:selected {
+            background-color: #eff6ff;
+            color: #1e40af;
+            font-weight: 600;
+        }
+    )");
+
+    const QString finDateEditStyle = QStringLiteral(R"(
+        QDateEdit {
+            background-color: #f8fafc;
+            border: 2px solid #e2e8f0;
+            border-radius: 12px;
+            padding: 14px 16px;
+            font-size: 14px;
+            color: #334155;
+        }
+        QDateEdit:focus {
+            border-color: #3b82f6;
+            background-color: #ffffff;
+            color: #1e293b;
+        }
+        QDateEdit::drop-down {
+            border: none;
+            width: 32px;
+        }
+        QDateEdit::down-arrow {
+            image: none;
+            border-left: 5px solid transparent;
+            border-right: 5px solid transparent;
+            border-top: 6px solid #64748b;
+            width: 0;
+            height: 0;
+            margin-right: 10px;
+        }
+    )");
+
+    const QString finTextEditStyle = QStringLiteral(R"(
+        QTextEdit {
+            background-color: #f8fafc;
+            border: 2px solid #e2e8f0;
+            border-radius: 12px;
+            padding: 14px 16px;
+            font-size: 14px;
+            color: #334155;
+        }
+        QTextEdit:focus {
+            border-color: #3b82f6;
+            background-color: #ffffff;
+            color: #1e293b;
+        }
+    )");
+
+    ui->finLineEditMontant->setStyleSheet(finLineEditStyle);
+    ui->finComboBoxProjet->setStyleSheet(finComboBoxStyle);
+    ui->finComboBoxType->setStyleSheet(finComboBoxStyle);
+    ui->finDateEdit->setStyleSheet(finDateEditStyle);
+    ui->finComboBoxCategorie->setStyleSheet(finComboBoxStyle);
+    ui->finComboBoxStatut->setStyleSheet(finComboBoxStyle);
+    ui->finTextEditDescription->setStyleSheet(finTextEditStyle);
+
     // === Bouton Journal de Sécurité ===
     // Cherche si un bouton existe déjà (évite les doublons au rechargement)
     QPushButton *btnJournal = ui->finStackedWidget->parentWidget()

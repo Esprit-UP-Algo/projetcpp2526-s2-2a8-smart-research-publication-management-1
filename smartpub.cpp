@@ -294,9 +294,10 @@ void ForgotPasswordSmsDialog::setupUI()
     setStyleSheet(
         "QDialog { background: white; }"
         "QLabel { color: #1e293b; font-size: 14px; background: transparent; }"
-        "QLineEdit { padding: 11px; border: 2px solid #e2e8f0; border-radius: 8px;"
-        "    font-size: 14px; background: white; }"
-        "QLineEdit:focus { border-color: #3b82f6; }"
+        "QLineEdit {"
+        "    padding: 11px; border: 2px solid #e2e8f0; border-radius: 8px;"
+        "    font-size: 14px; background: #f8fafc; color: #1e293b; }"
+        "QLineEdit:focus { border-color: #3b82f6; background: #ffffff; color: #1e293b; }"
         "QPushButton { border-radius: 8px; font-size: 14px; font-weight: 600;"
         "    padding: 12px; border: none; }"
     );
@@ -383,8 +384,8 @@ void ForgotPasswordSmsDialog::setupUI()
     m_otpEdit->setValidator(new QIntValidator(0, 999999, this));
     m_otpEdit->setStyleSheet(
         "QLineEdit{padding:14px;letter-spacing:8px;font-size:22px;font-weight:bold;"
-        "border:2px solid #e2e8f0;border-radius:8px;background:white;}"
-        "QLineEdit:focus{border-color:#3b82f6;}");
+        "border:2px solid #e2e8f0;border-radius:8px;background:#f8fafc;color:#1e293b;}"
+        "QLineEdit:focus{border-color:#3b82f6;background:#ffffff;color:#1e293b;}");
     lay2->addWidget(m_otpEdit);
 
     m_error2 = new QLabel();
