@@ -1,4 +1,4 @@
-﻿#include "smartpub.h"
+#include "smartpub.h"
 #include "ui_smartpub.h"
 #include "connection.h"
 #include "publicationauth.h"
@@ -483,11 +483,11 @@ void SmartPub::SR_setupUI() {
         "}"
         );
 
-    // Validators: titre and revue accept only letters and spaces
-    QRegularExpressionValidator *lettersOnlyValidator = new QRegularExpressionValidator(QRegularExpression("[A-Za-z\u00C0-\u00FF\\s]+"), this);
+    // Set input validation for titre and revue fields to accept only letters
+    QRegularExpressionValidator *lettersOnlyValidator = new QRegularExpressionValidator(QRegularExpression("[A-Za-zÀ-ÿ\\s]+"), this);
     ui->SR_lineEditTitre->setValidator(lettersOnlyValidator);
-
-    QRegularExpressionValidator *revueValidator = new QRegularExpressionValidator(QRegularExpression("[A-Za-z\u00C0-\u00FF\\s]+"), this);
+    
+    QRegularExpressionValidator *revueValidator = new QRegularExpressionValidator(QRegularExpression("[A-Za-zÀ-ÿ\\s]+"), this);
     ui->SR_lineEditRevue->setValidator(revueValidator);
 }
 
@@ -536,6 +536,8 @@ void SmartPub::SR_connectSignals() {
             &SmartPub::on_SR_btnAjouterPublication_clicked);
     connect(ui->SR_btnAnnulerAjout, &QPushButton::clicked, this,
             &SmartPub::on_SR_btnAnnulerAjout_clicked);
+    connect(ui->btnUploadPDF, &QPushButton::clicked, this,
+            &SmartPub::on_btnUploadPDF_clicked);
     connect(SR_filterTitre, &QLineEdit::textChanged, this, [this]() { handleSRApplyFilterListe(); });
     connect(SR_filterAuteur, &QLineEdit::textChanged, this, [this]() { handleSRApplyFilterListe(); });
     connect(SR_filterStatut, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this]() { handleSRApplyFilterListe(); });
@@ -703,36 +705,25 @@ void SmartPub::SR_connectSignals() {
                 return;
             }
 
-            painter.setRenderHint(QPainter::Antialiasing);
-            int y = 120;
-            painter.setPen(Qt::NoPen);
-            painter.setBrush(QColor("#3b82f6"));
-            painter.drawRoundedRect(60, 60, 2200, 180, 14, 14);
-            painter.setPen(Qt::white);
-            painter.setFont(QFont("Segoe UI", 18, QFont::Bold));
-            painter.drawText(100, 175, QStringLiteral("Détails Publication"));
+            // Format with semicolon separators for proper PDF parsing
+            painter.setPen(QColor("#000000"));
+            painter.setFont(QFont("Arial", 12));
+            
+            // Create clean content for proper PDF parsing - no trailing semicolons
+            int y = 150;
+            const int lineSpacing = 60;
+            
+            painter.drawText(50, y, QString("titre: %1").arg(titre.trimmed()));
+            y += lineSpacing;
+            
+            painter.drawText(50, y, QString("revue_journal: %1").arg(revue.trimmed()));
+            y += lineSpacing;
+            
+            painter.drawText(50, y, QString("statut: %1").arg(statut.trimmed()));
+            y += lineSpacing;
+            
+            painter.drawText(50, y, QString("date_de_publication: %1").arg(date.trimmed()));
 
-            painter.setPen(QColor("#1e293b"));
-            painter.setFont(QFont("Segoe UI", 12, QFont::Bold));
-            auto drawField = [&](const QString &label, const QString &value) {
-                painter.drawText(80, y, label);
-                painter.setFont(QFont("Segoe UI", 12));
-                painter.drawText(420, y, value.isEmpty() ? QStringLiteral("—") : value);
-                painter.setFont(QFont("Segoe UI", 12, QFont::Bold));
-                y += 90;
-            };
-
-            y = 330;
-            drawField(QStringLiteral("Titre :"), titre);
-            drawField(QStringLiteral("Auteur(s) :"), auteur);
-            drawField(QStringLiteral("Date publication :"), date);
-            drawField(QStringLiteral("Revue :"), revue);
-            drawField(QStringLiteral("Statut :"), statut);
-            drawField(QStringLiteral("DOI :"), doi);
-
-            painter.setPen(QColor("#94a3b8"));
-            painter.setFont(QFont("Segoe UI", 9));
-            painter.drawText(80, 3300, QStringLiteral("Exporté depuis SmartPub"));
             painter.end();
 
             QMessageBox::information(this, QStringLiteral("Export"), QStringLiteral("Export PDF réussi !"));

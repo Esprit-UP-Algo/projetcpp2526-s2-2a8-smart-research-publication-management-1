@@ -8,7 +8,6 @@
 
 #include "reminder.h"
 #include "connection.h"
-#include "osnotification.h"
 
 #include <QDebug>
 #include <QSqlDatabase>
@@ -165,10 +164,6 @@ void Reminder::notifyEndingSoon(const QVector<Projet> &projets,
                    .arg(p.titre, p.code, QString::number(daysRemaining),
                         responsableEmail.isEmpty() ? QStringLiteral("inconnu") : responsableEmail);
 
-        // Notification OS (System Tray)
-        OsNotification::instance()->alertEcheance(p.titre, daysRemaining);
-
-        // Email au responsable
         sendReminderEmail(responsableEmail, p.titre, p.code, daysRemaining, p.dateFin);
 
         s_notifiedKeys.insert(notifKey);

@@ -983,9 +983,16 @@ void SmartPub::on_cherchBtnRetourLogin_clicked() {
 }
 
 void SmartPub::on_cherchBtnForgotOk_clicked() {
-    ui->cherchStackedWidgetLogin->setCurrentIndex(0);
-    ForgotPasswordSmsDialog dlg(this);
-    dlg.exec();
+    QString email = ui->cherchLineEditForgotEmail->text().trimmed();
+    if (!email.isEmpty() && email.contains("@")) {
+        QMessageBox::information(this, "Email Envoyé",
+                                 "Un lien de réinitialisation a été envoyé à " +
+                                     email);
+        ui->cherchStackedWidgetLogin->setCurrentIndex(0);
+    } else {
+        QMessageBox::warning(this, "Erreur",
+                             "Veuillez entrer une adresse email valide.");
+    }
 }
 
 void SmartPub::on_cherchBtnLogin_clicked() { cherchCheckLogin(); }
@@ -2074,59 +2081,59 @@ QComboBox, QSpinBox {
         }
     }
 
-    // ── Graphe groupé : Chercheurs & Publications par laboratoire ─────────────
-    QFrame *chartsFrame = new QFrame();
-    chartsFrame->setStyleSheet(
-        "QFrame { background-color: #ffffff; border-radius: 16px; border: 1px solid #e2e8f0; }");
-    QVBoxLayout *chartsFrameLay = new QVBoxLayout(chartsFrame);
-    chartsFrameLay->setContentsMargins(20, 20, 20, 20);
-    chartsFrameLay->setSpacing(12);
+        // ── Graphe groupé : Chercheurs & Publications par laboratoire ─────────────
+        QFrame *chartsFrame = new QFrame();
+        chartsFrame->setStyleSheet(
+            "QFrame { background-color: #ffffff; border-radius: 16px; border: 1px solid #e2e8f0; }");
+        QVBoxLayout *chartsFrameLay = new QVBoxLayout(chartsFrame);
+        chartsFrameLay->setContentsMargins(20, 20, 20, 20);
+        chartsFrameLay->setSpacing(12);
 
-    QLabel *chartsTitle = new QLabel("Statistiques par laboratoire");
-    chartsTitle->setStyleSheet(
-        "font-size: 17px; font-weight: 600; color: #1e293b; "
-        "background: transparent; border: none;");
-    chartsFrameLay->addWidget(chartsTitle);
+        QLabel *chartsTitle = new QLabel("Statistiques par laboratoire");
+        chartsTitle->setStyleSheet(
+            "font-size: 17px; font-weight: 600; color: #1e293b; "
+            "background: transparent; border: none;");
+        chartsFrameLay->addWidget(chartsTitle);
 
-    if (labStats.isEmpty()) {
-        QLabel *emptyLbl = new QLabel(
-            "⚠️  Aucune donnée disponible — vérifiez que des laboratoires sont liés à des projets "
-            "et que des chercheurs y contribuent.");
-        emptyLbl->setWordWrap(true);
-        emptyLbl->setStyleSheet(
-            "color: #92400e; font-size: 13px; font-weight: 500; "
-            "background: #fff7ed; border: 1px solid #fed7aa; border-radius: 10px; "
-            "padding: 12px 16px;");
-        chartsFrameLay->addWidget(emptyLbl);
-    } else {
-        // Séries groupées
-        QBarSet *setCherch = new QBarSet("Chercheurs");
-        QBarSet *setPub    = new QBarSet("Publications");
-        setCherch->setColor(QColor("#3b82f6"));
-        setCherch->setBorderColor(QColor("#2563eb"));
-        setPub->setColor(QColor("#10b981"));
-        setPub->setBorderColor(QColor("#059669"));
+        if (labStats.isEmpty()) {
+            QLabel *emptyLbl = new QLabel(
+                "⚠️  Aucune donnée disponible — vérifiez que des laboratoires sont liés à des projets "
+                "et que des chercheurs y contribuent.");
+            emptyLbl->setWordWrap(true);
+            emptyLbl->setStyleSheet(
+                "color: #92400e; font-size: 13px; font-weight: 500; "
+                "background: #fff7ed; border: 1px solid #fed7aa; border-radius: 10px; "
+                "padding: 12px 16px;");
+            chartsFrameLay->addWidget(emptyLbl);
+        } else {
+            // Séries groupées
+            QBarSet *setCherch = new QBarSet("Chercheurs");
+            QBarSet *setPub    = new QBarSet("Publications");
+            setCherch->setColor(QColor("#3b82f6"));
+            setCherch->setBorderColor(QColor("#2563eb"));
+            setPub->setColor(QColor("#10b981"));
+            setPub->setBorderColor(QColor("#059669"));
 
-        QStringList labLabels;
-        double vmax = 1.0;
-        for (const LabStat &s : labStats) {
-            // Tronquer les noms longs pour l'axe X
-            QString shortName = s.nom.length() > 18
-                                    ? s.nom.left(16) + "…"
-                                    : s.nom;
-            labLabels << shortName;
-            *setCherch << s.nbChercheurs;
-            *setPub    << s.nbPublications;
-            vmax = qMax(vmax, (double)qMax(s.nbChercheurs, s.nbPublications));
-        }
+            QStringList labLabels;
+            double vmax = 1.0;
+            for (const LabStat &s : labStats) {
+                // Tronquer les noms longs pour l'axe X
+                QString shortName = s.nom.length() > 18
+                                        ? s.nom.left(16) + "…"
+                                        : s.nom;
+                labLabels << shortName;
+                *setCherch << s.nbChercheurs;
+                *setPub    << s.nbPublications;
+                vmax = qMax(vmax, (double)qMax(s.nbChercheurs, s.nbPublications));
+            }
 
         QBarSeries *series = new QBarSeries();
-        series->append(setCherch);
-        series->append(setPub);
-        series->setBarWidth(0.6);
-        series->setLabelsVisible(true);
-        series->setLabelsFormat("@value");
-        series->setLabelsPosition(QAbstractBarSeries::LabelsOutsideEnd);
+            series->append(setCherch);
+            series->append(setPub);
+            series->setBarWidth(0.6);
+            series->setLabelsVisible(true);
+            series->setLabelsFormat("@value");
+            series->setLabelsPosition(QAbstractBarSeries::LabelsOutsideEnd);
 
         QChart *chart = new QChart();
         chart->addSeries(series);
@@ -2146,6 +2153,7 @@ QComboBox, QSpinBox {
         chart->legend()->setLabelColor(QColor("#334155"));
 
         // Axe X — noms des labos
+
         QBarCategoryAxis *axisX = new QBarCategoryAxis();
         for (const QString &lbl : labLabels)
             axisX->append(lbl);
@@ -2787,7 +2795,6 @@ QComboBox, QSpinBox {
         tableMatch->setRowCount(vec.size());
         for (int i = 0; i < vec.size(); ++i) {
             const MatchCandidate &m = vec[i];
-
             auto *idItem = new QTableWidgetItem(QString::number(m.idChercheur));
             auto *nomItem = new QTableWidgetItem(m.nomComplet);
 
@@ -3784,6 +3791,7 @@ void SmartPub::on_cherchVoirDetailsChercheur(int id) {
     // ── Calculer la carrière depuis le nb de projets et le grade ─────────────
     data.carriere = cherchDeterminerCarriere(data.projetsIds.size(), data.grade);
 
+
     // ── Compter les publications depuis la base de données ────────────────────
     int nbPublications = 0;
     {
@@ -3793,6 +3801,7 @@ void SmartPub::on_cherchVoirDetailsChercheur(int id) {
         if (qPub.exec() && qPub.next())
             nbPublications = qPub.value(0).toInt();
     }
+
 
     // ═══════════════════════════════════════════════════════════════════════════
     // DIALOGUE DE DÉTAILS

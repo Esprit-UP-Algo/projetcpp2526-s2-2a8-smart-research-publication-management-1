@@ -1733,175 +1733,178 @@ border: none;</string>
                            </item>
                           </layout>
                          </item>
-                        </layout>
-                       </item>
-                       <item>
-                        <layout class="QVBoxLayout" name="verticalLayoutProjets">
-                         <property name="spacing">
-                          <number>8</number>
-                         </property>
-                         <item>
-                          <widget class="QLabel" name="cherchLabelProjets">
-                           <property name="styleSheet">
-                            <string notr="true">color: #334155;
-font-size: 14px;
-font-weight: 600;
-background: transparent;
-border: none;</string>
-                           </property>
-                           <property name="text">
-                            <string>Projets associés (max 5)</string>
-                           </property>
-                          </widget>
+                         </layout>
                          </item>
                          <item>
-                          <widget class="QFrame" name="cherchProjetsFrame">
-                           <property name="styleSheet">
-                            <string notr="true">QFrame#cherchProjetsFrame {
-    background-color: #f8fafc;
-    border: 1px solid #e2e8f0;
-    border-radius: 10px;
-}</string>
+                          <layout class="QVBoxLayout" name="verticalLayoutProjets">
+                           <property name="spacing">
+                            <number>8</number>
                            </property>
-                           <property name="frameShape">
-                            <enum>QFrame::Shape::NoFrame</enum>
-                           </property>
-                           <layout class="QVBoxLayout" name="verticalLayoutProjetsFrame">
-                            <property name="spacing">
-                             <number>8</number>
-                            </property>
-                            <property name="leftMargin">
-                             <number>12</number>
-                            </property>
-                            <property name="topMargin">
-                             <number>12</number>
-                            </property>
-                            <property name="rightMargin">
-                             <number>12</number>
-                            </property>
-                            <property name="bottomMargin">
-                             <number>12</number>
-                            </property>
-                            <item>
-                             <widget class="QPushButton" name="cherchBtnSelectProjets">
-                              <property name="minimumSize">
-                               <size>
-                                <width>0</width>
-                                <height>44</height>
-                               </size>
-                              </property>
-                              <property name="cursor">
-                               <cursorShape>PointingHandCursor</cursorShape>
-                              </property>
-                              <property name="styleSheet">
-                               <string notr="true">QPushButton {
-    background-color: white;
-    border: 2px solid #e2e8f0;
-    border-radius: 10px;
-    padding: 0 14px;
-    font-size: 13px;
-    color: #334155;
-    text-align: left;
-}
-QPushButton:hover {
-    border-color: #94a3b8;
-    background-color: #f1f5f9;
-}
-QPushButton:pressed {
-    border-color: #3b82f6;
-    background-color: #eff6ff;
-}</string>
+                           <item>
+                            <widget class="QLabel" name="cherchLabelProjets">
+                             <property name="styleSheet">
+                              <string notr="true">color: #334155;
+                              font-size: 14px;
+                              font-weight: 600;
+                              background: transparent;
+                              border: none;</string>
                               </property>
                               <property name="text">
-                               <string>▼  Sélectionner des projets…</string>
+                               <string>Projets associés (max 5)</string>
                               </property>
-                             </widget>
-                            </item>
-                            <item>
-                             <widget class="QListWidget" name="cherchProjetsListWidget">
-                              <property name="minimumSize">
-                               <size>
-                                <width>0</width>
-                                <height>160</height>
-                               </size>
-                              </property>
-                              <property name="maximumSize">
-                               <size>
-                                <width>16777215</width>
-                                <height>160</height>
-                               </size>
-                              </property>
-                              <property name="visible">
-                               <bool>false</bool>
-                              </property>
+                              </widget>
+                              </item>
+                              <item>
+                              <widget class="QFrame" name="cherchProjetsFrame">
                               <property name="styleSheet">
-                               <string notr="true">QListWidget {
-    border: 2px solid #3b82f6;
-    border-radius: 10px;
-    background-color: white;
-    font-size: 13px;
-    color: #334155;
-    outline: none;
-}
-QListWidget::item {
-    padding: 9px 14px;
-    border-bottom: 1px solid #f1f5f9;
-}
-QListWidget::item:selected {
-    background-color: #eff6ff;
-    color: #1d4ed8;
-    font-weight: 600;
-}
-QListWidget::item:hover {
-    background-color: #f8fafc;
-}</string>
+                               <string notr="true">QFrame#cherchProjetsFrame {
+                                  background-color: #f8fafc;
+                                  border: 1px solid #e2e8f0;
+                                  border-radius: 10px;
+                              }</string>
                               </property>
-                              <property name="selectionMode">
-                               <enum>QAbstractItemView::SelectionMode::MultiSelection</enum>
+                              <property name="frameShape">
+                               <enum>QFrame::Shape::NoFrame</enum>
                               </property>
-                             </widget>
-                            </item>
-                            <item>
-                             <widget class="QPushButton" name="cherchBtnValiderProjets">
-                              <property name="minimumSize">
-                               <size>
-                                <width>0</width>
-                                <height>38</height>
-                               </size>
+                              <layout class="QVBoxLayout" name="verticalLayoutProjetsFrame">
+                               <property name="spacing">
+                                <number>8</number>
+                               </property>
+                               <property name="leftMargin">
+                                <number>12</number>
+                               </property>
+                               <property name="topMargin">
+                                <number>12</number>
+                               </property>
+                               <property name="rightMargin">
+                                <number>12</number>
+                               </property>
+                               <property name="bottomMargin">
+                                <number>12</number>
+                               </property>
+                               <item>
+                                <widget class="QPushButton" name="cherchBtnSelectProjets">
+                                 <property name="minimumSize">
+                                  <size>
+                                   <width>0</width>
+                                   <height>44</height>
+                                  </size>
+                              </property>
+                              <property name="rightMargin">
+                               <number>12</number>
                               </property>
                               <property name="cursor">
                                <cursorShape>PointingHandCursor</cursorShape>
                               </property>
-                              <property name="visible">
-                               <bool>false</bool>
-                              </property>
                               <property name="styleSheet">
                                <string notr="true">QPushButton {
-    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-        stop:0 #3b82f6, stop:1 #10b981);
-    color: white;
-    border: none;
-    border-radius: 8px;
-    font-size: 13px;
-    font-weight: 600;
-}
-QPushButton:hover {
-    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-        stop:0 #2563eb, stop:1 #059669);
-}</string>
+                                   background-color: white;
+                                   border: 2px solid #e2e8f0;
+                                   border-radius: 10px;
+                                   padding: 0 14px;
+                                   font-size: 13px;
+                                   color: #334155;
+                                   text-align: left;
+                               }
+                               QPushButton:hover {
+                                   border-color: #94a3b8;
+                                   background-color: #f1f5f9;
+                               }
+                               QPushButton:pressed {
+                                   border-color: #3b82f6;
+                                   background-color: #eff6ff;
+                               }</string>
+                               </property>
+                               <property name="text">
+                                <string>▼  Sélectionner des projets…</string>
+                               </property>
+                               </widget>
+                               </item>
+                               <item>
+                               <widget class="QListWidget" name="cherchProjetsListWidget">
+                               <property name="minimumSize">
+                                <size>
+                                 <width>0</width>
+                                 <height>160</height>
+                                </size>
+                               </property>
+                               <property name="maximumSize">
+                                <size>
+                                 <width>16777215</width>
+                                 <height>160</height>
+                                </size>
+                               </property>
+                               <property name="visible">
+                                <bool>false</bool>
+                               </property>
+                               <property name="styleSheet">
+                                <string notr="true">QListWidget {
+                                   border: 2px solid #3b82f6;
+                                   border-radius: 10px;
+                                   background-color: white;
+                                   font-size: 13px;
+                                   color: #334155;
+                                   outline: none;
+                               }
+                               QListWidget::item {
+                                   padding: 9px 14px;
+                                   border-bottom: 1px solid #f1f5f9;
+                               }
+                               QListWidget::item:selected {
+                                   background-color: #eff6ff;
+                                   color: #1d4ed8;
+                                   font-weight: 600;
+                               }
+                               QListWidget::item:hover {
+                                   background-color: #f8fafc;
+                               }</string>
+                               </property>
+                               <property name="selectionMode">
+                                <enum>QAbstractItemView::SelectionMode::MultiSelection</enum>
+                               </property>
+                              </widget>
+                             </item>
+                             <item>
+                              <widget class="QPushButton" name="cherchBtnValiderProjets">
+                               <property name="minimumSize">
+                                <size>
+                                 <width>0</width>
+                                 <height>38</height>
+                                </size>
+                               </property>
+                               <property name="cursor">
+                                <cursorShape>PointingHandCursor</cursorShape>
+                               </property>
+                               <property name="visible">
+                                <bool>false</bool>
+                               </property>
+                               <property name="styleSheet">
+                                <string notr="true">QPushButton {
+                                  background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                                      stop:0 #3b82f6, stop:1 #10b981);
+                                  color: white;
+                                  border: none;
+                                  border-radius: 8px;
+                                  font-size: 13px;
+                                  font-weight: 600;
+                              }
+                              QPushButton:hover {
+                                  background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                                      stop:0 #2563eb, stop:1 #059669);
+                              }</string>
                               </property>
                               <property name="text">
                                <string>✔  Valider la sélection</string>
                               </property>
-                             </widget>
-                            </item>
-                            <item>
-                             <widget class="QLabel" name="cherchLabelProjetsSelec">
+                              </widget>
+                              </item>
+                              <item>
+                              <widget class="QLabel" name="cherchLabelProjetsSelec">
                               <property name="styleSheet">
                                <string notr="true">color: #94a3b8;
-font-size: 12px;
-background: transparent;
-border: none;</string>
+                              font-size: 12px;
+                              background: transparent;
+                              border: none;</string>
                               </property>
                               <property name="text">
                                <string>Aucun projet sélectionné</string>
@@ -1916,8 +1919,8 @@ border: none;</string>
                          </item>
                         </layout>
                        </item>
-                      </layout>
-                     </item>
+                       </layout>
+                      </item>
                      <item>
                       <layout class="QHBoxLayout" name="horizontalLayoutFormButtons">
                        <property name="spacing">
@@ -3023,6 +3026,36 @@ QComboBox QAbstractItemView {
                       </size>
                      </property>
                     </spacer>
+                   </item>
+                   <item>
+                    <widget class="QPushButton" name="btnUploadPDF">
+                     <property name="minimumSize">
+                      <size>
+                       <width>160</width>
+                       <height>50</height>
+                      </size>
+                     </property>
+                     <property name="cursor">
+                      <cursorShape>PointingHandCursor</cursorShape>
+                     </property>
+                     <property name="styleSheet">
+                      <string notr="true">QPushButton {
+    background-color: #f59e0b;
+    color: white;
+    border: none;
+    border-radius: 12px;
+    padding: 14px 32px;
+    font-size: 15px;
+    font-weight: 600;
+}
+QPushButton:hover {
+    background-color: #d97706;
+}</string>
+                     </property>
+                     <property name="text">
+                      <string>📄 Importer PDF</string>
+                     </property>
+                    </widget>
                    </item>
                    <item>
                     <widget class="QPushButton" name="SR_btnAnnulerAjout">

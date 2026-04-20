@@ -1,12 +1,7 @@
 #include "smartpub.h"
 #include "ui_smartpub.h"
+#include "upload.h"
 #include <QFocusEvent>
-#include <QRandomGenerator>
-#include <QNetworkRequest>
-#include <QNetworkReply>
-#include <QUrlQuery>
-#include <QJsonDocument>
-#include <QJsonObject>
 
 // ============================================================================
 // LOGIN DIALOG
@@ -244,8 +239,13 @@ void LoginDialog::onLoginClicked()
 
 void LoginDialog::onForgotPasswordClicked()
 {
-    ForgotPasswordSmsDialog dlg(this);
-    dlg.exec();
+    QMessageBox::information(
+        this,
+        "Mot de passe oublié",
+        "Pour réinitialiser votre mot de passe, veuillez contacter l'administrateur système.\n\n"
+        "Email: admin@smartpub.com\n"
+        "Tél: +216 XX XXX XXX"
+    );
 }
 
 void LoginDialog::onGuestClicked()
@@ -259,472 +259,6 @@ void LoginDialog::onGuestClicked()
     };
     loggedIn = true;
     accept();
-}
-
-// ============================================================================
-// DIALOG MOT DE PASSE OUBLIÉ PAR SMS — 3 étapes
-// ============================================================================
-
-QString ForgotPasswordSmsDialog::genererOtp()
-{
-    int code = QRandomGenerator::global()->bounded(100000, 999999);
-    return QString::number(code);
-}
-
-bool ForgotPasswordSmsDialog::validerNumeroTunisien(const QString &phone)
-{
-    // Format attendu : +216 suivi de 8 chiffres (ex: +21698765432)
-    static const QRegularExpression re(QStringLiteral("^\\+216[0-9]{8}$"));
-    return re.match(phone).hasMatch();
-}
-
-ForgotPasswordSmsDialog::ForgotPasswordSmsDialog(QWidget *parent)
-    : QDialog(parent), m_attempts(0)
-{
-    setWindowTitle(QString::fromUtf8("R\u00e9initialisation par SMS"));
-    setMinimumSize(460, 420);
-    resize(460, 420);
-    setModal(true);
-    m_nam = new QNetworkAccessManager(this);
-    setupUI();
-}
-
-void ForgotPasswordSmsDialog::setupUI()
-{
-    setStyleSheet(
-        "QDialog { background: white; }"
-        "QLabel { color: #1e293b; font-size: 14px; background: transparent; }"
-        "QLineEdit {"
-        "    padding: 11px; border: 2px solid #e2e8f0; border-radius: 8px;"
-        "    font-size: 14px; background: #f8fafc; color: #1e293b; }"
-        "QLineEdit:focus { border-color: #3b82f6; background: #ffffff; color: #1e293b; }"
-        "QPushButton { border-radius: 8px; font-size: 14px; font-weight: 600;"
-        "    padding: 12px; border: none; }"
-    );
-
-    auto *root = new QVBoxLayout(this);
-    root->setContentsMargins(36, 32, 36, 32);
-    root->setSpacing(0);
-
-    auto *titleLbl = new QLabel(QString::fromUtf8("Mot de passe oubli\u00e9"));
-    titleLbl->setAlignment(Qt::AlignCenter);
-    titleLbl->setStyleSheet("font-size: 22px; font-weight: bold; color: #3b82f6; margin-bottom: 4px;");
-    root->addWidget(titleLbl);
-
-    auto *subLbl = new QLabel(QString::fromUtf8("R\u00e9initialisation via SMS (num\u00e9ros tunisiens +216)"));
-    subLbl->setAlignment(Qt::AlignCenter);
-    subLbl->setStyleSheet("font-size: 12px; color: #64748b; margin-bottom: 20px;");
-    root->addWidget(subLbl);
-
-    m_stack = new QStackedWidget(this);
-    root->addWidget(m_stack);
-
-    // ── ÉTAPE 1 : email + téléphone ─────────────────────────────────────────
-    auto *page1 = new QWidget();
-    auto *lay1  = new QVBoxLayout(page1);
-    lay1->setSpacing(12);
-    lay1->setContentsMargins(0, 0, 0, 0);
-
-    lay1->addWidget(new QLabel(QString::fromUtf8("Adresse email du compte :")));
-    m_emailEdit = new QLineEdit();
-    m_emailEdit->setPlaceholderText("votre.email@smartpub.com");
-    lay1->addWidget(m_emailEdit);
-
-    lay1->addWidget(new QLabel(QString::fromUtf8("Num\u00e9ro tunisien (+216XXXXXXXX) :")));
-    m_phoneEdit = new QLineEdit();
-    m_phoneEdit->setPlaceholderText("+21698765432");
-    m_phoneEdit->setMaxLength(13);
-    lay1->addWidget(m_phoneEdit);
-
-    auto *hintLbl = new QLabel(QString::fromUtf8(
-        "\u2139 1 SMS gratuit/jour via TextBelt (essai gratuit inclus)"));
-    hintLbl->setStyleSheet("font-size: 11px; color: #64748b;");
-    lay1->addWidget(hintLbl);
-
-    m_error1 = new QLabel();
-    m_error1->setStyleSheet("color:#ef4444;font-size:12px;padding:6px;"
-                             "background:#fee2e2;border-radius:6px;");
-    m_error1->setWordWrap(true);
-    m_error1->hide();
-    lay1->addWidget(m_error1);
-
-    lay1->addSpacing(8);
-    auto *btnEnvoyer = new QPushButton(QString::fromUtf8("Envoyer le code SMS"));
-    btnEnvoyer->setStyleSheet("QPushButton{background:#3b82f6;color:white;}"
-                               "QPushButton:hover{background:#2563eb;}");
-    connect(btnEnvoyer, &QPushButton::clicked, this, &ForgotPasswordSmsDialog::onEnvoyerCode);
-    lay1->addWidget(btnEnvoyer);
-
-    auto *btnAnnuler1 = new QPushButton("Annuler");
-    btnAnnuler1->setStyleSheet("QPushButton{background:#f1f5f9;color:#475569;}"
-                                "QPushButton:hover{background:#e2e8f0;}");
-    connect(btnAnnuler1, &QPushButton::clicked, this, &QDialog::reject);
-    lay1->addWidget(btnAnnuler1);
-    m_stack->addWidget(page1);
-
-    // ── ÉTAPE 2 : saisie OTP ────────────────────────────────────────────────
-    auto *page2 = new QWidget();
-    auto *lay2  = new QVBoxLayout(page2);
-    lay2->setSpacing(12);
-    lay2->setContentsMargins(0, 0, 0, 0);
-
-    m_infoLabel2 = new QLabel();
-    m_infoLabel2->setWordWrap(true);
-    m_infoLabel2->setAlignment(Qt::AlignCenter);
-    m_infoLabel2->setStyleSheet("font-size:13px;color:#334155;padding:10px;"
-                                 "background:#eff6ff;border-radius:8px;");
-    lay2->addWidget(m_infoLabel2);
-
-    lay2->addSpacing(8);
-    lay2->addWidget(new QLabel(QString::fromUtf8("Code re\u00e7u par SMS (6 chiffres) :")));
-    m_otpEdit = new QLineEdit();
-    m_otpEdit->setPlaceholderText("_ _ _ _ _ _");
-    m_otpEdit->setMaxLength(6);
-    m_otpEdit->setAlignment(Qt::AlignCenter);
-    m_otpEdit->setValidator(new QIntValidator(0, 999999, this));
-    m_otpEdit->setStyleSheet(
-        "QLineEdit{padding:14px;letter-spacing:8px;font-size:22px;font-weight:bold;"
-        "border:2px solid #e2e8f0;border-radius:8px;background:#f8fafc;color:#1e293b;}"
-        "QLineEdit:focus{border-color:#3b82f6;background:#ffffff;color:#1e293b;}");
-    lay2->addWidget(m_otpEdit);
-
-    m_error2 = new QLabel();
-    m_error2->setStyleSheet("color:#ef4444;font-size:12px;padding:6px;"
-                             "background:#fee2e2;border-radius:6px;");
-    m_error2->setWordWrap(true);
-    m_error2->hide();
-    lay2->addWidget(m_error2);
-
-    lay2->addSpacing(8);
-    auto *btnValider = new QPushButton(QString::fromUtf8("V\u00e9rifier le code"));
-    btnValider->setStyleSheet("QPushButton{background:#10b981;color:white;}"
-                               "QPushButton:hover{background:#059669;}");
-    connect(btnValider, &QPushButton::clicked, this, &ForgotPasswordSmsDialog::onValiderCode);
-    lay2->addWidget(btnValider);
-
-    auto *btnRetour2 = new QPushButton(QString::fromUtf8("Retour"));
-    btnRetour2->setStyleSheet("QPushButton{background:#f1f5f9;color:#475569;}"
-                               "QPushButton:hover{background:#e2e8f0;}");
-    connect(btnRetour2, &QPushButton::clicked, this, [this]() {
-        m_stack->setCurrentIndex(0);
-        m_error2->hide();
-        m_otpEdit->clear();
-        m_attempts = 0;
-    });
-    lay2->addWidget(btnRetour2);
-    m_stack->addWidget(page2);
-
-    // ── ÉTAPE 3 : nouveau mot de passe ──────────────────────────────────────
-    auto *page3 = new QWidget();
-    auto *lay3  = new QVBoxLayout(page3);
-    lay3->setSpacing(12);
-    lay3->setContentsMargins(0, 0, 0, 0);
-
-    auto *step3Info = new QLabel(QString::fromUtf8(
-        "\u2705 Identit\u00e9 v\u00e9rifi\u00e9e !\n"
-        "Choisissez votre nouveau mot de passe."));
-    step3Info->setWordWrap(true);
-    step3Info->setAlignment(Qt::AlignCenter);
-    step3Info->setStyleSheet("font-size:13px;color:#16a34a;padding:10px;"
-                              "background:#f0fdf4;border-radius:8px;font-weight:600;");
-    lay3->addWidget(step3Info);
-
-    lay3->addSpacing(8);
-    lay3->addWidget(new QLabel(QString::fromUtf8("Nouveau mot de passe (min. 8 caract\u00e8res) :")));
-    m_newPassEdit = new QLineEdit();
-    m_newPassEdit->setEchoMode(QLineEdit::Password);
-    m_newPassEdit->setPlaceholderText(QString::fromUtf8("\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022"));
-    lay3->addWidget(m_newPassEdit);
-
-    lay3->addWidget(new QLabel(QString::fromUtf8("Confirmer le mot de passe :")));
-    m_confirmPassEdit = new QLineEdit();
-    m_confirmPassEdit->setEchoMode(QLineEdit::Password);
-    m_confirmPassEdit->setPlaceholderText(QString::fromUtf8("\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022"));
-    lay3->addWidget(m_confirmPassEdit);
-
-    m_error3 = new QLabel();
-    m_error3->setStyleSheet("color:#ef4444;font-size:12px;padding:6px;"
-                             "background:#fee2e2;border-radius:6px;");
-    m_error3->setWordWrap(true);
-    m_error3->hide();
-    lay3->addWidget(m_error3);
-
-    lay3->addSpacing(8);
-    auto *btnSave = new QPushButton(QString::fromUtf8("Enregistrer le mot de passe"));
-    btnSave->setStyleSheet("QPushButton{background:#3b82f6;color:white;}"
-                            "QPushButton:hover{background:#2563eb;}");
-    connect(btnSave, &QPushButton::clicked, this,
-            &ForgotPasswordSmsDialog::onEnregistrerMotDePasse);
-    lay3->addWidget(btnSave);
-    m_stack->addWidget(page3);
-
-    m_stack->setCurrentIndex(0);
-}
-
-// ── Étape 1 ──────────────────────────────────────────────────────────────────
-
-void ForgotPasswordSmsDialog::onEnvoyerCode()
-{
-    const QString email = m_emailEdit->text().trimmed();
-    const QString phone = m_phoneEdit->text().trimmed();
-
-    if (email.isEmpty() || !email.contains('@')) {
-        m_error1->setText(QString::fromUtf8("\u274c Email invalide."));
-        m_error1->show();
-        return;
-    }
-
-    AppAuthService auth;
-    if (!auth.emailExists(email)) {
-        m_error1->setText(QString::fromUtf8(
-            "\u274c Aucun compte trouv\u00e9 pour cet email."));
-        m_error1->show();
-        return;
-    }
-
-    if (!validerNumeroTunisien(phone)) {
-        m_error1->setText(QString::fromUtf8(
-            "\u274c Format invalide. Utilisez +216 suivi de 8 chiffres.\n"
-            "Exemple : +21698765432"));
-        m_error1->show();
-        return;
-    }
-
-    m_error1->hide();
-    m_email    = email;
-    m_otp      = genererOtp();
-    m_attempts = 0;
-    m_otpExpiry = QDateTime::currentDateTime().addSecs(600); // 10 minutes
-
-    qDebug() << "[SMS-OTP] Code:" << m_otp << "| Tel:" << phone << "| Email:" << email;
-
-    sendSmsTextBelt(phone, m_otp);
-    goToStep2(phone);
-}
-
-// ── Envoi SMS via TextBelt (1 SMS gratuit/jour/IP, supporte +216) ────────────
-
-void ForgotPasswordSmsDialog::sendSmsTextBelt(const QString &phone, const QString &otp)
-{
-    // Clé "textbelt" = 1 SMS gratuit par jour et par IP.
-    // Pour un usage intensif, achetez une clé sur textbelt.com.
-    const QString apiKey = QStringLiteral("textbelt");
-
-    const QString message = QString(
-        "SmartPub - Code de reinitialisation: %1\n"
-        "Valable 10 minutes. Ne le partagez pas."
-    ).arg(otp);
-
-    QNetworkRequest request(QUrl("https://textbelt.com/text"));
-    request.setHeader(QNetworkRequest::ContentTypeHeader,
-                      "application/x-www-form-urlencoded");
-
-    QUrlQuery params;
-    params.addQueryItem("phone",   phone);
-    params.addQueryItem("message", message);
-    params.addQueryItem("key",     apiKey);
-
-    QNetworkReply *reply = m_nam->post(request,
-                                       params.toString(QUrl::FullyEncoded).toUtf8());
-    connect(reply, &QNetworkReply::finished, this, [reply]() {
-        qDebug().noquote() << "[TextBelt]" << reply->readAll();
-        reply->deleteLater();
-    });
-}
-
-// ── Transition étape 2 ───────────────────────────────────────────────────────
-
-void ForgotPasswordSmsDialog::goToStep2(const QString &phone)
-{
-    QString masked = phone;
-    if (phone.length() >= 4)
-        masked = phone.left(phone.length() - 4).replace(
-                     QRegularExpression("[0-9]"), "*") + phone.right(4);
-
-    m_infoLabel2->setText(
-        QString::fromUtf8(
-            "Code envoy\u00e9 au %1\n\n"
-            "Expire dans 10 minutes. Max 3 tentatives.\n"
-            "(Code visible dans la console Qt si SMS non re\u00e7u)")
-        .arg(masked));
-
-    m_stack->setCurrentIndex(1);
-    m_otpEdit->clear();
-    m_otpEdit->setFocus();
-}
-
-// ── Étape 2 : vérification OTP ───────────────────────────────────────────────
-
-void ForgotPasswordSmsDialog::onValiderCode()
-{
-    const QString saisie = m_otpEdit->text().trimmed();
-
-    if (saisie.isEmpty()) {
-        m_error2->setText(QString::fromUtf8("\u274c Veuillez saisir le code SMS."));
-        m_error2->show();
-        return;
-    }
-
-    // Vérification expiration
-    if (QDateTime::currentDateTime() > m_otpExpiry) {
-        m_error2->setText(QString::fromUtf8(
-            "\u274c Code expir\u00e9. Recommencez depuis l'\u00e9tape 1."));
-        m_error2->show();
-        m_stack->setCurrentIndex(0);
-        m_attempts = 0;
-        return;
-    }
-
-    // Limite de tentatives
-    m_attempts++;
-    if (m_attempts > 3) {
-        m_error2->setText(QString::fromUtf8(
-            "\u274c Trop de tentatives. Recommencez depuis l'\u00e9tape 1."));
-        m_error2->show();
-        m_stack->setCurrentIndex(0);
-        m_attempts = 0;
-        return;
-    }
-
-    if (saisie != m_otp) {
-        const int restants = 3 - m_attempts;
-        m_error2->setText(QString::fromUtf8(
-            "\u274c Code incorrect. %1 tentative(s) restante(s).")
-            .arg(restants));
-        m_error2->show();
-        return;
-    }
-
-    // Code correct → étape 3
-    m_error2->hide();
-    goToStep3();
-}
-
-// ── Transition étape 3 ───────────────────────────────────────────────────────
-
-void ForgotPasswordSmsDialog::goToStep3()
-{
-    m_newPassEdit->clear();
-    m_confirmPassEdit->clear();
-    m_error3->hide();
-    m_stack->setCurrentIndex(2);
-    m_newPassEdit->setFocus();
-}
-
-// ── Étape 3 : enregistrement du nouveau mot de passe ────────────────────────
-
-void ForgotPasswordSmsDialog::onEnregistrerMotDePasse()
-{
-    const QString newPass     = m_newPassEdit->text();
-    const QString confirmPass = m_confirmPassEdit->text();
-
-    if (newPass.length() < 8) {
-        m_error3->setText(QString::fromUtf8(
-            "\u274c Le mot de passe doit contenir au moins 8 caract\u00e8res."));
-        m_error3->show();
-        return;
-    }
-
-    // Force minimale : au moins une lettre et un chiffre
-    const bool hasLetter = newPass.contains(QRegularExpression("[A-Za-z]"));
-    const bool hasDigit  = newPass.contains(QRegularExpression("[0-9]"));
-    if (!hasLetter || !hasDigit) {
-        m_error3->setText(QString::fromUtf8(
-            "\u274c Le mot de passe doit contenir au moins une lettre et un chiffre."));
-        m_error3->show();
-        return;
-    }
-
-    if (newPass != confirmPass) {
-        m_error3->setText(QString::fromUtf8(
-            "\u274c Les mots de passe ne correspondent pas."));
-        m_error3->show();
-        return;
-    }
-
-    AppAuthService auth;
-    if (!auth.updatePassword(m_email, newPass)) {
-        m_error3->setText(QString::fromUtf8(
-            "\u274c Erreur lors de la sauvegarde. R\u00e9essayez."));
-        m_error3->show();
-        return;
-    }
-
-    qDebug() << "[SMS-OTP] Mot de passe mis a jour pour :" << m_email;
-
-    QMessageBox::information(
-        this,
-        QString::fromUtf8("Succ\u00e8s"),
-        QString::fromUtf8(
-            "\u2705 Mot de passe modifi\u00e9 avec succ\u00e8s !\n\n"
-            "Vous pouvez maintenant vous connecter\n"
-            "avec votre nouveau mot de passe."));
-    accept();
-}
-
-// ============================================================================
-// MODULE PUBLICATIONS — Upload PDF
-// ============================================================================
-
-void SmartPub::on_btnUploadPDF_clicked()
-{
-    QString filePath = QFileDialog::getOpenFileName(
-        this,
-        QString::fromUtf8("S\u00e9lectionner un fichier PDF"),
-        QString(),
-        "PDF Files (*.pdf)");
-
-    if (filePath.isEmpty()) return;
-
-    PDFUploadHandler uploadHandler;
-    if (!uploadHandler.processUploadedFile(filePath)) {
-        QMessageBox::critical(this, "Erreur", uploadHandler.getLastError());
-        return;
-    }
-
-    QMap<QString, QString> fields = uploadHandler.getExtractedFields();
-    if (fields.isEmpty()) {
-        QMessageBox::information(this, "Information",
-            QString::fromUtf8("Aucun champ reconnu trouv\u00e9 dans le PDF."));
-        return;
-    }
-
-    QString confirm = QString::fromUtf8("Informations extraites du PDF :\n\n");
-    if (fields.contains("titre"))
-        confirm += QString("Titre: %1\n").arg(fields["titre"]);
-    if (fields.contains("date_de_publication"))
-        confirm += QString("Date: %1\n").arg(fields["date_de_publication"]);
-    if (fields.contains("revue_journal"))
-        confirm += QString("Revue/Journal: %1\n").arg(fields["revue_journal"]);
-    if (fields.contains("statut"))
-        confirm += QString("Statut: %1\n").arg(fields["statut"]);
-    confirm += QString::fromUtf8("\nVoulez-vous remplir le formulaire avec ces informations ?");
-
-    if (QMessageBox::question(this,
-            QString::fromUtf8("Confirmer les informations"),
-            confirm,
-            QMessageBox::Yes | QMessageBox::No,
-            QMessageBox::Yes) != QMessageBox::Yes)
-        return;
-
-    if (fields.contains("titre"))
-        ui->SR_lineEditTitre->setText(fields["titre"]);
-    if (fields.contains("revue_journal"))
-        ui->SR_lineEditRevue->setText(fields["revue_journal"]);
-    if (fields.contains("date_de_publication")) {
-        const QString dateStr = fields["date_de_publication"];
-        QDate parsed;
-        for (const QString &fmt : QStringList{"yyyy-MM-dd","dd/MM/yyyy","MM/dd/yyyy","dd-MM-yyyy","yyyy/MM/dd"}) {
-            parsed = QDate::fromString(dateStr, fmt);
-            if (parsed.isValid()) break;
-        }
-        if (parsed.isValid() && ui->SR_dateEditPublication)
-            ui->SR_dateEditPublication->setDate(parsed);
-    }
-    if (fields.contains("statut") && ui->SR_comboBoxStatut) {
-        int idx = ui->SR_comboBoxStatut->findText(fields["statut"], Qt::MatchFixedString);
-        if (idx >= 0) ui->SR_comboBoxStatut->setCurrentIndex(idx);
-    }
 }
 
 // ============================================================================
@@ -1070,9 +604,6 @@ SmartPub::SmartPub(QWidget *parent)
     this->setMinimumSize(1280, 720);
     this->resize(1400, 800);
 
-    // Initialiser les notifications OS (System Tray)
-    OsNotification::instance()->initialize(QApplication::windowIcon());
-
     // Initialiser l'interface utilisateur
     setupUI();
 
@@ -1098,6 +629,9 @@ SmartPub::SmartPub(QWidget *parent)
         connect(arduino->getserial(), &QSerialPort::readyRead,
                 this, [this]() {
                     scenarioAcces->processAccess();
+                    if (scenarioProgramme)
+                        scenarioProgramme->processInput();
+
                 });
 
         // --- Demi Scenario 2 : affichage programme LED ---
@@ -2001,3 +1535,114 @@ void SmartPub::on_optimiserChargeClicked() {
 void SmartPub::on_iaRecommanderClicked() { handleProjetIARecommander(); }
 void SmartPub::on_filtresClicked() { handleProjetFiltres(); }
 void SmartPub::on_exporterClicked() { handleProjetExporter(); }
+
+void SmartPub::on_btnUploadPDF_clicked() {
+    // Open file dialog to select PDF
+    QString filePath = QFileDialog::getOpenFileName(
+        this,
+        "Sélectionner un fichier PDF",
+        QString(),
+        "PDF Files (*.pdf)"
+    );
+    
+    if (filePath.isEmpty()) {
+        return; // User cancelled
+    }
+    
+    // Process the PDF file
+    PDFUploadHandler uploadHandler;
+    if (!uploadHandler.processUploadedFile(filePath)) {
+        QMessageBox::critical(this, "Erreur", uploadHandler.getLastError());
+        return;
+    }
+    
+    QMap<QString, QString> extractedFields = uploadHandler.getExtractedFields();
+    
+    if (extractedFields.isEmpty()) {
+        QMessageBox::information(this, "Information", "Aucun champ reconnu trouvé dans le PDF.");
+        return;
+    }
+    
+    // Build confirmation message
+    QString confirmMessage = "Informations extraites du PDF:\n\n";
+    
+    if (extractedFields.contains("titre")) {
+        confirmMessage += QString("Titre: %1\n").arg(extractedFields["titre"]);
+    }
+    if (extractedFields.contains("date_de_publication")) {
+        confirmMessage += QString("Date: %1\n").arg(extractedFields["date_de_publication"]);
+    }
+    if (extractedFields.contains("revue_journal")) {
+        confirmMessage += QString("Revue/Journal: %1\n").arg(extractedFields["revue_journal"]);
+    }
+    if (extractedFields.contains("statut")) {
+        confirmMessage += QString("Statut: %1\n").arg(extractedFields["statut"]);
+    }
+    
+    confirmMessage += "\nVoulez-vous remplir le formulaire avec ces informations?";
+    
+    // Show confirmation dialog
+    QMessageBox::StandardButton reply = QMessageBox::question(
+        this,
+        "Confirmer les informations extraites",
+        confirmMessage,
+        QMessageBox::Yes | QMessageBox::No,
+        QMessageBox::Yes
+    );
+    
+    if (reply == QMessageBox::Yes) {
+        // Fill the form fields (but NOT auteurs)
+        if (extractedFields.contains("titre")) {
+            ui->SR_lineEditTitre->setText(extractedFields["titre"]);
+        }
+        
+        if (extractedFields.contains("revue_journal")) {
+            ui->SR_lineEditRevue->setText(extractedFields["revue_journal"]);
+        }
+        
+        if (extractedFields.contains("date_de_publication")) {
+            QString dateStr = extractedFields["date_de_publication"];
+            // Try to parse the date - handle various formats
+            QDate parsedDate;
+            QStringList dateFormats = {"yyyy-MM-dd", "dd/MM/yyyy", "MM/dd/yyyy", "dd-MM-yyyy", "yyyy/MM/dd"};
+            
+            for (const QString& format : dateFormats) {
+                parsedDate = QDate::fromString(dateStr, format);
+                if (parsedDate.isValid()) {
+                    break;
+                }
+            }
+            
+            if (parsedDate.isValid()) {
+                ui->SR_dateEditPublication->setDate(parsedDate);
+            }
+        }
+        
+        if (extractedFields.contains("statut")) {
+            QString statut = extractedFields["statut"];
+            // Map to the combobox values
+            int index = -1;
+            if (statut == "publié") {
+                index = ui->SR_comboBoxStatut->findText("Publié");
+            } else if (statut == "accepté") {
+                index = ui->SR_comboBoxStatut->findText("Accepté");
+            } else if (statut == "soumis") {
+                index = ui->SR_comboBoxStatut->findText("Soumis");
+            } else if (statut == "en révision") {
+                index = ui->SR_comboBoxStatut->findText("En révision");
+            } else if (statut == "rejeté") {
+                index = ui->SR_comboBoxStatut->findText("Rejeté");
+            }
+            
+            if (index >= 0) {
+                ui->SR_comboBoxStatut->setCurrentIndex(index);
+            }
+        }
+        
+        // Note: We deliberately do NOT touch the auteurs field as per requirements
+        
+        QMessageBox::information(this, "Succès", 
+            "Les champs ont été remplis avec les informations extraites.\n"
+            "Veuillez vérifier les informations et cliquer sur 'Ajouter la Publication' pour enregistrer.");
+    }
+}
