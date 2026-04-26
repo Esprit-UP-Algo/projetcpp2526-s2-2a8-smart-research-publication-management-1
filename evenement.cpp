@@ -1,4 +1,4 @@
-#include "smartpub.h"
+﻿#include "smartpub.h"
 #include "ui_smartpub.h"
 #include "connection.h"
 #include "calender.h"
@@ -475,7 +475,7 @@ void SmartPub::handleEvBtnTrierDateClicked() {
 void SmartPub::handleEvBtnRechercheLieuClicked() { evRechercherParLieu(); }
 
 void SmartPub::handleEvBtnExportCalendrierClicked() {
-    // Charger les événements depuis la BD
+    // ── 1. Charger les événements depuis la BD ────────────────────────────────
     QSqlDatabase db = Connection::instance()->getDatabase();
     if (!db.isOpen()) {
         QMessageBox::warning(this, "Erreur", "Base de données non connectée.");
@@ -488,9 +488,8 @@ void SmartPub::handleEvBtnExportCalendrierClicked() {
         return;
     }
 
-    // Collecter les événements
     struct EvExport { QString code, nom, lieu, date; };
-    QList<EvExport> liste;
+    QList<EvExport> tousLesEv;
     while (query.next()) {
         EvExport e;
         e.code = QString::number(query.value(0).toLongLong());
@@ -505,69 +504,228 @@ void SmartPub::handleEvBtnExportCalendrierClicked() {
             d = QDate::fromString(s.left(10), "yyyy-MM-dd");
         }
         e.date = d.isValid() ? d.toString("dd/MM/yyyy") : dv.toString();
-        liste.append(e);
+        tousLesEv.append(e);
     }
 
-    if (liste.isEmpty()) {
+    if (tousLesEv.isEmpty()) {
         QMessageBox::information(this, "Export", "Aucun événement à exporter.");
         return;
     }
 
-    // Choix du fichier — TXT, PDF ou CSV
+    // ── 2. Dialog de sélection des événements ─────────────────────────────────
+    QDialog selDialog(this);
+    selDialog.setWindowTitle("Sélectionner les événements à exporter");
+    selDialog.setMinimumSize(500, 420);
+    selDialog.resize(560, 460);
+    selDialog.setStyleSheet(
+        "QDialog { background-color: #f8fafc; }"
+        "QLabel  { color: #1e293b; }"
+        "QListWidget { background: white; border: 2px solid #e2e8f0; border-radius: 10px;"
+        " padding: 6px; font-size: 13px; color: #334155; }"
+        "QListWidget::item { padding: 8px 10px; border-radius: 6px; }"
+        "QListWidget::item:hover { background-color: #eff6ff; }"
+        "QListWidget::item:selected { background-color: #dbeafe; color: #1e40af; font-weight: 600; }");
+
+    QVBoxLayout *selLay = new QVBoxLayout(&selDialog);
+    selLay->setContentsMargins(20, 20, 20, 20);
+    selLay->setSpacing(12);
+
+    QLabel *selTitle = new QLabel("Cochez les événements à inclure dans l'export :");
+    selTitle->setStyleSheet("font-size: 14px; font-weight: 600; color: #1e293b;");
+    selLay->addWidget(selTitle);
+
+    // Boutons Tout sélectionner / Tout désélectionner
+    QHBoxLayout *selBtnRow = new QHBoxLayout();
+    QPushButton *btnAll  = new QPushButton("✔  Tout sélectionner");
+    QPushButton *btnNone = new QPushButton("✘  Tout désélectionner");
+    for (QPushButton *b : {btnAll, btnNone}) {
+        b->setCursor(Qt::PointingHandCursor);
+        b->setStyleSheet(
+            "QPushButton { background: #f1f5f9; color: #334155; border: 1px solid #cbd5e1;"
+            " border-radius: 6px; padding: 6px 14px; font-size: 12px; }"
+            "QPushButton:hover { background: #e2e8f0; }");
+    }
+    selBtnRow->addWidget(btnAll);
+    selBtnRow->addWidget(btnNone);
+    selBtnRow->addStretch();
+    selLay->addLayout(selBtnRow);
+
+    QListWidget *listWidget = new QListWidget();
+    listWidget->setSelectionMode(QAbstractItemView::NoSelection);
+    for (const EvExport &e : tousLesEv) {
+        QListWidgetItem *item = new QListWidgetItem(
+            QString("📅  %1  —  %2  |  📍 %3  |  🗓 %4")
+                .arg(e.code, e.nom, e.lieu, e.date));
+        item->setFlags(item->flags() | Qt::ItemIsUserCheckable);
+        item->setCheckState(Qt::Checked);
+        listWidget->addItem(item);
+    }
+    selLay->addWidget(listWidget, 1);
+
+    QObject::connect(btnAll,  &QPushButton::clicked, &selDialog, [&]() {
+        for (int i = 0; i < listWidget->count(); ++i)
+            listWidget->item(i)->setCheckState(Qt::Checked);
+    });
+    QObject::connect(btnNone, &QPushButton::clicked, &selDialog, [&]() {
+        for (int i = 0; i < listWidget->count(); ++i)
+            listWidget->item(i)->setCheckState(Qt::Unchecked);
+    });
+
+    QHBoxLayout *selFooter = new QHBoxLayout();
+    QPushButton *btnAnnuler  = new QPushButton("Annuler");
+    QPushButton *btnExporter = new QPushButton("Exporter →");
+    btnAnnuler->setFixedSize(110, 38);
+    btnExporter->setFixedSize(130, 38);
+    btnAnnuler->setCursor(Qt::PointingHandCursor);
+    btnExporter->setCursor(Qt::PointingHandCursor);
+    btnAnnuler->setStyleSheet(
+        "QPushButton { background: #f1f5f9; color: #334155; border: 1px solid #cbd5e1;"
+        " border-radius: 8px; font-size: 13px; }"
+        "QPushButton:hover { background: #e2e8f0; }");
+    btnExporter->setStyleSheet(
+        "QPushButton { background: #3b82f6; color: white; border: none;"
+        " border-radius: 8px; font-size: 13px; font-weight: 600; }"
+        "QPushButton:hover { background: #2563eb; }");
+    QObject::connect(btnAnnuler,  &QPushButton::clicked, &selDialog, &QDialog::reject);
+    QObject::connect(btnExporter, &QPushButton::clicked, &selDialog, &QDialog::accept);
+    selFooter->addStretch();
+    selFooter->addWidget(btnAnnuler);
+    selFooter->addWidget(btnExporter);
+    selLay->addLayout(selFooter);
+
+    if (selDialog.exec() != QDialog::Accepted)
+        return;
+
+    // Récupérer uniquement les événements cochés
+    QList<EvExport> liste;
+    for (int i = 0; i < listWidget->count(); ++i) {
+        if (listWidget->item(i)->checkState() == Qt::Checked)
+            liste.append(tousLesEv[i]);
+    }
+    if (liste.isEmpty()) {
+        QMessageBox::information(this, "Export", "Aucun événement sélectionné.");
+        return;
+    }
+
+    // ── 3. Choix du fichier ───────────────────────────────────────────────────
     QString fileName = QFileDialog::getSaveFileName(
-        this,
-        "Exporter les événements",
+        this, "Exporter les événements",
         QDir::homePath() + "/evenements_export",
         "Fichier texte (*.txt);;PDF (*.pdf);;CSV (*.csv)");
-
     if (fileName.isEmpty())
         return;
 
-    // ── Export TXT ────────────────────────────────────────────────────────────
-    if (fileName.endsWith(".txt", Qt::CaseInsensitive) || fileName.endsWith(".csv", Qt::CaseInsensitive)) {
+    // ── 4. Export TXT — template style poster ────────────────────────────────
+    if (fileName.endsWith(".txt", Qt::CaseInsensitive)) {
         QFile file(fileName);
         if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
-            QMessageBox::critical(this, "Erreur", "Impossible de créer le fichier : " + fileName);
+            QMessageBox::critical(this, "Erreur", "Impossible de créer le fichier.");
             return;
         }
         QTextStream out(&file);
         out.setEncoding(QStringConverter::Utf8);
 
-        if (fileName.endsWith(".csv", Qt::CaseInsensitive)) {
-            out << "Code;Nom;Lieu;Date\n";
-            for (const EvExport &e : liste)
-                out << e.code << ";" << e.nom << ";" << e.lieu << ";" << e.date << "\n";
-        } else {
-            const QString sep = QString(60, '=');
-            out << sep << "\n";
-            out << "  LISTE DES EVENEMENTS — SmartPub\n";
-            out << "  Exporté le : " << QDateTime::currentDateTime().toString("dd/MM/yyyy HH:mm:ss") << "\n";
-            out << "  Nombre d'événements : " << liste.size() << "\n";
-            out << sep << "\n\n";
-            int num = 1;
-            for (const EvExport &e : liste) {
-                out << QString("  [%1] Code    : %2\n").arg(num).arg(e.code);
-                out << QString("       Nom     : %1\n").arg(e.nom);
-                out << QString("       Lieu    : %1\n").arg(e.lieu);
-                out << QString("       Date    : %1\n").arg(e.date);
-                out << QString(60, '-') << "\n";
-                ++num;
-            }
+        const QString W72  = QString(72, '*');
+        const QString W72d = QString(72, '-');
+        const QString W72e = QString(72, '=');
+
+        // ╔══ EN-TÊTE GLOBAL ══╗
+        out << "\n" << W72 << "\n";
+        out << "*" << QString(70, ' ') << "*\n";
+        out << "*" << "          ███████╗███╗   ███╗ █████╗ ██████╗ ████████╗██████╗ ██╗   ██╗██████╗ " << "*\n";
+        out << "*" << "          ██╔════╝████╗ ████║██╔══██╗██╔══██╗╚══██╔══╝██╔══██╗██║   ██║██╔══██╗" << "*\n";
+        out << "*" << "          ███████╗██╔████╔██║███████║██████╔╝   ██║   ██████╔╝██║   ██║██████╔╝" << "*\n";
+        out << "*" << "          ╚════██║██║╚██╔╝██║██╔══██║██╔══██╗   ██║   ██╔═══╝ ██║   ██║██╔══██╗" << "*\n";
+        out << "*" << "          ███████║██║ ╚═╝ ██║██║  ██║██║  ██║   ██║   ██║     ╚██████╔╝██████╔╝" << "*\n";
+        out << "*" << "          ╚══════╝╚═╝     ╚═╝╚═╝  ╚═╝╚═╝  ╚═╝   ╚═╝   ╚═╝      ╚═════╝ ╚═════╝ " << "*\n";
+        out << "*" << QString(70, ' ') << "*\n";
+        out << "*" << "                    G E S T I O N   D E S   E V E N E M E N T S                  " << "*\n";
+        out << "*" << "                           Plateforme SmartPub — ESPRIT                           " << "*\n";
+        out << "*" << QString(70, ' ') << "*\n";
+        out << W72 << "\n\n";
+
+        out << "  Exporté le  : " << QDateTime::currentDateTime().toString("dddd dd MMMM yyyy  —  HH:mm:ss") << "\n";
+        out << "  Événements  : " << liste.size() << " sélectionné(s) sur " << tousLesEv.size() << " au total\n";
+        out << "\n" << W72e << "\n\n";
+
+        // ╔══ FICHE PAR ÉVÉNEMENT ══╗
+        int num = 1;
+        for (const EvExport &e : liste) {
+            // Bannière de l'événement
+            out << "  " << W72d << "\n";
+            out << "  |" << QString(70, ' ') << "|\n";
+
+            // Centrer le nom
+            QString nomLine = QString("  E V E N E M E N T   #%1  —  %2").arg(num).arg(e.nom.toUpper());
+            int pad = qMax(0, (72 - nomLine.length()) / 2);
+            out << QString(pad, ' ') << nomLine << "\n";
+
+            out << "  |" << QString(70, ' ') << "|\n";
+            out << "  " << W72d << "\n\n";
+
+            // Détails style badge
+            out << "      ┌─────────────────────────────────────────────────────────┐\n";
+
+            auto ligne = [&](const QString &label, const QString &valeur) {
+                QString contenu = QString("  %1  :  %2").arg(label, -8).arg(valeur);
+                // Tronquer si trop long, puis padder à 55 chars
+                if (contenu.length() > 55) contenu = contenu.left(52) + "...";
+                int padding = 55 - contenu.length();
+                out << "      │" << contenu << QString(padding, ' ') << "│\n";
+            };
+
+            ligne("CODE", e.code);
+            ligne("NOM",  e.nom);
+            ligne("LIEU", e.lieu);
+            ligne("DATE", e.date);
+
+            out << "      └─────────────────────────────────────────────────────────┘\n\n";
+
+            ++num;
         }
+
+        // ╔══ PIED DE PAGE ══╗
+        out << "\n" << W72 << "\n";
+        out << "*" << QString(70, ' ') << "*\n";
+        out << "*" << "         Ce document est généré automatiquement par SmartPub.          " << "*\n";
+        out << "*" << "              Toute modification manuelle est déconseillée.            " << "*\n";
+        out << "*" << QString(70, ' ') << "*\n";
+        out << W72 << "\n";
+
         file.close();
         QMessageBox::information(this, "Export réussi",
-                                 QString("Fichier exporté avec succès !\n\n%1").arg(fileName));
+                                 QString("%1 événement(s) exporté(s) avec succès !\n\n%2")
+                                     .arg(liste.size()).arg(fileName));
         return;
     }
 
-    // ── Export PDF ────────────────────────────────────────────────────────────
+    // ── 5. Export CSV ─────────────────────────────────────────────────────────
+    if (fileName.endsWith(".csv", Qt::CaseInsensitive)) {
+        QFile file(fileName);
+        if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
+            QMessageBox::critical(this, "Erreur", "Impossible de créer le fichier.");
+            return;
+        }
+        QTextStream out(&file);
+        out.setEncoding(QStringConverter::Utf8);
+        out << "Code;Nom;Lieu;Date\n";
+        for (const EvExport &e : liste)
+            out << e.code << ";" << e.nom << ";" << e.lieu << ";" << e.date << "\n";
+        file.close();
+        QMessageBox::information(this, "Export réussi",
+                                 QString("%1 événement(s) exporté(s) !\n\n%2")
+                                     .arg(liste.size()).arg(fileName));
+        return;
+    }
+
+    // ── 6. Export PDF — brochure style ───────────────────────────────────────
     if (fileName.endsWith(".pdf", Qt::CaseInsensitive)) {
-        QPrinter printer(QPrinter::HighResolution);
+        QPrinter printer(QPrinter::ScreenResolution);
         printer.setOutputFormat(QPrinter::PdfFormat);
         printer.setOutputFileName(fileName);
         printer.setPageSize(QPageSize(QPageSize::A4));
         printer.setPageOrientation(QPageLayout::Portrait);
-        printer.setPageMargins(QMarginsF(15, 15, 15, 15), QPageLayout::Millimeter);
+        printer.setPageMargins(QMarginsF(0, 0, 0, 0), QPageLayout::Millimeter);
 
         QPainter p;
         if (!p.begin(&printer)) {
@@ -575,69 +733,224 @@ void SmartPub::handleEvBtnExportCalendrierClicked() {
             return;
         }
 
-        const QRect page  = printer.pageRect(QPrinter::DevicePixel).toRect();
-        const int W       = page.width();
-        const int margin  = 60;
-        const int colW    = W - 2 * margin;
-        int y             = margin;
+        const QRect page = printer.pageRect(QPrinter::DevicePixel).toRect();
+        const int PW = page.width();
+        const int PH = page.height();
 
-        auto font = [](int sz, bool bold = false) {
-            QFont f("Arial", sz); f.setBold(bold); return f;
+        // BROCHURE LAYOUT — all sizes proportional to PW/PH
+        const int MX   = PW * 7  / 100;   // marge gauche/droite
+        const int FW   = PW - 2 * MX;
+
+        // Font sizes proportional
+        const int FS_LOGO    = PW * 45 / 1000;
+        const int FS_LOGOSUB = PW * 8  / 1000;
+        const int FS_EVNAME  = PW * 32 / 1000;
+        const int FS_EVENT   = PW * 55 / 1000;
+        const int FS_DATE    = PW * 14 / 1000;
+        const int FS_LIEU    = PW * 11 / 1000;
+        const int FS_PILL    = PW * 10 / 1000;
+        const int FS_CTITLE  = PW * 10 / 1000;
+        const int FS_CLABEL  = PW * 8  / 1000;
+        const int FS_CVAL    = PW * 9  / 1000;
+        const int FS_FOOT    = PW * 8  / 1000;
+
+        // Colours
+        const QColor cBg    ("#eef2f7");
+        const QColor cCyan  ("#00bcd4");
+        const QColor cPink  ("#e91e8c");
+        const QColor cPurple("#9c27b0");
+        const QColor cNavy  ("#1a237e");
+        const QColor cWhite (Qt::white);
+        const QColor cGray  ("#607d8b");
+        const QColor cDark  ("#263238");
+
+        auto fnt = [](int sz, bool bold=false, bool italic=false) {
+            QFont f("Arial", sz); f.setBold(bold); f.setItalic(italic); return f;
         };
-        auto checkPage = [&](int needed) {
-            if (y + needed > page.height() - margin - 40) {
-                printer.newPage(); y = margin;
+
+        for (int idx = 0; idx < liste.size(); ++idx) {
+            const EvExport &e = liste[idx];
+            if (idx > 0) printer.newPage();
+
+            // Background light grey-blue
+            p.setPen(Qt::NoPen); p.setBrush(cBg);
+            p.drawRect(0, 0, PW, PH);
+
+            // Top gradient band cyan->purple->pink
+            QLinearGradient topG(0, 0, PW, 0);
+            topG.setColorAt(0.0, cCyan);
+            topG.setColorAt(0.5, cPurple);
+            topG.setColorAt(1.0, cPink);
+            int bandH = PH * 13 / 100;
+            p.setBrush(topG); p.setPen(Qt::NoPen);
+            p.drawRect(0, 0, PW, bandH);
+
+            // Wave under band
+            QPainterPath wave;
+            wave.moveTo(0, bandH);
+            wave.cubicTo(PW/4, bandH + PH*5/100,
+                         PW*3/4, bandH - PH*4/100,
+                         PW, bandH);
+            wave.lineTo(PW, 0); wave.lineTo(0, 0); wave.closeSubpath();
+            p.setBrush(topG); p.setPen(Qt::NoPen);
+            p.drawPath(wave);
+
+            // Logo "SmartPub" top-left
+            int lx = MX, ly = PH*2/100;
+            int lsz = PH*8/100;
+            p.setBrush(QColor(255,255,255,55)); p.setPen(Qt::NoPen);
+            p.drawRoundedRect(lx, ly, lsz, lsz, lsz/5, lsz/5);
+            p.setFont(fnt(FS_LOGO, true));
+            p.setPen(cWhite);
+            p.drawText(QRect(lx, ly, lsz, lsz), Qt::AlignCenter, "S");
+            p.setFont(fnt(FS_LOGOSUB+2, true));
+            p.drawText(QRect(lx+lsz+PW*2/100, ly, PW*30/100, lsz/2),
+                       Qt::AlignLeft|Qt::AlignVCenter, "SmartPub");
+            p.setFont(fnt(FS_LOGOSUB));
+            p.setPen(QColor(255,255,255,200));
+            p.drawText(QRect(lx+lsz+PW*2/100, ly+lsz/2, PW*30/100, lsz/2),
+                       Qt::AlignLeft|Qt::AlignVCenter, "ESPRIT");
+
+            // Concentric circles
+            int cx = PW/2, cy2 = PH*40/100;
+            p.setBrush(Qt::NoBrush);
+            for (int r = 5; r >= 1; --r) {
+                int rad = PW*(8+r*7)/100;
+                QColor rc = (r%2==0)
+                    ? QColor(0,188,212, 15+r*10)
+                    : QColor(233,30,140, 12+r*8);
+                p.setPen(QPen(rc, PW*15/10000));
+                p.drawEllipse(cx-rad, cy2-rad, rad*2, rad*2);
             }
-        };
 
-        // En-tête
-        QLinearGradient grad(margin, y, margin + colW, y);
-        grad.setColorAt(0, QColor("#1e40af")); grad.setColorAt(1, QColor("#0ea5e9"));
-        p.setPen(Qt::NoPen); p.setBrush(grad);
-        p.drawRoundedRect(margin, y, colW, 110, 10, 10);
-        p.setFont(font(18, true)); p.setPen(Qt::white);
-        p.drawText(QRect(margin + 24, y + 14, colW - 48, 50), Qt::AlignVCenter | Qt::AlignLeft,
-                   "SmartPub — Liste des Événements");
-        p.setFont(font(9)); p.setPen(QColor(255,255,255,200));
-        p.drawText(QRect(margin + 24, y + 66, colW - 48, 30), Qt::AlignVCenter | Qt::AlignLeft,
-                   QString("Exporté le %1  •  %2 événement(s)")
-                       .arg(QDate::currentDate().toString("dd/MM/yyyy")).arg(liste.size()));
-        y += 130;
+            // Central radial gradient circle
+            int mainR = PW*20/100;
+            QRadialGradient radG(cx, cy2, mainR);
+            radG.setColorAt(0.0, QColor("#7b1fa2"));
+            radG.setColorAt(0.5, QColor("#0097a7"));
+            radG.setColorAt(1.0, QColor("#e91e8c"));
+            p.setPen(Qt::NoPen); p.setBrush(radG);
+            p.drawEllipse(cx-mainR, cy2-mainR, mainR*2, mainR*2);
 
-        // En-tête tableau
-        const QList<int> cols = { int(colW*.10), int(colW*.32), int(colW*.30), int(colW*.28) };
-        const QStringList headers = { "Code", "Nom", "Lieu", "Date" };
-        p.setPen(Qt::NoPen); p.setBrush(QColor("#1e293b"));
-        p.drawRect(margin, y, colW, 32);
-        int x = margin;
-        for (int i = 0; i < 4; ++i) {
-            p.setFont(font(9, true)); p.setPen(Qt::white);
-            p.drawText(QRect(x + 6, y, cols[i] - 8, 32), Qt::AlignVCenter | Qt::AlignLeft, headers[i]);
-            x += cols[i];
-        }
-        y += 32;
+            // Text inside circle
+            p.setFont(fnt(FS_EVNAME, true));
+            p.setPen(cWhite);
+            p.drawText(QRect(cx-mainR, cy2-mainR, mainR*2, mainR),
+                       Qt::AlignCenter|Qt::AlignBottom, "SmartPub");
+            p.setFont(fnt(FS_EVENT, true));
+            p.drawText(QRect(cx-mainR, cy2, mainR*2, mainR),
+                       Qt::AlignCenter|Qt::AlignTop, "EVENT");
 
-        // Lignes
-        bool odd = false;
-        for (const EvExport &e : liste) {
-            checkPage(28);
-            if (odd) { p.setPen(Qt::NoPen); p.setBrush(QColor("#f1f5f9")); p.drawRect(margin, y, colW, 28); }
-            x = margin;
-            QStringList cells = { e.code, e.nom, e.lieu, e.date };
-            for (int i = 0; i < 4; ++i) {
-                p.setFont(font(8)); p.setPen(QColor("#334155"));
-                p.drawText(QRect(x + 6, y, cols[i] - 8, 28), Qt::AlignVCenter | Qt::AlignLeft, cells[i]);
-                x += cols[i];
-            }
-            p.setPen(QPen(QColor("#e2e8f0"), 1));
-            p.drawLine(margin, y + 28, margin + colW, y + 28);
-            y += 28;
-            odd = !odd;
+            // Event name below circle
+            int iy = cy2 + mainR + PH*3/100;
+            p.setFont(fnt(FS_DATE, true));
+            p.setPen(cDark);
+            p.drawText(QRect(MX, iy, FW, PH*5/100),
+                       Qt::AlignCenter, e.nom.toUpper());
+
+            // Date
+            iy += PH*5/100;
+            p.setFont(fnt(FS_DATE, true));
+            p.setPen(cDark);
+            p.drawText(QRect(MX, iy, FW, PH*4/100),
+                       Qt::AlignCenter, e.date.toUpper());
+
+            // Lieu in cyan
+            iy += PH*4/100;
+            p.setFont(fnt(FS_LIEU, true));
+            p.setPen(cCyan);
+            p.drawText(QRect(MX, iy, FW, PH*3/100),
+                       Qt::AlignCenter, e.lieu.toUpper());
+
+            // Code pill badge
+            iy += PH*4/100;
+            int pw2 = FW*30/100, ph2 = PH*4/100;
+            int px2 = PW/2 - pw2/2;
+            QLinearGradient pillG(px2, 0, px2+pw2, 0);
+            pillG.setColorAt(0, cCyan); pillG.setColorAt(1, cPink);
+            p.setPen(Qt::NoPen); p.setBrush(pillG);
+            p.drawRoundedRect(px2, iy, pw2, ph2, ph2/2, ph2/2);
+            p.setFont(fnt(FS_PILL, true));
+            p.setPen(cWhite);
+            p.drawText(QRect(px2, iy, pw2, ph2),
+                       Qt::AlignCenter, "CODE  :  " + e.code);
+
+            // Separator
+            iy += PH*6/100;
+            QLinearGradient sepG(MX, 0, MX+FW, 0);
+            sepG.setColorAt(0, Qt::transparent);
+            sepG.setColorAt(0.5, QColor(0,188,212,160));
+            sepG.setColorAt(1, Qt::transparent);
+            p.setBrush(sepG); p.setPen(Qt::NoPen);
+            p.drawRect(MX, iy, FW, PH*2/1000);
+
+            // Two info columns
+            iy += PH*3/100;
+            int cw = FW*46/100;
+            int c1x = MX, c2x = MX+FW-cw;
+            int ch = PH*17/100;
+
+            p.setPen(Qt::NoPen); p.setBrush(cWhite);
+            p.drawRoundedRect(c1x, iy, cw, ch, PW*1/100, PW*1/100);
+            p.drawRoundedRect(c2x, iy, cw, ch, PW*1/100, PW*1/100);
+
+            p.setBrush(cCyan);
+            p.drawRoundedRect(c1x, iy, cw, PH*5/1000, PW*1/100, PW*1/100);
+            p.setBrush(cPink);
+            p.drawRoundedRect(c2x, iy, cw, PH*5/1000, PW*1/100, PW*1/100);
+
+            p.setFont(fnt(FS_CTITLE, true));
+            p.setPen(cCyan);
+            p.drawText(QRect(c1x+PW*2/100, iy+PH*15/1000, cw, PH*4/100),
+                       Qt::AlignLeft|Qt::AlignVCenter, "INFORMATIONS");
+            p.setPen(cPink);
+            p.drawText(QRect(c2x+PW*2/100, iy+PH*15/1000, cw, PH*4/100),
+                       Qt::AlignLeft|Qt::AlignVCenter, "DETAILS");
+
+            p.setPen(QPen(QColor("#e0e0e0"), 1));
+            p.drawLine(c1x+PW*2/100, iy+PH*6/100, c1x+cw-PW*2/100, iy+PH*6/100);
+            p.drawLine(c2x+PW*2/100, iy+PH*6/100, c2x+cw-PW*2/100, iy+PH*6/100);
+
+            auto colItem = [&](int x, int y, int w,
+                               const QString &lbl, const QString &val,
+                               const QColor &dc) {
+                int dr = PH*10/1000;
+                p.setPen(Qt::NoPen); p.setBrush(dc);
+                p.drawEllipse(x+PW*2/100, y+dr/4, dr, dr);
+                p.setFont(fnt(FS_CLABEL, true));
+                p.setPen(cGray);
+                p.drawText(QRect(x+PW*5/100, y, w-PW*5/100, PH*3/100),
+                           Qt::AlignLeft|Qt::AlignVCenter, lbl);
+                p.setFont(fnt(FS_CVAL));
+                p.setPen(cDark);
+                p.drawText(QRect(x+PW*5/100, y+PH*3/100, w-PW*5/100, PH*3/100),
+                           Qt::AlignLeft|Qt::AlignVCenter, val);
+            };
+
+            int rit = iy + PH*7/100;
+            colItem(c1x, rit,          cw, "Nom",  e.nom,  cCyan);
+            colItem(c1x, rit+PH*6/100, cw, "Lieu", e.lieu, cPurple);
+            colItem(c2x, rit,          cw, "Date", e.date, cPink);
+            colItem(c2x, rit+PH*6/100, cw, "Code", e.code, cNavy);
+
+            // Footer
+            QLinearGradient footG(0, 0, PW, 0);
+            footG.setColorAt(0, cNavy); footG.setColorAt(1, QColor("#37474f"));
+            p.setPen(Qt::NoPen); p.setBrush(footG);
+            p.drawRect(0, PH*93/100, PW, PH*7/100);
+            p.setFont(fnt(FS_FOOT));
+            p.setPen(cWhite);
+            p.drawText(QRect(0, PH*93/100, PW, PH*7/100), Qt::AlignCenter,
+                       QString("smartpub.esprit.tn   |   Page %1 / %2")
+                           .arg(idx+1).arg(liste.size()));
+            p.setBrush(topG); p.setPen(Qt::NoPen);
+            p.drawRect(0, PH-PH*5/1000, PW, PH*5/1000);
         }
 
         p.end();
         QMessageBox::information(this, "Export réussi",
-                                 QString("PDF exporté avec succès !\n\n%1").arg(fileName));
+                                 QString("%1 événement(s) exporté(s) en PDF !\n\n%2")
+                                     .arg(liste.size()).arg(fileName));
     }
 }
 
