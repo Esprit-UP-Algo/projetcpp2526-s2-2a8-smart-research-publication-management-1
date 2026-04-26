@@ -1,9 +1,0 @@
-# Qt / build
-build/
-.qtcreator/
-*.pro.user
-*.o
-*.exe
-Makefile*
-ui_*.h
-.qmake.stash
