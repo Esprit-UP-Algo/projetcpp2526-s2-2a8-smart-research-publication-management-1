@@ -625,13 +625,16 @@ SmartPub::SmartPub(QWidget *parent)
         // --- Scenario 1 : controle acces laboratoire (ID labo = 1) ---
         scenarioAcces = new Scenario1(arduino, 1);
 
-        // Traitement de chaque trame RFID recue depuis l'Arduino
+        // Traitement de chaque trame recue depuis l'Arduino :
+        //   - "RFID:<uid>"      → processMessage() identifie le chercheur et
+        //                         envoie ENTREE/SORTIE/REFUSE a l'Arduino
+        //   - "PORTE_OUVERTE"   → processMessage() met ETAT_PORTE = 1 en BD
+        //   - "PORTE_FERMEE"    → processMessage() met ETAT_PORTE = 0 en BD
         connect(arduino->getserial(), &QSerialPort::readyRead,
                 this, [this]() {
-                    scenarioAcces->processAccess();
+                    scenarioAcces->processMessage();
                     if (scenarioProgramme)
                         scenarioProgramme->processInput();
-
                 });
 
         // --- Demi Scenario 2 : affichage programme LED ---

@@ -12,42 +12,86 @@ Scenario1::Scenario1(Arduino* arduino, int id_laboratoire)
 }
 
 // ============================================================================
-// processAccess()
-// Appelée depuis MainWindow sur readyRead() du QSerialPort.
+// processMessage()
+// Point d'entrée unique — appelé depuis readyRead() dans smartpub.cpp.
 //
-// Flux :
-//   1. Lire la ligne série → extraire l'UID RFID
-//   2. Chercher le chercheur par CLR_RFID
-//   3. Vérifier projet en cours dans le bon labo
-//   4. Détecter si c'est une ENTRÉE ou une SORTIE
-//   5. Persister en base et envoyer la commande à l'Arduino
+// Lit UNE ligne du buffer série Arduino et dispatche selon le préfixe :
+//   "RFID:<uid>"    → handleRfid() — flux accès chercheur complet
+//   "PORTE_OUVERTE" → mettreAJourEtatPorte(true)  — servo ouvert
+//   "PORTE_FERMEE"  → mettreAJourEtatPorte(false) — servo fermé
+//   autres          → ignoré (messages debug Arduino, etc.)
+//
+// La garde m_enTraitement empêche la réentrance si readyRead() est
+// émis pendant le traitement d'une requête SQL (cas rare mais possible
+// avec certains drivers Qt sur Windows).
 // ============================================================================
-void Scenario1::processAccess()
+void Scenario1::processMessage()
 {
-    // ── Lire une ligne complète depuis l'Arduino ──────────────────────────
+    // ── Garde anti-réentrance ─────────────────────────────────────────
+    if (m_enTraitement)
+        return;
+    m_enTraitement = true;
+
+    // ── Lire une ligne complète depuis l'Arduino ──────────────────────
     QString message = arduino->readLine();
-    if (message.isEmpty())
-        return;  // ligne incomplète, on attend le prochain readyRead
+    if (message.isEmpty()) {
+        m_enTraitement = false;
+        return;
+    }
 
     message.remove(QChar('\0'));
     message = message.trimmed();
 
     qDebug() << "[Scenario1] Reçu de l'Arduino :" << message;
 
-    // ── Parser le message — format attendu : "RFID:<UID>" ─────────────────
-    if (!message.startsWith("RFID:", Qt::CaseInsensitive)) {
-        qDebug() << "[Scenario1] Format non reconnu (attendu RFID:<UID>), ignoré.";
-        return;
+    // ── Dispatch ──────────────────────────────────────────────────────
+    if (message.startsWith("RFID:", Qt::CaseInsensitive)) {
+        // Trame RFID — flux accès chercheur
+        const QString uid = message.mid(5).trimmed();
+        if (uid.isEmpty()) {
+            qDebug() << "[Scenario1] UID vide, accès refusé.";
+            denyAccess();
+        } else {
+            handleRfid(uid);
+        }
+
+    } else if (message == "PORTE_OUVERTE") {
+        // Servo SG90 vient d'ouvrir la porte
+        qDebug() << "[Scenario1] Porte ouverte — mise à jour ETAT_PORTE = 1 pour labo ID :" << id_lab;
+        if (!mettreAJourEtatPorte(true)) {
+            qDebug() << "[Scenario1] Erreur mise à jour ETAT_PORTE (ouverture) !";
+        }
+
+    } else if (message == "PORTE_FERMEE") {
+        // Servo SG90 vient de fermer la porte
+        qDebug() << "[Scenario1] Porte fermée — mise à jour ETAT_PORTE = 0 pour labo ID :" << id_lab;
+        if (!mettreAJourEtatPorte(false)) {
+            qDebug() << "[Scenario1] Erreur mise à jour ETAT_PORTE (fermeture) !";
+        }
+
+    } else {
+        qDebug() << "[Scenario1] Message non reconnu, ignoré :" << message;
     }
 
-    const QString uid = message.mid(5).trimmed();
-    if (uid.isEmpty()) {
-        qDebug() << "[Scenario1] UID vide, accès refusé.";
-        denyAccess();
-        return;
-    }
+    m_enTraitement = false;
+}
 
-    // ── Étape 1 : identifier le chercheur par CLR_RFID ───────────────────
+// ============================================================================
+// handleRfid()
+// Traite un UID RFID extrait par processMessage().
+//
+// Flux :
+//   1. Identifier le chercheur par CLR_RFID
+//   2. Récupérer nom et prénom
+//   3. Vérifier projet en cours
+//   4. Vérifier que le projet est dans CE labo
+//   5. Détecter ENTRÉE ou SORTIE
+//   6. Persister en base et envoyer la commande à l'Arduino
+//      (l'Arduino actionne ensuite le servo et le buzzer)
+// ============================================================================
+void Scenario1::handleRfid(const QString& uid)
+{
+    // ── Étape 1 : identifier le chercheur par CLR_RFID ───────────────
     const int id_chercheur = getChercheurIdByRfid(uid);
     if (id_chercheur == -1) {
         qDebug() << "[Scenario1] Aucun chercheur pour RFID :" << uid;
@@ -55,7 +99,7 @@ void Scenario1::processAccess()
         return;
     }
 
-    // ── Étape 2 : récupérer nom et prénom ────────────────────────────────
+    // ── Étape 2 : récupérer nom et prénom ────────────────────────────
     QString nom, prenom;
     if (!getChercheurInfo(id_chercheur, nom, prenom)) {
         qDebug() << "[Scenario1] Impossible de récupérer les infos du chercheur ID :" << id_chercheur;
@@ -63,23 +107,23 @@ void Scenario1::processAccess()
         return;
     }
 
-    // ── Étape 3 : vérifier qu'il a un projet en cours ────────────────────
+    // ── Étape 3 : vérifier qu'il a un projet en cours ────────────────
     if (!checkProjetEnCours(id_chercheur)) {
         qDebug() << "[Scenario1] Aucun projet en cours pour chercheur ID :" << id_chercheur;
         denyAccess();
         return;
     }
 
-    // ── Étape 4 : vérifier que le projet est dans CE labo ────────────────
+    // ── Étape 4 : vérifier que le projet est dans CE labo ────────────
     if (!checkProjetDansLabo(id_chercheur, id_lab)) {
         qDebug() << "[Scenario1] Projet non affecté au labo ID :" << id_lab;
         denyAccess();
         return;
     }
 
-    // ── Étape 5 : détecter ENTRÉE ou SORTIE ──────────────────────────────
+    // ── Étape 5 : détecter ENTRÉE ou SORTIE ──────────────────────────
     if (estDansLabo(id_chercheur)) {
-        // ─── SORTIE ───────────────────────────────────────────────────────
+        // ─── SORTIE ───────────────────────────────────────────────────
         qDebug() << "[Scenario1] SORTIE détectée pour" << nom << prenom;
 
         if (!enregistrerSortie(id_chercheur)) {
@@ -91,10 +135,11 @@ void Scenario1::processAccess()
         m_lastIsEntree  = false;
         m_lastNomPrenom = nom + " " + prenom;
 
+        // Envoie "SORTIE:<nom>" → Arduino ouvre servo + 2 bips verts
         grantExit(nom, prenom);
 
     } else {
-        // ─── ENTRÉE ───────────────────────────────────────────────────────
+        // ─── ENTRÉE ───────────────────────────────────────────────────
         qDebug() << "[Scenario1] ENTRÉE détectée pour" << nom << prenom;
 
         if (!enregistrerEntree(id_chercheur)) {
@@ -105,6 +150,7 @@ void Scenario1::processAccess()
         m_lastIsEntree  = true;
         m_lastNomPrenom = nom + " " + prenom;
 
+        // Envoie "ENTREE:<nom>" → Arduino ouvre servo + 2 bips verts
         grantEntry(nom, prenom);
     }
 }
@@ -235,7 +281,6 @@ bool Scenario1::estDansLabo(int id_chercheur)
     }
 
     if (query.next()) {
-        // isNull() retourne true si la valeur est NULL en base
         return !query.value(0).isNull();
     }
 
@@ -244,10 +289,6 @@ bool Scenario1::estDansLabo(int id_chercheur)
 
 // ============================================================================
 // Persistance ENTRÉE : enregistrer DATE_ENTREE_LAB = maintenant
-//
-// CORRECTION : utilisation de SYSDATE (type DATE Oracle) au lieu de
-// SYSTIMESTAMP pour éviter les problèmes de soustraction de TIMESTAMP.
-// SYSDATE supporte la soustraction directe et retourne un résultat en jours.
 // ============================================================================
 bool Scenario1::enregistrerEntree(int id_chercheur)
 {
@@ -273,29 +314,10 @@ bool Scenario1::enregistrerEntree(int id_chercheur)
 //   1. Calculer durée = SYSDATE - DATE_ENTREE_LAB (en jours → * 86400 → secondes)
 //   2. Incrémenter TEMPS_TRAVAIL_PROJET de cette durée
 //   3. Remettre DATE_ENTREE_LAB à NULL
-//
-// CORRECTIONS apportées :
-//   - Utilisation de SYSDATE (type DATE) au lieu de SYSTIMESTAMP (type TIMESTAMP).
-//     La soustraction de deux DATE en Oracle donne directement un NUMBER en jours.
-//     La soustraction de deux TIMESTAMP donne un INTERVAL, qui nécessite
-//     EXTRACT() et ne peut pas être multiplié directement par 86400.
-//   - Séparation en deux requêtes distinctes pour contourner un bug Oracle/Qt
-//     où une seule requête UPDATE avec deux colonnes modifiées et une expression
-//     arithmétique peut échouer silencieusement selon le driver ODBC utilisé.
-//   - La colonne DATE_ENTREE_LAB est déclarée TIMESTAMP en base mais SYSDATE
-//     (type DATE) peut y être stocké ; Oracle convertit automatiquement DATE→TIMESTAMP.
-//     La soustraction SYSDATE - DATE_ENTREE_LAB reste valide car Oracle cast
-//     le TIMESTAMP en DATE pour l'opération si DATE_ENTREE_LAB a été alimenté
-//     par SYSDATE. Pour garantir la cohérence, on force le cast explicite avec TO_DATE.
 // ============================================================================
 bool Scenario1::enregistrerSortie(int id_chercheur)
 {
-    // ── Requête 1 : incrémenter TEMPS_TRAVAIL_PROJET ──────────────────────
-    // On calcule la durée en secondes : (SYSDATE - DATE_ENTREE_LAB) * 86400
-    // SYSDATE - DATE retourne un NUMBER (jours décimaux) en Oracle.
-    // ROUND() pour obtenir un entier de secondes.
-    // NVL() pour partir de 0 si TEMPS_TRAVAIL_PROJET était NULL.
-    // CAST(DATE_ENTREE_LAB AS DATE) garantit que la soustraction est numérique.
+    // ── Requête 1 : incrémenter TEMPS_TRAVAIL_PROJET ──────────────────
     {
         QSqlQuery q1;
         q1.prepare(
@@ -319,7 +341,7 @@ bool Scenario1::enregistrerSortie(int id_chercheur)
         }
     }
 
-    // ── Requête 2 : remettre DATE_ENTREE_LAB à NULL ───────────────────────
+    // ── Requête 2 : remettre DATE_ENTREE_LAB à NULL ───────────────────
     {
         QSqlQuery q2;
         q2.prepare(
@@ -341,13 +363,50 @@ bool Scenario1::enregistrerSortie(int id_chercheur)
 }
 
 // ============================================================================
+// mettreAJourEtatPorte()
+// Met à jour la colonne ETAT_PORTE de la table LABORATOIRE.
+//   etatOuvert = true  → ETAT_PORTE = 1 (porte ouverte)
+//   etatOuvert = false → ETAT_PORTE = 0 (porte fermée)
+//
+// Appelée depuis processMessage() quand l'Arduino envoie "PORTE_OUVERTE"
+// ou "PORTE_FERMEE" après actionnement du servo SG90.
+// ============================================================================
+bool Scenario1::mettreAJourEtatPorte(bool etatOuvert)
+{
+    QSqlQuery query;
+    query.prepare(
+        "UPDATE LABORATOIRE "
+        "SET ETAT_PORTE = :etat "
+        "WHERE ID_LABORATOIRE = :id_lab"
+        );
+    query.bindValue(":etat",   etatOuvert ? 1 : 0);
+    query.bindValue(":id_lab", id_lab);
+
+    if (!query.exec()) {
+        qDebug() << "[Scenario1] Erreur SQL mettreAJourEtatPorte :" << query.lastError().text();
+        return false;
+    }
+
+    if (query.numRowsAffected() == 0) {
+        qDebug() << "[Scenario1] Aucune ligne affectée pour ETAT_PORTE — ID_LABORATOIRE :" << id_lab;
+        return false;
+    }
+
+    qDebug() << "[Scenario1] ETAT_PORTE mis à jour :"
+             << (etatOuvert ? "OUVERT (1)" : "FERME (0)")
+             << "pour labo ID :" << id_lab;
+    return true;
+}
+
+// ============================================================================
 // Accès autorisé — ENTRÉE
 // Envoie "ENTREE:<Nom Prenom>" à l'Arduino
+// L'Arduino actionne le servo (ouverture porte) + 2 bips courts
 // ============================================================================
 void Scenario1::grantEntry(const QString& nom, const QString& prenom)
 {
     const QString nomPrenom = (nom + " " + prenom).left(32)
-    .replace('\n', ' ').replace('\r', ' ');
+        .replace('\n', ' ').replace('\r', ' ');
     arduino->write_to_arduino(QString("ENTREE:%1\n").arg(nomPrenom).toUtf8());
     qDebug() << "[Scenario1] >>> ENTREE AUTORISÉE —" << nomPrenom;
 }
@@ -355,17 +414,19 @@ void Scenario1::grantEntry(const QString& nom, const QString& prenom)
 // ============================================================================
 // Accès autorisé — SORTIE
 // Envoie "SORTIE:<Nom Prenom>" à l'Arduino
+// L'Arduino actionne le servo (ouverture porte) + 2 bips courts
 // ============================================================================
 void Scenario1::grantExit(const QString& nom, const QString& prenom)
 {
     const QString nomPrenom = (nom + " " + prenom).left(32)
-    .replace('\n', ' ').replace('\r', ' ');
+        .replace('\n', ' ').replace('\r', ' ');
     arduino->write_to_arduino(QString("SORTIE:%1\n").arg(nomPrenom).toUtf8());
     qDebug() << "[Scenario1] >>> SORTIE AUTORISÉE —" << nomPrenom;
 }
 
 // ============================================================================
 // Accès refusé — Envoie "REFUSE" à l'Arduino
+// L'Arduino allume la LED rouge + 1 bip long, porte reste fermée
 // ============================================================================
 void Scenario1::denyAccess()
 {
