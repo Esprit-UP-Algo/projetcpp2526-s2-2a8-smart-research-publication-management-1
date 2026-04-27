@@ -66,13 +66,13 @@ void setup() {
     // Initialiser le panneau
     matrix.begin();
     matrix.setTextWrap(false);
-    matrix.fillScreen(0);      // eteindre toutes les LEDs
+    matrix.fillScreen(0);
 
     // Bouton
     pinMode(BTN_PIN, INPUT_PULLUP);
 
     // Message d'accueil
-    afficherTexteDefilant("SmartPub", matrix.Color333(0, 7, 0)); // vert
+    afficherTexteDefilant("SmartPub", matrix.Color333(0, 7, 0));
 
     // Signaler a Qt que le panneau est pret
     Serial.println("READY");
@@ -92,7 +92,7 @@ void loop() {
     bool btnActuel = digitalRead(BTN_PIN);
     if (btnActuel == LOW && btnPrecedent == HIGH) {
         Serial.println("BTN:AFFICHER");
-        delay(50); // anti-rebond
+        delay(50);
     }
     btnPrecedent = btnActuel;
 }
@@ -114,7 +114,6 @@ void traiterCommande(String cmd) {
     }
 
     if (cmd.startsWith("MSG:")) {
-        // Format : "MSG:<texte>|<couleur>"
         String contenu = cmd.substring(4);
         int sep = contenu.lastIndexOf('|');
 
@@ -125,13 +124,12 @@ void traiterCommande(String cmd) {
         afficherTexteDefilant(texte, col);
         return;
     }
-    // Commande inconnue : ignorer
 }
 
 // =====================================================================
 // resolverCouleur()
 // Color333(R, G, B) — valeurs 0 a 7 par canal
-// =====================================================================
+//--------------------------------------------------------------------
 uint16_t resolverCouleur(String nom) {
     nom.toUpperCase();
     if (nom == "RED")    return matrix.Color333(7, 0, 0);
@@ -139,25 +137,24 @@ uint16_t resolverCouleur(String nom) {
     if (nom == "BLUE")   return matrix.Color333(0, 0, 7);
     if (nom == "YELLOW") return matrix.Color333(7, 7, 0);
     if (nom == "CYAN")   return matrix.Color333(0, 7, 7);
-    return matrix.Color333(7, 7, 7); // WHITE
+    return matrix.Color333(7, 7, 7);
 }
 
 // =====================================================================
 // afficherTexteDefilant()
 // Defilement de droite a gauche sur le panneau 64x32
 // Police 1 = 6x8 pixels par caractere
-// =====================================================================
+//---------------------------------------------------------------------
 void afficherTexteDefilant(String texte, uint16_t couleur) {
-    int largeur = texte.length() * 6; // largeur totale en pixels
+    int largeur = texte.length() * 6;
 
     matrix.setTextSize(1);
     matrix.setTextColor(couleur);
 
-    // Defiler de x=64 jusqu'a x=-largeur
     for (int x = 64; x >= -largeur; x--) {
-        matrix.fillScreen(0);          // effacer
-        matrix.setCursor(x, 12);       // centrer verticalement
+        matrix.fillScreen(0);
+        matrix.setCursor(x, 12);
         matrix.print(texte);
-        delay(35);                     // vitesse defilement
+        delay(35);
     }
 }
