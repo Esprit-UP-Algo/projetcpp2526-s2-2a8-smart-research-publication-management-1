@@ -1,94 +1,103 @@
 #include "demi_scenario3.h"
 #include "connection.h"
+#include <QtSerialPort/QSerialPort>
+#include <QSqlDatabase>
 #include <QSqlQuery>
 #include <QSqlError>
 #include <QDebug>
 
 // ============================================================================
 // Constructeur
+// Se connecte directement sur readyRead() du QSerialPort avec son propre
+// buffer — indépendant de Scenario1 qui a son propre buffer dans Arduino.
 // ============================================================================
-DemiScenario3::DemiScenario3(Arduino* arduino)
-    : m_arduino(arduino)
+DemiScenario3::DemiScenario3(Arduino* arduino, QObject* parent)
+    : QObject(parent), m_arduino(arduino)
 {
+    // Connexion directe sur le port série — buffer interne m_buffer
+    connect(m_arduino->getserial(), &QSerialPort::readyRead,
+            this, &DemiScenario3::onSerialDataReady);
 }
 
 // ============================================================================
-// processInput()
-// À appeler depuis le slot readyRead() dans SmartPub.
-//
-// Flux :
-//   1. Lire la ligne série depuis l'Arduino
-//   2. Si "FIRE:<id>" → désactiver le laboratoire en BD + envoyer ACK
-//   3. Si "TEMP:<val>" → mémoriser la température courante
+// activerPourLabo()
+// Envoie "START:<id>\n" à l'Arduino pour déclencher une lecture DHT11.
 // ============================================================================
-void DemiScenario3::processInput()
+void DemiScenario3::activerPourLabo(int id_labo)
 {
     if (!m_arduino) return;
+    QString cmd = QString("START:%1\n").arg(id_labo);
+    m_arduino->write_to_arduino(cmd.toUtf8());
+    qDebug() << "[DemiScenario3] >>> Envoi Arduino :" << cmd.trimmed();
+}
 
-    QString message = m_arduino->readLine();
-    if (message.isEmpty()) return;
+// ============================================================================
+// onSerialDataReady()
+// Slot connecté sur QSerialPort::readyRead().
+// Accumule les données dans m_buffer et extrait les lignes complètes.
+// Seules les trames TEMP:/FIRE:/ERR: sont traitées ici.
+// Les autres (RFID:, PORTE_*) sont ignorées — elles appartiennent à Scenario1.
+// ============================================================================
+void DemiScenario3::onSerialDataReady()
+{
+    if (!m_arduino || !m_arduino->getserial()) return;
 
-    message = message.trimmed();
-    qDebug() << "[DemiScenario3] Recu de l'Arduino :" << message;
+    // Lire les données disponibles dans notre propre buffer
+    m_buffer.append(m_arduino->getserial()->peek(m_arduino->getserial()->bytesAvailable()));
 
-    // ── Alerte incendie ───────────────────────────────────────────────
-    if (message.startsWith("FIRE:")) {
-        const int id_labo = message.mid(5).trimmed().toInt();
-        if (id_labo <= 0) {
-            qDebug() << "[DemiScenario3] ID laboratoire invalide dans FIRE :" << message;
-            return;
+    // Extraire les lignes complètes
+    int pos;
+    while ((pos = m_buffer.indexOf('\n')) != -1) {
+        QByteArray lineBytes = m_buffer.left(pos);
+        m_buffer.remove(0, pos + 1);
+        QString line = QString::fromUtf8(lineBytes).trimmed();
+        if (!line.isEmpty())
+            processLine(line);
+    }
+}
+
+// ============================================================================
+// processLine()
+// Traite une ligne reçue de l'Arduino.
+// Ignore tout ce qui n'est pas TEMP:/FIRE:/ERR: (appartient à Scenario1).
+// ============================================================================
+void DemiScenario3::processLine(const QString& line)
+{
+    if (line.startsWith("TEMP:")) {
+        bool ok = false;
+        double temp = line.mid(5).trimmed().toDouble(&ok);
+        if (ok) {
+            m_derniereTemp = temp;
+            qDebug() << "[DemiScenario3] Temperature :" << temp << "°C";
         }
+        return;
+    }
 
-        qDebug() << "[DemiScenario3] INCENDIE detecte dans le laboratoire ID :" << id_labo;
+    if (line.startsWith("FIRE:")) {
+        int id_labo = line.mid(5).trimmed().toInt();
+        if (id_labo <= 0) return;
 
+        qDebug() << "[DemiScenario3] Chaleur detectee — labo ID :" << id_labo;
         m_incendieDetecte = true;
         m_idLaboEnAlerte  = id_labo;
 
         if (desactiverLaboratoire(id_labo)) {
-            qDebug() << "[DemiScenario3] Laboratoire ID" << id_labo << "passe en Inactif.";
+            qDebug() << "[DemiScenario3] Labo ID" << id_labo << "-> Inactif en BD.";
+            emit laboDesactive(id_labo);
         } else {
-            qDebug() << "[DemiScenario3] Echec mise a jour BD pour laboratoire ID :" << id_labo;
-        }
-
-        // Accuser réception à l'Arduino
-        envoyerAck();
-        return;
-    }
-
-    // ── Température périodique ────────────────────────────────────────
-    if (message.startsWith("TEMP:")) {
-        bool ok = false;
-        const double temp = message.mid(5).trimmed().toDouble(&ok);
-        if (ok) {
-            m_derniereTemp = temp;
-            qDebug() << "[DemiScenario3] Temperature courante :" << temp << "°C";
+            qDebug() << "[DemiScenario3] Echec mise a jour BD pour labo ID :" << id_labo;
         }
         return;
     }
 
-    // ── Messages informatifs ──────────────────────────────────────────
-    if (message == "READY") {
-        qDebug() << "[DemiScenario3] Arduino pret.";
-        return;
+    if (line.startsWith("ERR:")) {
+        qDebug() << "[DemiScenario3] Erreur Arduino :" << line;
     }
-
-    if (message == "RESET:OK") {
-        m_incendieDetecte = false;
-        m_idLaboEnAlerte  = -1;
-        qDebug() << "[DemiScenario3] Etat reinitialise.";
-        return;
-    }
-
-    if (message.startsWith("ERR:")) {
-        qDebug() << "[DemiScenario3] Erreur Arduino :" << message;
-        return;
-    }
+    // RFID:, PORTE_*, READY → ignorés, appartiennent à Scenario1
 }
 
 // ============================================================================
 // desactiverLaboratoire()
-// Met DISPONIBILITE = 'indisponible' pour le laboratoire donné.
-// Correspond au passage Actif → Inactif dans l'interface SmartPub.
 // ============================================================================
 bool DemiScenario3::desactiverLaboratoire(int id_labo)
 {
@@ -107,26 +116,14 @@ bool DemiScenario3::desactiverLaboratoire(int id_labo)
     query.bindValue(":id", id_labo);
 
     if (!query.exec()) {
-        qDebug() << "[DemiScenario3] Erreur SQL desactiverLaboratoire :"
-                 << query.lastError().text();
+        qDebug() << "[DemiScenario3] Erreur SQL :" << query.lastError().text();
         return false;
     }
 
     if (query.numRowsAffected() == 0) {
-        qDebug() << "[DemiScenario3] Aucun laboratoire trouve avec ID :" << id_labo;
+        qDebug() << "[DemiScenario3] Aucun laboratoire avec ID :" << id_labo;
         return false;
     }
 
     return true;
-}
-
-// ============================================================================
-// envoyerAck()
-// Envoie "ACK\n" à l'Arduino pour accuser réception de l'alerte incendie
-// ============================================================================
-void DemiScenario3::envoyerAck()
-{
-    if (!m_arduino) return;
-    m_arduino->write_to_arduino("ACK\n");
-    qDebug() << "[DemiScenario3] >>> ACK envoye a l'Arduino";
 }

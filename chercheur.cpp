@@ -27,6 +27,7 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QUrlQuery>
+#include <QStyle>
 
 static QPixmap makeCircularPixmap(const QPixmap &src, int size) {
     if (src.isNull() || size <= 0)
@@ -43,6 +44,121 @@ static QPixmap makeCircularPixmap(const QPixmap &src, int size) {
     return result;
 }
 
+namespace {
+QString cherchPrimaryButtonStyle(int radius = 10, int vPad = 10, int hPad = 16, int fontSize = 13) {
+    return QString(R"(
+        QPushButton {
+            background-color: #3b82f6;
+            color: white;
+            border: none;
+            border-radius: %1px;
+            padding: %2px %3px;
+            font-size: %4px;
+            font-weight: 600;
+        }
+        QPushButton:hover {
+            background-color: #2563eb;
+        }
+        QPushButton:pressed {
+            background-color: #1d4ed8;
+        }
+        QPushButton:focus {
+            border: 2px solid #93c5fd;
+        }
+        QPushButton:disabled {
+            background-color: #cbd5e1;
+            color: #64748b;
+        }
+    )")
+        .arg(radius).arg(vPad).arg(hPad).arg(fontSize);
+}
+
+QString cherchGradientPrimaryButtonStyle(int radius = 10, int vPad = 10, int hPad = 16, int fontSize = 13) {
+    return QString(R"(
+        QPushButton {
+            background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #3b82f6, stop:1 #10b981);
+            color: white;
+            border: none;
+            border-radius: %1px;
+            padding: %2px %3px;
+            font-size: %4px;
+            font-weight: 600;
+        }
+        QPushButton:hover {
+            background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #2563eb, stop:1 #059669);
+        }
+        QPushButton:pressed {
+            background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #1d4ed8, stop:1 #047857);
+        }
+        QPushButton:focus {
+            border: 2px solid #93c5fd;
+        }
+    )")
+        .arg(radius).arg(vPad).arg(hPad).arg(fontSize);
+}
+
+QString cherchSecondaryButtonStyle(int radius = 10, int vPad = 10, int hPad = 16, int fontSize = 13) {
+    return QString(R"(
+        QPushButton {
+            background-color: white;
+            color: #334155;
+            border: 2px solid #e2e8f0;
+            border-radius: %1px;
+            padding: %2px %3px;
+            font-size: %4px;
+            font-weight: 600;
+        }
+        QPushButton:hover {
+            background-color: #f8fafc;
+            border-color: #cbd5e1;
+        }
+        QPushButton:pressed {
+            background-color: #f1f5f9;
+            border-color: #94a3b8;
+        }
+        QPushButton:focus {
+            border-color: #60a5fa;
+        }
+    )")
+        .arg(radius).arg(vPad).arg(hPad).arg(fontSize);
+}
+
+QString cherchCardSurfaceStyle(int radius = 16) {
+    return QString(
+               "QFrame { background-color: #ffffff; border-radius: %1px; border: 1px solid #e2e8f0; }")
+        .arg(radius);
+}
+
+QString cherchSectionTitleStyle() {
+    return QStringLiteral(
+        "font-size: 17px; font-weight: 700; color: #1e293b; background: transparent; border: none;");
+}
+
+QIcon cherchEditIcon(QWidget *w) {
+    QStyle *st = w ? w->style() : QApplication::style();
+    return QIcon::fromTheme(QStringLiteral("document-edit"),
+                            st->standardIcon(QStyle::SP_FileDialogDetailedView));
+}
+
+QIcon cherchDeleteIcon(QWidget *w) {
+    QStyle *st = w ? w->style() : QApplication::style();
+    return QIcon::fromTheme(QStringLiteral("edit-delete"),
+                            st->standardIcon(QStyle::SP_TrashIcon));
+}
+
+QIcon cherchGridIcon(QWidget *w) {
+    QStyle *st = w ? w->style() : QApplication::style();
+    return QIcon::fromTheme(QStringLiteral("view-grid"),
+                            st->standardIcon(QStyle::SP_FileDialogContentsView));
+}
+
+QIcon cherchListIcon(QWidget *w) {
+    QStyle *st = w ? w->style() : QApplication::style();
+    return QIcon::fromTheme(QStringLiteral("view-list-details"),
+                            st->standardIcon(QStyle::SP_FileDialogListView));
+}
+} // namespace
+
 // ============================================================================
 // MODULE CHERCHEURS
 // ============================================================================
@@ -52,25 +168,13 @@ void SmartPub::cherchSetupUI() {
     // ── Bouton toggle vue (icônes/liste) ──────────────────────────────────────
     cherchBtnToggleVue = new QPushButton(this);
     cherchBtnToggleVue->setObjectName("cherchBtnToggleVue");
-    cherchBtnToggleVue->setFixedSize(44, 44);
+    cherchBtnToggleVue->setFixedSize(42, 40);
     cherchBtnToggleVue->setCursor(Qt::PointingHandCursor);
-    cherchBtnToggleVue->setText("⊞");
-    cherchBtnToggleVue->setToolTip("Changer le mode d'affichage");
-    cherchBtnToggleVue->setStyleSheet(R"(
-        QPushButton {
-            background-color: white;
-            color: #334155;
-            border: 2px solid #e2e8f0;
-            border-radius: 10px;
-            font-size: 18px;
-            font-weight: bold;
-        }
-        QPushButton:hover {
-            background-color: #f8fafc;
-            border-color: #3b82f6;
-            color: #3b82f6;
-        }
-    )");
+    cherchBtnToggleVue->setText(QString());
+    cherchBtnToggleVue->setIcon(cherchGridIcon(this));
+    cherchBtnToggleVue->setIconSize(QSize(18, 18));
+    cherchBtnToggleVue->setToolTip("Basculer entre vue grille et liste");
+    cherchBtnToggleVue->setStyleSheet(cherchSecondaryButtonStyle(10, 8, 8, 18));
     if (ui->horizontalLayoutToolbar)
         ui->horizontalLayoutToolbar->insertWidget(1, cherchBtnToggleVue);
     connect(cherchBtnToggleVue, &QPushButton::clicked, this,
@@ -484,62 +588,16 @@ void SmartPub::cherchApplyModernStyle() {
     }
 
     // Toolbar buttons
-    if (ui->cherchBtnRecherche) {
-        ui->cherchBtnRecherche->setStyleSheet(R"(
-            QPushButton {
-                background-color: #3b82f6;
-                color: white;
-                border: none;
-                border-radius: 10px;
-                padding: 10px 16px;
-                font-size: 13px;
-                font-weight: 600;
-            }
-            QPushButton:hover {
-                background-color: #2563eb;
-            }
-        )");
-    }
+    if (ui->cherchBtnRecherche)
+        ui->cherchBtnRecherche->setStyleSheet(cherchPrimaryButtonStyle(10, 10, 16, 13));
 
-    QString cherchSecondaryBtn = R"(
-        QPushButton {
-            background-color: white;
-            color: #334155;
-            border: 2px solid #e2e8f0;
-            border-radius: 10px;
-            padding: 10px 16px;
-            font-size: 13px;
-            font-weight: 600;
-        }
-        QPushButton:hover {
-            background-color: #f8fafc;
-            border-color: #cbd5e1;
-        }
-    )";
+    QString cherchSecondaryBtn = cherchSecondaryButtonStyle(10, 10, 16, 13);
 
     if (ui->cherchBtnTri)
         ui->cherchBtnTri->setStyleSheet(cherchSecondaryBtn);
-    if (ui->cherchBtnExport)
-        ui->cherchBtnExport->setStyleSheet(cherchSecondaryBtn);
 
-    if (ui->cherchBtnStatistiques) {
-        ui->cherchBtnStatistiques->setStyleSheet(R"(
-            QPushButton {
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-                    stop:0 #3b82f6, stop:1 #10b981);
-                color: white;
-                border: none;
-                border-radius: 10px;
-                padding: 10px 16px;
-                font-size: 13px;
-                font-weight: 600;
-            }
-            QPushButton:hover {
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-                    stop:0 #2563eb, stop:1 #059669);
-            }
-        )");
-    }
+    if (ui->cherchBtnStatistiques)
+        ui->cherchBtnStatistiques->setStyleSheet(cherchGradientPrimaryButtonStyle(10, 10, 16, 13));
 
     // Search field
     if (ui->cherchLineEditRecherche) {
@@ -554,6 +612,7 @@ void SmartPub::cherchApplyModernStyle() {
             }
             QLineEdit:focus {
                 border-color: #3b82f6;
+                background-color: #eff6ff;
             }
         )");
     }
@@ -730,42 +789,11 @@ void SmartPub::cherchApplyModernStyle() {
         ui->cherchLabelPhoto->setStyleSheet(cherchLabelStyle);
 
     // Form buttons
-    if (ui->cherchBtnAnnulerAjout) {
-        ui->cherchBtnAnnulerAjout->setStyleSheet(R"(
-            QPushButton {
-                background-color: white;
-                color: #64748b;
-                border: 2px solid #e2e8f0;
-                border-radius: 12px;
-                padding: 12px 32px;
-                font-size: 15px;
-                font-weight: 600;
-            }
-            QPushButton:hover {
-                background-color: #f1f5f9;
-                border-color: #cbd5e1;
-            }
-        )");
-    }
+    if (ui->cherchBtnAnnulerAjout)
+        ui->cherchBtnAnnulerAjout->setStyleSheet(cherchSecondaryButtonStyle(12, 12, 32, 15));
 
-    if (ui->cherchBtnAjouterChercheur) {
-        ui->cherchBtnAjouterChercheur->setStyleSheet(R"(
-            QPushButton {
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-                    stop:0 #10b981, stop:1 #3b82f6);
-                color: white;
-                border: none;
-                border-radius: 12px;
-                padding: 12px 32px;
-                font-size: 15px;
-                font-weight: 600;
-            }
-            QPushButton:hover {
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-                    stop:0 #059669, stop:1 #2563eb);
-            }
-        )");
-    }
+    if (ui->cherchBtnAjouterChercheur)
+        ui->cherchBtnAjouterChercheur->setStyleSheet(cherchGradientPrimaryButtonStyle(12, 12, 32, 15));
 
     // Upload photo button
     if (ui->cherchBtnUploadPhoto) {
@@ -796,11 +824,11 @@ void SmartPub::cherchApplyModernStyle() {
     if (ui->cherchCardsScrollArea) {
         ui->cherchCardsScrollArea->setStyleSheet(R"(
             QScrollArea {
-                background-color: transparent;
+                background-color: #f8fafc;
                 border: none;
             }
             QScrollArea > QWidget > QWidget {
-                background-color: transparent;
+                background-color: #f8fafc;
             }
             QScrollBar:vertical {
                 background-color: #f1f5f9;
@@ -820,6 +848,8 @@ void SmartPub::cherchApplyModernStyle() {
                 height: 0;
             }
         )");
+        ui->cherchCardsScrollArea->setWidgetResizable(true);
+        ui->cherchCardsScrollArea->viewport()->setAttribute(Qt::WA_Hover, true);
     }
 
     if (ui->cherchScrollAreaWidgetContents) {
@@ -1059,8 +1089,10 @@ void SmartPub::cherchAfficherListeChercheurs() {
                     delete oldLayout;
                 }
                 gridLayout = new QGridLayout(ui->cherchScrollAreaWidgetContents);
-                gridLayout->setSpacing(24);
-                gridLayout->setContentsMargins(24, 24, 24, 24);
+                gridLayout->setHorizontalSpacing(20);
+                gridLayout->setVerticalSpacing(20);
+                gridLayout->setContentsMargins(20, 20, 20, 20);
+                gridLayout->setAlignment(Qt::AlignTop);
             }
             QLabel *noDb = new QLabel("Connexion base de données indisponible.",
                                       ui->cherchScrollAreaWidgetContents);
@@ -1121,8 +1153,10 @@ void SmartPub::cherchAfficherListeChercheurs() {
                 delete oldLayout;
             }
             gridLayout = new QGridLayout(ui->cherchScrollAreaWidgetContents);
-            gridLayout->setSpacing(24);
-            gridLayout->setContentsMargins(24, 24, 24, 24);
+            gridLayout->setHorizontalSpacing(20);
+            gridLayout->setVerticalSpacing(20);
+            gridLayout->setContentsMargins(20, 20, 20, 20);
+            gridLayout->setAlignment(Qt::AlignTop);
         }
 
         // --- MODIFICATION : itérer sur orderedIds au lieu de la map ---
@@ -1146,8 +1180,8 @@ void SmartPub::cherchAfficherListeChercheurs() {
                 delete oldLayout;
             }
             listLayout = new QVBoxLayout(ui->cherchScrollAreaWidgetContents);
-            listLayout->setSpacing(12);
-            listLayout->setContentsMargins(24, 24, 24, 24);
+            listLayout->setSpacing(14);
+            listLayout->setContentsMargins(20, 20, 20, 20);
             listLayout->setAlignment(Qt::AlignTop);
         }
 
@@ -1167,7 +1201,7 @@ void SmartPub::cherchAjouterChercheurCard(int id, const QString &nom,
                                           const QString &photoPath) {
     QFrame *card = new QFrame(ui->cherchScrollAreaWidgetContents);
     card->setObjectName(QString("cherchCard_%1").arg(id));
-    card->setFixedSize(340, 200);
+    card->setFixedSize(340, 208);
     card->setProperty("cherchChercheurId", id);
     card->setCursor(Qt::PointingHandCursor);
 
@@ -1178,7 +1212,7 @@ void SmartPub::cherchAjouterChercheurCard(int id, const QString &nom,
             border: 1px solid #e2e8f0;
         }
         QFrame:hover {
-            border: 2px solid #3b82f6;
+            border: 1px solid #3b82f6;
             background-color: #f8fafc;
         }
     )");
@@ -1231,6 +1265,9 @@ void SmartPub::cherchAjouterChercheurCard(int id, const QString &nom,
     QLabel *emailLabel = new QLabel(email, card);
     emailLabel->setStyleSheet("font-size: 13px; color: #64748b; background: "
                               "transparent; border: none;");
+    emailLabel->setWordWrap(false);
+    emailLabel->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    emailLabel->setToolTip(email);
     infoLayout->addWidget(emailLabel);
 
     infoLayout->addStretch();
@@ -1242,37 +1279,33 @@ void SmartPub::cherchAjouterChercheurCard(int id, const QString &nom,
         btnLayout->setSpacing(10);
         btnLayout->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
 
-        QPushButton *btnEdit = new QPushButton("✎", card);
-        btnEdit->setFixedSize(40, 40);
+        QPushButton *btnEdit = new QPushButton(card);
+        btnEdit->setFixedSize(36, 36);
+        btnEdit->setIcon(cherchEditIcon(card));
+        btnEdit->setIconSize(QSize(16, 16));
         btnEdit->setToolTip("Modifier le chercheur");
-        btnEdit->setStyleSheet(R"(
-            QPushButton {
-                background-color: #3b82f6;
-                color: white;
-                border: none;
-                border-radius: 10px;
-                font-size: 16px;
-            }
-            QPushButton:hover {
-                background-color: #2563eb;
-            }
-        )");
+        btnEdit->setStyleSheet(cherchPrimaryButtonStyle(8, 6, 6, 14));
         connect(btnEdit, &QPushButton::clicked, this,
                 [this, id]() { on_cherchModifierChercheur(id); });
 
-        QPushButton *btnDelete = new QPushButton("🗑", card);
-        btnDelete->setFixedSize(40, 40);
+        QPushButton *btnDelete = new QPushButton(card);
+        btnDelete->setFixedSize(36, 36);
+        btnDelete->setIcon(cherchDeleteIcon(card));
+        btnDelete->setIconSize(QSize(16, 16));
         btnDelete->setToolTip("Supprimer le chercheur");
         btnDelete->setStyleSheet(R"(
             QPushButton {
                 background-color: #ef4444;
                 color: white;
                 border: none;
-                border-radius: 10px;
-                font-size: 16px;
+                border-radius: 8px;
+                font-size: 14px;
             }
             QPushButton:hover {
                 background-color: #dc2626;
+            }
+            QPushButton:focus {
+                border: 2px solid #fecaca;
             }
         )");
         connect(btnDelete, &QPushButton::clicked, this,
@@ -1291,20 +1324,18 @@ void SmartPub::cherchAjouterChercheurCard(int id, const QString &nom,
         qobject_cast<QGridLayout *>(ui->cherchScrollAreaWidgetContents->layout());
     if (grid) {
         int count = grid->count();
-        int row = count / 3;
-        int col = count % 3;
-        grid->addWidget(card, row, col, Qt::AlignTop);
+        const int cardWidth = card->width();
+        const int spacing = qMax(0, grid->horizontalSpacing());
+        const int horizontalMargins = grid->contentsMargins().left() + grid->contentsMargins().right();
+        const int viewportWidth = ui->cherchCardsScrollArea
+                                      ? ui->cherchCardsScrollArea->viewport()->width()
+                                      : ui->cherchScrollAreaWidgetContents->width();
+        const int usableWidth = qMax(cardWidth, viewportWidth - horizontalMargins);
+        const int columns = qMax(1, (usableWidth + spacing) / (cardWidth + spacing));
 
-        // Animation
-        QGraphicsOpacityEffect *opacityEffect = new QGraphicsOpacityEffect(card);
-        opacityEffect->setOpacity(0.0);
-        card->setGraphicsEffect(opacityEffect);
-        QPropertyAnimation *anim = new QPropertyAnimation(opacityEffect, "opacity");
-        anim->setDuration(400);
-        anim->setStartValue(0.0);
-        anim->setEndValue(1.0);
-        anim->setEasingCurve(QEasingCurve::OutCubic);
-        anim->start(QAbstractAnimation::DeleteWhenStopped);
+        int row = count / columns;
+        int col = count % columns;
+        grid->addWidget(card, row, col, Qt::AlignTop | Qt::AlignHCenter);
     }
 }
 
@@ -1326,7 +1357,7 @@ void SmartPub::cherchAjouterChercheurListItem(int id, const QString &nom,
             border: 1px solid #e2e8f0;
         }
         QFrame:hover {
-            border: 2px solid #3b82f6;
+            border: 1px solid #3b82f6;
             background-color: #f8fafc;
         }
     )");
@@ -1352,8 +1383,11 @@ void SmartPub::cherchAjouterChercheurListItem(int id, const QString &nom,
     QLabel *nameLabel = new QLabel(QString("%1 %2").arg(prenom).arg(nom));
     nameLabel->setStyleSheet("font-size: 16px; font-weight: 600; color: #1e293b; "
                              "background: transparent; border: none;");
-    nameLabel->setFixedWidth(200);
-    mainLayout->addWidget(nameLabel);
+    nameLabel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+    nameLabel->setMinimumWidth(140);
+    nameLabel->setWordWrap(false);
+    nameLabel->setToolTip(QString("%1 %2").arg(prenom).arg(nom));
+    mainLayout->addWidget(nameLabel, 2);
 
     QLabel *gradeLabel = new QLabel(grade);
     gradeLabel->setStyleSheet(R"(
@@ -1364,35 +1398,32 @@ void SmartPub::cherchAjouterChercheurListItem(int id, const QString &nom,
         padding: 4px 12px;
         border-radius: 12px;
     )");
-    gradeLabel->setFixedWidth(150);
+    gradeLabel->setMinimumWidth(130);
+    gradeLabel->setMaximumWidth(170);
+    gradeLabel->setAlignment(Qt::AlignCenter);
     mainLayout->addWidget(gradeLabel);
 
     QLabel *emailLabel = new QLabel(email);
     emailLabel->setStyleSheet("font-size: 13px; color: #64748b; background: "
                               "transparent; border: none;");
+    emailLabel->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    emailLabel->setToolTip(email);
     mainLayout->addWidget(emailLabel, 1);
 
     if (currentUser.role == UserRole::Admin) {
-        QPushButton *btnEdit = new QPushButton("✎");
+        QPushButton *btnEdit = new QPushButton();
         btnEdit->setFixedSize(36, 36);
+        btnEdit->setIcon(cherchEditIcon(item));
+        btnEdit->setIconSize(QSize(16, 16));
         btnEdit->setToolTip("Modifier");
-        btnEdit->setStyleSheet(R"(
-            QPushButton {
-                background-color: #3b82f6;
-                color: white;
-                border: none;
-                border-radius: 8px;
-                font-size: 14px;
-            }
-            QPushButton:hover {
-                background-color: #2563eb;
-            }
-        )");
+        btnEdit->setStyleSheet(cherchPrimaryButtonStyle(8, 6, 6, 14));
         connect(btnEdit, &QPushButton::clicked, this,
                 [this, id]() { on_cherchModifierChercheur(id); });
 
-        QPushButton *btnDelete = new QPushButton("🗑");
+        QPushButton *btnDelete = new QPushButton();
         btnDelete->setFixedSize(36, 36);
+        btnDelete->setIcon(cherchDeleteIcon(item));
+        btnDelete->setIconSize(QSize(16, 16));
         btnDelete->setToolTip("Supprimer");
         btnDelete->setStyleSheet(R"(
             QPushButton {
@@ -1420,17 +1451,6 @@ void SmartPub::cherchAjouterChercheurListItem(int id, const QString &nom,
         qobject_cast<QVBoxLayout *>(ui->cherchScrollAreaWidgetContents->layout());
     if (list) {
         list->addWidget(item);
-
-        // Animation
-        QGraphicsOpacityEffect *opacityEffect = new QGraphicsOpacityEffect(item);
-        opacityEffect->setOpacity(0.0);
-        item->setGraphicsEffect(opacityEffect);
-        QPropertyAnimation *anim = new QPropertyAnimation(opacityEffect, "opacity");
-        anim->setDuration(400);
-        anim->setStartValue(0.0);
-        anim->setEndValue(1.0);
-        anim->setEasingCurve(QEasingCurve::OutCubic);
-        anim->start(QAbstractAnimation::DeleteWhenStopped);
     }
 }
 
@@ -1454,37 +1474,16 @@ void SmartPub::on_cherchBtnVueListe_clicked() {
         ui->cherchLineEditRecherche->setVisible(true);
         ui->cherchBtnRecherche->setVisible(true);
         ui->cherchBtnTri->setVisible(true);
-        ui->cherchBtnExport->setVisible(true);
         ui->cherchBtnStatistiques->setVisible(true);
         if (cherchBtnToggleVue)
             cherchBtnToggleVue->setVisible(true);
 
-        ui->cherchBtnVueListe->setStyleSheet(R"(
-            QPushButton {
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #3b82f6, stop:1 #10b981);
-                color: white;
-                border: none;
-                border-radius: 8px;
-                padding: 8px 16px;
-                font-size: 13px;
-                font-weight: 600;
-            }
-        )");
-        ui->cherchBtnAjouter->setStyleSheet(R"(
-            QPushButton {
-                background-color: transparent;
-                color: #64748b;
-                border: none;
-                border-radius: 8px;
-                padding: 8px 16px;
-                font-size: 13px;
-                font-weight: 500;
-            }
-            QPushButton:hover {
-                background-color: #f1f5f9;
-                color: #334155;
-            }
-        )");
+        ui->cherchBtnVueListe->setStyleSheet(cherchGradientPrimaryButtonStyle(8, 8, 16, 13));
+        ui->cherchBtnAjouter->setStyleSheet(
+            "QPushButton { background-color: transparent; color: #64748b; border: none; "
+            "border-radius: 8px; padding: 8px 16px; font-size: 13px; font-weight: 500; }"
+            "QPushButton:hover { background-color: #f1f5f9; color: #334155; }"
+            "QPushButton:focus { border: 1px solid #93c5fd; }");
 
         ui->cherchBtnVueListe->setChecked(true);
         ui->cherchBtnAjouter->setChecked(false);
@@ -1499,37 +1498,16 @@ void SmartPub::on_cherchBtnAjouter_clicked() {
         ui->cherchLineEditRecherche->setVisible(false);
         ui->cherchBtnRecherche->setVisible(false);
         ui->cherchBtnTri->setVisible(false);
-        ui->cherchBtnExport->setVisible(false);
         ui->cherchBtnStatistiques->setVisible(false);
         if (cherchBtnToggleVue)
             cherchBtnToggleVue->setVisible(false);
 
-        ui->cherchBtnVueListe->setStyleSheet(R"(
-            QPushButton {
-                background-color: transparent;
-                color: #64748b;
-                border: none;
-                border-radius: 8px;
-                padding: 8px 16px;
-                font-size: 13px;
-                font-weight: 500;
-            }
-            QPushButton:hover {
-                background-color: #f1f5f9;
-                color: #334155;
-            }
-        )");
-        ui->cherchBtnAjouter->setStyleSheet(R"(
-            QPushButton {
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #3b82f6, stop:1 #10b981);
-                color: white;
-                border: none;
-                border-radius: 8px;
-                padding: 8px 16px;
-                font-size: 13px;
-                font-weight: 600;
-            }
-        )");
+        ui->cherchBtnVueListe->setStyleSheet(
+            "QPushButton { background-color: transparent; color: #64748b; border: none; "
+            "border-radius: 8px; padding: 8px 16px; font-size: 13px; font-weight: 500; }"
+            "QPushButton:hover { background-color: #f1f5f9; color: #334155; }"
+            "QPushButton:focus { border: 1px solid #93c5fd; }");
+        ui->cherchBtnAjouter->setStyleSheet(cherchGradientPrimaryButtonStyle(8, 8, 16, 13));
 
         ui->cherchBtnVueListe->setChecked(false);
         ui->cherchBtnAjouter->setChecked(true);
@@ -1540,11 +1518,13 @@ void SmartPub::on_cherchBtnAjouter_clicked() {
 void SmartPub::on_cherchBtnToggleVue_clicked() {
     cherchVueIconesActive = !cherchVueIconesActive;
     if (cherchVueIconesActive) {
-        cherchBtnToggleVue->setText("⊞");
+        cherchBtnToggleVue->setText(QString());
+        cherchBtnToggleVue->setIcon(cherchGridIcon(this));
         cherchBtnToggleVue->setToolTip("Passer en mode liste");
     } else {
-        cherchBtnToggleVue->setText("☰");
-        cherchBtnToggleVue->setToolTip("Passer en mode icônes");
+        cherchBtnToggleVue->setText(QString());
+        cherchBtnToggleVue->setIcon(cherchListIcon(this));
+        cherchBtnToggleVue->setToolTip("Passer en mode grille");
     }
     cherchAfficherListeChercheurs();
 }
@@ -1592,17 +1572,17 @@ void SmartPub::on_cherchBtnTri_clicked() {
         }
     )");
 
-    menu->addAction("⬆️  Nom (A → Z)", this,
+    menu->addAction("Nom (A → Z)", this,
                     [this]() { cherchTrierParNom(true); });
-    menu->addAction("⬇️  Nom (Z → A)", this,
+    menu->addAction("Nom (Z → A)", this,
                     [this]() { cherchTrierParNom(false); });
     menu->addSeparator();
-    menu->addAction("🎓  Grade (Hiérarchie académique)", this,
+    menu->addAction("Grade (Hiérarchie académique)", this,
                     [this]() { cherchTrierParGrade(); });
     menu->addSeparator();
-    menu->addAction("🕐  Date d'ajout (Plus récent)", this,
+    menu->addAction("Date d'ajout (Plus récent)", this,
                     [this]() { cherchTrierParDateCreation(true); });
-    menu->addAction("🕓  Date d'ajout (Plus ancien)", this,
+    menu->addAction("Date d'ajout (Plus ancien)", this,
                     [this]() { cherchTrierParDateCreation(false); });
 
     menu->exec(QCursor::pos());
@@ -1631,129 +1611,6 @@ void SmartPub::cherchTrierParDateCreation(bool croissant) {
     // ID_CHERCHEUR auto-incrémenté via séquence Oracle = proxy fiable de la date d'insertion
     cherchOrderByClause = croissant ? "ID_CHERCHEUR DESC" : "ID_CHERCHEUR ASC";
     cherchAfficherListeChercheurs();
-}
-
-void SmartPub::on_cherchBtnExport_clicked() {
-    QString fileName = QFileDialog::getSaveFileName(
-        this, "Exporter la liste des chercheurs",
-        QDir::homePath() + "/Chercheurs_SmartPub.csv",
-        "Fichier CSV (*.csv)");
-    if (fileName.isEmpty())
-        return;
-
-    QFile file(fileName);
-    if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
-        QMessageBox::critical(this, "Erreur",
-                              "Impossible de créer le fichier :\n" + fileName);
-        return;
-    }
-
-    // UTF-8 avec BOM pour que Excel reconnaisse l'encodage correctement
-    QTextStream stream(&file);
-    stream.setEncoding(QStringConverter::Utf8);
-    stream << "\xEF\xBB\xBF"; // BOM UTF-8
-
-    // ── Helper : encapsuler une valeur dans des guillemets CSV ────────────────
-    // Règle CSV : si la valeur contient ",", "\n" ou '"', on entoure de guillemets
-    // et on double les guillemets internes.
-    auto csvCell = [](const QString &val) -> QString {
-        QString v = val;
-        v.replace(QLatin1Char('"'), QStringLiteral("\"\""));  // doubler les guillemets
-        // Toujours encapsuler pour garantir la lisibilité dans Excel/LibreOffice
-        return QStringLiteral("\"") + v + QStringLiteral("\"");
-    };
-
-    // ── En-tête ───────────────────────────────────────────────────────────────
-    QStringList headers = {
-        "ID",
-        "Nom",
-        "Prénom",
-        "Grade",
-        "Email",
-        "CIN",
-        "Carrière",
-        "Nb Projets",
-        "Codes Projets",
-        "Titres des Projets"
-    };
-    stream << headers.join(";") << "\n";   // séparateur ";" — standard FR pour Excel
-
-    // ── Charger les projets depuis la BD pour chaque chercheur ────────────────
-    QSqlDatabase db = Connection::instance()->getDatabase();
-
-    // Précharger TOUS les projets par chercheur en une seule requête
-    // Structure : idChercheur → liste de "CODE — TITRE"
-    QHash<int, QStringList> projetsParChercheur;
-    QHash<int, QStringList> codesParChercheur;
-    if (db.isOpen()) {
-        QSqlQuery qProj(db);
-        if (qProj.exec(
-                QStringLiteral(
-                    "SELECT c.ID_CHERCHEUR, p.CODE, p.TITRE "
-                    "FROM CONTRIBUER c "
-                    "INNER JOIN PROJET p ON p.ID_PROJET = c.ID_PROJET "
-                    "ORDER BY c.ID_CHERCHEUR, p.CODE"))) {
-            while (qProj.next()) {
-                int    cid   = qProj.value(0).toInt();
-                QString code = qProj.value(1).toString();
-                QString titre = qProj.value(2).toString();
-                codesParChercheur[cid].append(code);
-                projetsParChercheur[cid].append(
-                    QString("[%1] %2").arg(code, titre));
-            }
-        }
-    }
-
-    // ── Lignes de données ─────────────────────────────────────────────────────
-    // Trier par ID pour un export ordonné
-    QList<int> ids = cherchChercheursMap.keys();
-    std::sort(ids.begin(), ids.end());
-
-    int nbExportes = 0;
-    for (int id : ids) {
-        const ChercheurData &d = cherchChercheursMap.value(id);
-
-        // Projets : codes séparés par " | " et titres séparés par " | "
-        QStringList codes  = codesParChercheur.value(id);
-        QStringList titres = projetsParChercheur.value(id);
-
-        QString codesStr  = codes.isEmpty()  ? "—" : codes.join(" | ");
-        QString titresStr = titres.isEmpty() ? "Aucun projet" : titres.join(" | ");
-
-        // Carrière calculée depuis nb projets + grade (déjà dans le cache)
-        QString carriere = d.carriere.isEmpty()
-                               ? cherchDeterminerCarriere(d.projetsIds.size(), d.grade)
-                               : d.carriere;
-
-        QStringList row = {
-            csvCell(QString::number(id)),
-            csvCell(d.nom),
-            csvCell(d.prenom),
-            csvCell(d.grade.isEmpty()    ? "—" : d.grade),
-            csvCell(d.email.isEmpty()    ? "—" : d.email),
-            csvCell(d.cin.isEmpty()      ? "—" : d.cin),
-            csvCell(carriere.isEmpty()   ? "—" : carriere),
-            csvCell(QString::number(codes.size())),
-            csvCell(codesStr),
-            csvCell(titresStr)
-        };
-
-        stream << row.join(";") << "\n";
-        ++nbExportes;
-    }
-
-    file.close();
-
-    QMessageBox::information(
-        this,
-        "Export réussi",
-        QString("✅  %1 chercheur(s) exporté(s) avec succès.\n\n"
-                "Fichier :\n%2\n\n"
-                "💡 Conseil : ouvrez le fichier avec Excel ou LibreOffice Calc.\n"
-                "    Si les colonnes ne se séparent pas, utilisez\n"
-                "    Données → Convertir → Délimiteur : point-virgule.")
-            .arg(nbExportes)
-            .arg(fileName));
 }
 
 void SmartPub::on_cherchBtnStatistiques_clicked() {
@@ -1945,13 +1802,7 @@ QComboBox, QSpinBox {
     auto createStatCard = [](const QString &title, const QString &value,
                              const QString &color) -> QFrame * {
         QFrame *card = new QFrame();
-        card->setStyleSheet(QString(R"(
-            QFrame {
-                background-color: white;
-                border-radius: 16px;
-                border: 1px solid #e2e8f0;
-            }
-        )"));
+        card->setStyleSheet(cherchCardSurfaceStyle(16));
         card->setMinimumHeight(120);
         QVBoxLayout *layout = new QVBoxLayout(card);
         layout->setSpacing(8);
@@ -2083,16 +1934,13 @@ QComboBox, QSpinBox {
 
         // ── Graphe groupé : Chercheurs & Publications par laboratoire ─────────────
         QFrame *chartsFrame = new QFrame();
-        chartsFrame->setStyleSheet(
-            "QFrame { background-color: #ffffff; border-radius: 16px; border: 1px solid #e2e8f0; }");
+        chartsFrame->setStyleSheet(cherchCardSurfaceStyle(16));
         QVBoxLayout *chartsFrameLay = new QVBoxLayout(chartsFrame);
         chartsFrameLay->setContentsMargins(20, 20, 20, 20);
         chartsFrameLay->setSpacing(12);
 
         QLabel *chartsTitle = new QLabel("Statistiques par laboratoire");
-        chartsTitle->setStyleSheet(
-            "font-size: 17px; font-weight: 600; color: #1e293b; "
-            "background: transparent; border: none;");
+        chartsTitle->setStyleSheet(cherchSectionTitleStyle());
         chartsFrameLay->addWidget(chartsTitle);
 
         if (labStats.isEmpty()) {
@@ -2260,14 +2108,13 @@ QComboBox, QSpinBox {
 
     QFrame *gradeFrame = new QFrame();
     gradeFrame->setStyleSheet(
-        "QFrame { background-color: #ffffff; border-radius: 16px; "
-        "border: 1px solid #e2e8f0; } "
+        "QFrame { background-color: #ffffff; border-radius: 16px; border: 1px solid #e2e8f0; } "
         "QFrame QLabel { background: transparent; border: none; } "
         "QFrame QProgressBar { border: none; }");
     QVBoxLayout *gradeLay = new QVBoxLayout(gradeFrame);
     gradeLay->setContentsMargins(20, 20, 20, 20);
     QLabel *gradeTitle = new QLabel("Répartition par grade");
-    gradeTitle->setStyleSheet("font-size: 17px; font-weight: 600; color: #1e293b;");
+    gradeTitle->setStyleSheet(cherchSectionTitleStyle());
     gradeLay->addWidget(gradeTitle);
 
     QMap<QString, int> gradeCount;
@@ -2297,14 +2144,13 @@ QComboBox, QSpinBox {
 
     QFrame *overloadFrame = new QFrame();
     overloadFrame->setStyleSheet(
-        "QFrame { background-color: #ffffff; border-radius: 16px; "
-        "border: 1px solid #e2e8f0; } "
+        "QFrame { background-color: #ffffff; border-radius: 16px; border: 1px solid #e2e8f0; } "
         "QFrame QLabel { background: transparent; border: none; } "
         "QFrame QProgressBar { border: none; }");
     QVBoxLayout *overloadLayout = new QVBoxLayout(overloadFrame);
     overloadLayout->setContentsMargins(20, 20, 20, 20);
     QLabel *overloadTitle = new QLabel("Indice de surcharge par chercheur");
-    overloadTitle->setStyleSheet("font-size: 17px; font-weight: 600; color: #1e293b;");
+    overloadTitle->setStyleSheet(cherchSectionTitleStyle());
     overloadLayout->addWidget(overloadTitle);
 
     QHBoxLayout *headerRow = new QHBoxLayout();
@@ -2403,7 +2249,7 @@ QComboBox, QSpinBox {
     // ── Carte : Sélection du chercheur + critères ─────────────────────────────
     QFrame *promoFormCard = new QFrame();
     promoFormCard->setStyleSheet(
-        "QFrame { background-color: #ffffff; border-radius: 14px; border: 1px solid #e2e8f0; }"
+        "QFrame { background-color: #ffffff; border-radius: 16px; border: 1px solid #e2e8f0; }"
         "QLabel { background: transparent; border: none; color: #334155; font-size: 13px; font-weight: 600; }"
         "QComboBox, QSpinBox { background-color: #ffffff; border: 2px solid #e2e8f0; border-radius: 8px; "
         "                      padding: 6px 10px; color: #1e293b; font-size: 13px; }"
@@ -2416,7 +2262,7 @@ QComboBox, QSpinBox {
     promoFormCardLay->setContentsMargins(20, 16, 20, 16);
     promoFormCardLay->setSpacing(10);
 
-    QLabel *promoFormTitle = new QLabel("⚙️  Paramètres d'évaluation");
+    QLabel *promoFormTitle = new QLabel("Paramètres d'évaluation");
     promoFormTitle->setStyleSheet(
         "font-size: 15px; font-weight: 700; color: #1e293b; "
         "background: transparent; border: none;");
@@ -2454,7 +2300,7 @@ QComboBox, QSpinBox {
     // ── Carte : Score visuel ──────────────────────────────────────────────────
     QFrame *scoreCard = new QFrame();
     scoreCard->setStyleSheet(
-        "QFrame { background-color: #ffffff; border-radius: 14px; border: 1px solid #e2e8f0; }"
+        "QFrame { background-color: #ffffff; border-radius: 16px; border: 1px solid #e2e8f0; }"
         "QLabel { background: transparent; border: none; }");
     QHBoxLayout *scoreLay = new QHBoxLayout(scoreCard);
     scoreLay->setContentsMargins(20, 16, 20, 16);
@@ -2500,13 +2346,13 @@ QComboBox, QSpinBox {
     // ── Carte : Détails des critères ──────────────────────────────────────────
     QFrame *detailsCard = new QFrame();
     detailsCard->setStyleSheet(
-        "QFrame { background-color: #ffffff; border-radius: 14px; border: 1px solid #e2e8f0; }"
+        "QFrame { background-color: #ffffff; border-radius: 16px; border: 1px solid #e2e8f0; }"
         "QLabel { background: transparent; border: none; }");
     QVBoxLayout *detailsCardLay = new QVBoxLayout(detailsCard);
     detailsCardLay->setContentsMargins(20, 14, 20, 14);
     detailsCardLay->setSpacing(8);
 
-    QLabel *detailsTitle = new QLabel("📋  Détail des critères");
+    QLabel *detailsTitle = new QLabel("Détail des critères");
     detailsTitle->setStyleSheet(
         "font-size: 14px; font-weight: 700; color: #1e293b; "
         "background: transparent; border: none;");
@@ -2539,22 +2385,19 @@ QComboBox, QSpinBox {
     promoLay->addWidget(detailsCard);
 
     // ── Boutons en bas : Évaluer (gauche) + Promouvoir (droite) ──────────────
-    QPushButton *btnEvalPromo = new QPushButton("🔍  Évaluer l'éligibilité");
+    QPushButton *btnEvalPromo = new QPushButton("Évaluer l'éligibilité");
     btnEvalPromo->setCursor(Qt::PointingHandCursor);
-    btnEvalPromo->setStyleSheet(
-        "QPushButton { background-color: #3b82f6; color: white; border: none; "
-        "border-radius: 10px; padding: 10px 22px; font-weight: 600; font-size: 13px; }"
-        "QPushButton:hover { background-color: #2563eb; }");
+    btnEvalPromo->setStyleSheet(cherchPrimaryButtonStyle(10, 10, 22, 13));
 
-    QPushButton *btnPromote = new QPushButton("⬆️  Promouvoir ce chercheur");
+    QPushButton *btnPromote = new QPushButton("Promouvoir ce chercheur");
     btnPromote->setCursor(Qt::PointingHandCursor);
     btnPromote->setEnabled(false); // Désactivé tant que non éligible
     btnPromote->setStyleSheet(
-        "QPushButton { background-color: #d1fae5; color: #065f46; border: 2px solid #a7f3d0; "
+        "QPushButton { background-color: #f1f5f9; color: #94a3b8; border: 2px solid #e2e8f0; "
         "border-radius: 10px; padding: 10px 22px; font-weight: 600; font-size: 13px; }"
         "QPushButton:enabled { background-color: #10b981; color: white; border: 2px solid #059669; }"
         "QPushButton:enabled:hover { background-color: #059669; }"
-        "QPushButton:disabled { background-color: #f1f5f9; color: #94a3b8; border: 2px solid #e2e8f0; }");
+        "QPushButton:enabled:focus { border: 2px solid #86efac; }");
 
     QHBoxLayout *btnRow = new QHBoxLayout();
     btnRow->addWidget(btnEvalPromo, 0, Qt::AlignLeft);
@@ -2616,7 +2459,7 @@ QComboBox, QSpinBox {
             promoVerdict->setText(verdictHtml);
             btnPromote->setEnabled(!next.isEmpty());
             if (!next.isEmpty())
-                btnPromote->setText(QString("⬆️  Promouvoir → %1").arg(next));
+                btnPromote->setText(QString("Promouvoir -> %1").arg(next));
         } else {
             // Couleur rouge
             scoreCircle->setStyleSheet(
@@ -2631,7 +2474,7 @@ QComboBox, QSpinBox {
                 "<span style='color:#b91c1c;font-weight:700;font-size:16px'>❌ Non éligible</span>"
                 " — critères non atteints");
             btnPromote->setEnabled(false);
-            btnPromote->setText("⬆️  Promouvoir ce chercheur");
+            btnPromote->setText("Promouvoir ce chercheur");
         }
 
         promoDetails->clear();
@@ -2723,10 +2566,7 @@ QComboBox, QSpinBox {
     }
     QPushButton *btnMatch = new QPushButton("Actualiser les suggestions");
     btnMatch->setCursor(Qt::PointingHandCursor);
-    btnMatch->setStyleSheet(
-        "QPushButton { background-color: #10b981; color: white; border: none; border-radius: 10px; "
-        "padding: 10px 20px; font-weight: 600; }"
-        "QPushButton:hover { background-color: #059669; }");
+    btnMatch->setStyleSheet(cherchGradientPrimaryButtonStyle(10, 10, 20, 13));
     matchRow->addWidget(new QLabel("Chercheur de référence:"));
     matchRow->addWidget(comboMatch, 1);
     matchRow->addWidget(btnMatch);
@@ -2830,10 +2670,7 @@ QComboBox, QSpinBox {
 
     QPushButton *btnClose = new QPushButton("Fermer", dialog);
     btnClose->setCursor(Qt::PointingHandCursor);
-    btnClose->setStyleSheet(
-        "QPushButton { background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #3b82f6, stop:1 #10b981); "
-        "color: white; border: none; border-radius: 12px; padding: 12px 40px; font-size: 15px; font-weight: 600; }"
-        "QPushButton:hover { background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #2563eb, stop:1 #059669); }");
+    btnClose->setStyleSheet(cherchGradientPrimaryButtonStyle(12, 12, 40, 15));
     connect(btnClose, &QPushButton::clicked, dialog, &QDialog::accept);
     mainLayout->addWidget(btnClose, 0, Qt::AlignCenter);
 
@@ -3170,10 +3007,7 @@ void SmartPub::on_cherchModifierChercheur(int id) {
     photoTitle->setStyleSheet(labelStyle);
     photoCol->addWidget(photoTitle);
     QPushButton *btnChangerPhoto = new QPushButton("Changer la photo");
-    btnChangerPhoto->setStyleSheet(R"(
-        QPushButton { background-color: #e2e8f0; color: #334155; border: none; border-radius: 8px; padding: 7px 14px; font-size: 12px; font-weight: 500; }
-        QPushButton:hover { background-color: #cbd5e1; }
-    )");
+    btnChangerPhoto->setStyleSheet(cherchSecondaryButtonStyle(8, 7, 14, 12));
     connect(btnChangerPhoto, &QPushButton::clicked, &dialog, [&dialog, photoLabel, &newPhotoPath]() {
         QString path = QFileDialog::getOpenFileName(&dialog, "Choisir une photo", QDir::homePath(), "Images (*.png *.jpg *.jpeg)");
         if (path.isEmpty()) return;
@@ -3365,7 +3199,7 @@ void SmartPub::on_cherchModifierChercheur(int id) {
                 }
             });
 
-    QPushButton *btnValiderModif = new QPushButton("✔  Valider la sélection");
+    QPushButton *btnValiderModif = new QPushButton("Valider la sélection");
     btnValiderModif->setCursor(Qt::PointingHandCursor);
     btnValiderModif->setVisible(false);
     btnValiderModif->setFixedHeight(38);
@@ -3440,21 +3274,10 @@ void SmartPub::on_cherchModifierChercheur(int id) {
     QHBoxLayout *footerHL = new QHBoxLayout(footerFrame);
     footerHL->setContentsMargins(24, 0, 24, 0);
     footerHL->addStretch();
-    QPushButton *btnSave = new QPushButton("💾  Sauvegarder");
+    QPushButton *btnSave = new QPushButton("Sauvegarder");
     btnSave->setFixedHeight(42);
     btnSave->setCursor(Qt::PointingHandCursor);
-    btnSave->setStyleSheet(R"(
-        QPushButton {
-            background: qlineargradient(x1:0,y1:0,x2:1,y2:0,
-                stop:0 #3b82f6, stop:1 #10b981);
-            color: white; border: none; border-radius: 10px;
-            padding: 0 32px; font-size: 14px; font-weight: 600;
-        }
-        QPushButton:hover {
-            background: qlineargradient(x1:0,y1:0,x2:1,y2:0,
-                stop:0 #2563eb, stop:1 #059669);
-        }
-    )");
+    btnSave->setStyleSheet(cherchGradientPrimaryButtonStyle(10, 10, 32, 14));
     footerHL->addWidget(btnSave);
     dialogMainLayout->addWidget(footerFrame);
 
@@ -3952,25 +3775,9 @@ void SmartPub::on_cherchVoirDetailsChercheur(int id) {
     footerLayout->setContentsMargins(24, 0, 24, 0);
     footerLayout->setSpacing(12);
 
-    QPushButton *btnExport = new QPushButton("📄  Exporter en PDF");
+    QPushButton *btnExport = new QPushButton("Exporter en PDF");
     btnExport->setCursor(Qt::PointingHandCursor);
-    btnExport->setStyleSheet(R"(
-        QPushButton {
-            background-color: white;
-            color: #334155;
-            border: 2px solid #e2e8f0;
-            border-radius: 10px;
-            padding: 0 22px;
-            font-size: 13px;
-            font-weight: 600;
-            min-height: 42px;
-        }
-        QPushButton:hover {
-            background-color: #eff6ff;
-            border-color: #3b82f6;
-            color: #1d4ed8;
-        }
-    )");
+    btnExport->setStyleSheet(cherchSecondaryButtonStyle(10, 10, 22, 13));
 
     // ── Lambda export PDF capturant id, data et projetsTitres ─────────────────
     connect(btnExport, &QPushButton::clicked, dialog,
@@ -4155,23 +3962,7 @@ void SmartPub::on_cherchVoirDetailsChercheur(int id) {
 
     QPushButton *btnClose = new QPushButton("Fermer");
     btnClose->setCursor(Qt::PointingHandCursor);
-    btnClose->setStyleSheet(R"(
-        QPushButton {
-            background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-                stop:0 #3b82f6, stop:1 #10b981);
-            color: white;
-            border: none;
-            border-radius: 10px;
-            padding: 0 30px;
-            font-size: 14px;
-            font-weight: 600;
-            min-height: 42px;
-        }
-        QPushButton:hover {
-            background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-                stop:0 #2563eb, stop:1 #059669);
-        }
-    )");
+    btnClose->setStyleSheet(cherchGradientPrimaryButtonStyle(10, 10, 30, 14));
     connect(btnClose, &QPushButton::clicked, dialog, &QDialog::accept);
 
     footerLayout->addWidget(btnExport);
@@ -4206,7 +3997,6 @@ void SmartPub::handleChercheursNavigation() {
     ui->cherchLineEditRecherche->setVisible(true);
     ui->cherchBtnRecherche->setVisible(true);
     ui->cherchBtnTri->setVisible(true);
-    ui->cherchBtnExport->setVisible(true);
     ui->cherchBtnStatistiques->setVisible(true);
     if (cherchBtnToggleVue)
         cherchBtnToggleVue->setVisible(true);

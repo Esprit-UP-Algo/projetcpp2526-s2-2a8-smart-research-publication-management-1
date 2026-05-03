@@ -353,7 +353,7 @@ void SettingsDialog::setupUI()
     contentLayout->setContentsMargins(25, 25, 25, 25);
 
     // Section Apparence
-    QGroupBox *appearanceGroup = new QGroupBox("🎨 Apparence");
+    QGroupBox *appearanceGroup = new QGroupBox("Apparence");
     appearanceGroup->setStyleSheet(
         "QGroupBox {"
         "    font-weight: bold;"
@@ -382,8 +382,8 @@ void SettingsDialog::setupUI()
     themeLabel->setStyleSheet("font-weight: 500; color: #334155;");
 
     themeCombo = new QComboBox();
-    themeCombo->addItem("🌙 Sombre");
-    themeCombo->addItem("☀️ Clair");
+    themeCombo->addItem("Sombre");
+    themeCombo->addItem("Clair");
     themeCombo->setStyleSheet(
         "QComboBox {"
         "    background-color: #f8fafc;"
@@ -403,8 +403,10 @@ void SettingsDialog::setupUI()
     langLabel->setStyleSheet("font-weight: 500; color: #334155;");
 
     langCombo = new QComboBox();
-    langCombo->addItem("🇫🇷 Français");
-    langCombo->addItem("🇬🇧 English");
+    langCombo->addItem("Français");
+    langCombo->addItem("English");
+    // const QString appLang = qApp->property("appLang").toString();
+    // langCombo->setCurrentIndex(appLang == QStringLiteral("en") ? 1 : 0);
     langCombo->setStyleSheet(
         "QComboBox {"
         "    background-color: #f8fafc;"
@@ -422,7 +424,7 @@ void SettingsDialog::setupUI()
     contentLayout->addWidget(appearanceGroup);
 
     // Section Notifications
-    QGroupBox *notifGroup = new QGroupBox("🔔 Notifications");
+    QGroupBox *notifGroup = new QGroupBox("Notifications");
     notifGroup->setStyleSheet(
         "QGroupBox {"
         "    font-weight: bold;"
@@ -462,7 +464,7 @@ void SettingsDialog::setupUI()
     contentLayout->addWidget(notifGroup);
 
     // Section Sauvegarde
-    QGroupBox *saveGroup = new QGroupBox("💾 Sauvegarde");
+    QGroupBox *saveGroup = new QGroupBox("Sauvegarde");
     saveGroup->setStyleSheet(
         "QGroupBox {"
         "    font-weight: bold;"
@@ -514,7 +516,7 @@ void SettingsDialog::setupUI()
     intervalLayout->addStretch();
     saveLayout->addLayout(intervalLayout);
 
-    QPushButton *backupNowBtn = new QPushButton("💾 Sauvegarder maintenant");
+    QPushButton *backupNowBtn = new QPushButton("Sauvegarder maintenant");
     backupNowBtn->setStyleSheet(
         "QPushButton {"
         "    background-color: #3b82f6;"
@@ -616,11 +618,18 @@ SmartPub::SmartPub(QWidget *parent)
     arduino       = nullptr;
     scenarioAcces = nullptr;
     scenarioProgramme = nullptr;
+    scenarioIncendie  = nullptr;
 
     arduino = new Arduino();
     if (arduino->connect_arduino() == 0) {
         qDebug() << "[SmartPub] Arduino connecte sur"
                  << arduino->getarduino_port_name();
+
+        // --- Demi Scenario 3 : instancié EN PREMIER pour que son slot
+        //     readyRead soit appelé avant celui de Scenario1 (ordre Qt) ---
+        scenarioIncendie = new DemiScenario3(arduino, this);
+        connect(scenarioIncendie, &DemiScenario3::laboDesactive,
+                this, &SmartPub::on_laboDesactive);
 
         // --- Scenario 1 : controle acces laboratoire (ID labo = 1) ---
         scenarioAcces = new Scenario1(arduino, 1);
@@ -1506,6 +1515,12 @@ void SmartPub::on_labTableSelectionChanged() {
 void SmartPub::on_labSearchChanged(const QString &text) {
     handleLabSearchChanged(text);
 }
+
+// Slot déclenché au clic sur une ligne — délègue à laboratoire.cpp
+// (implémentation complète dans on_labTableItemClicked dans laboratoire.cpp)
+
+// Slot déclenché par DemiScenario3::laboDesactive — délègue à laboratoire.cpp
+// (implémentation complète dans on_laboDesactive dans laboratoire.cpp)
 
 void SmartPub::on_btnListeProjets_clicked() { handleProjetListeProjets(); }
 void SmartPub::on_btnAjouterProjet_clicked() { handleProjetAjouterProjet(); }

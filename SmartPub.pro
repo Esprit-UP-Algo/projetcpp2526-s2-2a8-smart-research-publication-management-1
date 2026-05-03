@@ -16,6 +16,7 @@ SOURCES += \
     main.cpp \
     scenario1.cpp \
     demi_scenario2.cpp \
+    demi_scenario3.cpp \
     smartpub.cpp \
     chercheur.cpp \
     publication.cpp \
@@ -39,6 +40,7 @@ HEADERS += \
     connection.h \
     scenario1.h \
     demi_scenario2.h \
+    demi_scenario3.h \
     smartpub.h \
     ai_service.h \
     reminder.h \

@@ -82,6 +82,7 @@
 #include "arduino.h"
 #include "scenario1.h"
 #include "demi_scenario2.h"
+#include "demi_scenario3.h"
 
 QT_BEGIN_NAMESPACE
 class QPieSeries;
@@ -220,7 +221,6 @@ private slots:
     void on_cherchBtnAjouter_clicked();
     void on_cherchBtnRecherche_clicked();
     void on_cherchBtnTri_clicked();
-    void on_cherchBtnExport_clicked();
     void on_cherchBtnStatistiques_clicked();
     void on_cherchBtnUploadPhoto_clicked();
     void on_cherchBtnAjouterChercheur_clicked();
@@ -290,6 +290,8 @@ private slots:
     void on_labBtnTrier_clicked();
     void on_labTableSelectionChanged();
     void on_labSearchChanged(const QString &text);
+    void on_labTableItemClicked(int row, int column);
+    void on_laboDesactive(int id_labo);
 
     // === MODULE PROJETS (Ton travail) ===
     void on_btnListeProjets_clicked();
@@ -482,7 +484,6 @@ private:
     void handleCherchBtnToggleVueClicked();
     void handleCherchBtnRechercheClicked();
     void handleCherchBtnTriClicked();
-    void handleCherchBtnExportClicked();
     void handleCherchBtnStatistiquesClicked();
     void handleCherchBtnUploadPhotoClicked();
     void handleCherchBtnAjouterChercheurClicked();
@@ -686,6 +687,7 @@ private:
     Arduino*    arduino;
     Scenario1*  scenarioAcces;          // Scénario 1 : accès laboratoire (RFID → projet/labo)
     DemiScenario2* scenarioProgramme;   // Scénario 2 : affichage programme LED par module
+    DemiScenario3* scenarioIncendie;    // Scénario 3 : détection chaleur DHT11 → labo Inactif
     QLabel*     labelRfidStatus;        // Affichage résultat RFID dans le module Chercheurs
 };
 

@@ -387,6 +387,7 @@ void SmartPub::labConnectSignals()
     connect(labBtnSupprimer, &QPushButton::clicked, this, &SmartPub::on_labBtnSupprimer_clicked);
     connect(labSearchEdit, &QLineEdit::textChanged, this, &SmartPub::on_labSearchChanged);
     connect(labTable, &QTableWidget::itemSelectionChanged, this, &SmartPub::on_labTableSelectionChanged);
+    connect(labTable, &QTableWidget::cellClicked, this, &SmartPub::on_labTableItemClicked);
 
     QPushButton *btnStats     = labPage->findChild<QPushButton*>("labBtnStatistiques");
     QPushButton *btnOptim     = labPage->findChild<QPushButton*>("labBtnOptimiseur");
@@ -1073,4 +1074,52 @@ void SmartPub::handleLaboratoiresNavigation() {
     setActiveNavigationButton(5);
     updateProfileName(5);
     labAfficherListe();
+}
+
+// ============================================================================
+// on_labTableItemClicked()
+// Déclenché au clic sur une ligne de la table des laboratoires.
+// Envoie "START:<id>\n" à l'Arduino pour activer la lecture DHT11.
+// ============================================================================
+void SmartPub::on_labTableItemClicked(int row, int /*column*/)
+{
+    if (!labTable) return;
+    QTableWidgetItem *idItem = labTable->item(row, 0);
+    if (!idItem) return;
+
+    int id_labo = idItem->data(Qt::UserRole).toInt();
+    if (id_labo <= 0) return;
+
+    qDebug() << "[SmartPub] Clic laboratoire ID :" << id_labo
+             << "— déclenchement capteur DHT11";
+
+    if (scenarioIncendie)
+        scenarioIncendie->activerPourLabo(id_labo);
+}
+
+// ============================================================================
+// on_laboDesactive()
+// Slot connecté au signal DemiScenario3::laboDesactive(int).
+// Met à jour labDataMap et rafraîchit la table en temps réel.
+// ============================================================================
+void SmartPub::on_laboDesactive(int id_labo)
+{
+    qDebug() << "[SmartPub] Mise a jour UI — labo ID" << id_labo << "-> Inactif";
+
+    if (labDataMap.contains(id_labo)) {
+        labDataMap[id_labo].statut = "Inactif";
+    }
+
+    // Rafraîchir la ligne concernée directement dans la table
+    for (int row = 0; row < labTable->rowCount(); ++row) {
+        QTableWidgetItem *idItem = labTable->item(row, 0);
+        if (idItem && idItem->data(Qt::UserRole).toInt() == id_labo) {
+            QTableWidgetItem *statutItem = labTable->item(row, 5);
+            if (statutItem) {
+                statutItem->setText("Inactif");
+                statutItem->setForeground(QColor("#ef4444"));
+            }
+            break;
+        }
+    }
 }

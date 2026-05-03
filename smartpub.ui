@@ -1278,28 +1278,6 @@ border: none;</string>
                   </widget>
                  </item>
                  <item>
-                  <widget class="QPushButton" name="cherchBtnExport">
-                   <property name="minimumSize">
-                    <size>
-                     <width>90</width>
-                     <height>44</height>
-                    </size>
-                   </property>
-                   <property name="maximumSize">
-                    <size>
-                     <width>90</width>
-                     <height>44</height>
-                    </size>
-                   </property>
-                   <property name="cursor">
-                    <cursorShape>PointingHandCursor</cursorShape>
-                   </property>
-                   <property name="text">
-                    <string>Exporter</string>
-                   </property>
-                  </widget>
-                 </item>
-                 <item>
                   <widget class="QPushButton" name="cherchBtnStatistiques">
                    <property name="minimumSize">
                     <size>

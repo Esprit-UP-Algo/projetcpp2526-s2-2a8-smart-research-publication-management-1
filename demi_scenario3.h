@@ -2,64 +2,64 @@
 #define DEMI_SCENARIO3_H
 
 // ============================================================================
-// DEMI_SCENARIO3 — Détection incendie laboratoire via capteur DHT11
+// DEMI_SCENARIO3 — Détection chaleur laboratoire via capteur DHT11
 //                  Passage automatique du statut laboratoire : Actif → Inactif
-// ============================================================================
 //
-// Matériel :
-//   - Arduino Uno
-//   - Capteur DHT11 (température et humidité)
-//   - LED rouge (alarme visuelle)
-//   - Buzzer actif (alerte sonore)
+// Flux :
+//   1. L'utilisateur clique sur un laboratoire dans l'interface Qt.
+//   2. activerPourLabo(id) envoie "START:<id>\n" à l'Arduino via le port série.
+//   3. L'Arduino lit le DHT11 et renvoie "TEMP:<val>\n" puis "FIRE:<id>\n"
+//      si la température dépasse le seuil (20 °C).
+//   4. DemiScenario3 est connecté directement sur readyRead() du QSerialPort
+//      avec son propre buffer interne — indépendant de Scenario1.
 //
 // Protocole série :
+//   Qt → Arduino : "START:<id_labo>\n"
+//   Arduino → Qt : "TEMP:<valeur>\n" | "FIRE:<id_labo>\n" | "ERR:DHT_READ\n"
 //
-//   Arduino → Qt :
-//     "FIRE:<id_labo>\n"  → incendie détecté, Qt met le labo en Inactif en BD
-//     "TEMP:<valeur>\n"   → température courante (envoyée toutes les 5s)
-//     "READY\n"           → Arduino initialisé et prêt
-//     "ERR:DHT_READ\n"    → erreur de lecture du capteur DHT11
-//     "RESET:OK\n"        → réinitialisation confirmée
-//
-//   Qt → Arduino :
-//     "ACK\n"             → accusé de réception de l'alerte incendie
-//     "RESET\n"           → réinitialiser l'état après intervention
-//
-// Colonnes BD utilisées (table LABORATOIRE) :
-//   ID_LABORATOIRE   NUMBER        — identifiant du laboratoire
-//   DISPONIBILITE    VARCHAR2(20)  — 'disponible' (Actif) ou 'indisponible' (Inactif)
+// Table BD : LABORATOIRE
+//   DISPONIBILITE = 'indisponible'  ↔  statut "Inactif" dans l'UI
 // ============================================================================
 
 #include "arduino.h"
+#include <QObject>
 #include <QString>
-#include <QSqlDatabase>
+#include <QByteArray>
 
-class DemiScenario3 {
+class DemiScenario3 : public QObject {
+    Q_OBJECT
+
 public:
-    // Constructeur : reçoit le pointeur Arduino partagé
-    explicit DemiScenario3(Arduino* arduino);
+    explicit DemiScenario3(Arduino* arduino, QObject* parent = nullptr);
 
-    // Fonction principale à appeler depuis le slot readyRead() dans SmartPub
-    // Lit les messages Arduino et réagit aux alertes FIRE et TEMP
-    void processInput();
+    // Déclenche une lecture DHT11 pour le laboratoire donné.
+    // À appeler au clic sur un laboratoire dans l'interface Qt.
+    void activerPourLabo(int id_labo);
 
-    // Accesseurs pour l'UI SmartPub
-    double  getDerniereTemperature() const { return m_derniereTemp; }
-    bool    isIncendieDetecte()      const { return m_incendieDetecte; }
-    int     getIdLaboEnAlerte()      const { return m_idLaboEnAlerte; }
+    // Accesseurs
+    double getDerniereTemperature() const { return m_derniereTemp; }
+    bool   isIncendieDetecte()      const { return m_incendieDetecte; }
+    int    getIdLaboEnAlerte()      const { return m_idLaboEnAlerte; }
+
+signals:
+    // Émis quand un laboratoire vient d'être passé en Inactif en BD.
+    // SmartPub connecte ce signal pour rafraîchir la table en temps réel.
+    void laboDesactive(int id_labo);
+
+private slots:
+    // Connecté directement sur QSerialPort::readyRead() — lit son propre buffer.
+    void onSerialDataReady();
 
 private:
-    Arduino* m_arduino;
+    Arduino*   m_arduino;
+    QByteArray m_buffer;   // buffer interne indépendant de Scenario1
 
-    double m_derniereTemp     = 0.0;
-    bool   m_incendieDetecte  = false;
-    int    m_idLaboEnAlerte   = -1;
+    double m_derniereTemp    = 0.0;
+    bool   m_incendieDetecte = false;
+    int    m_idLaboEnAlerte  = -1;
 
-    // Met le laboratoire en statut 'indisponible' (Inactif) en base de données
+    void processLine(const QString& line);
     bool desactiverLaboratoire(int id_labo);
-
-    // Envoie "ACK\n" à l'Arduino pour accuser réception de l'alerte
-    void envoyerAck();
 };
 
 #endif // DEMI_SCENARIO3_H

@@ -1,51 +1,38 @@
 // =====================================================================
-// demi_scenario3.ino — Detection incendie laboratoire via capteur DHT11
-// SmartPub — Systeme de Gestion de Recherche
+// demi_scenario3.ino — Détection chaleur laboratoire via capteur DHT11
+// SmartPub — Système de Gestion de Recherche
 // =====================================================================
 //
-// Materiel :
+// Matériel :
 //   - Arduino Uno
-//   - Capteur DHT11 (temperature)
-//   - Quelques fils de connexion
+//   - Capteur DHT11
+//   - Branchement : VCC → 5V, DATA → D7, GND → GND
 //
-// Cablage :
-//   DHT11 DATA → pin 7
-//   DHT11 VCC  → 5V
-//   DHT11 GND  → GND
+// Protocole série Qt → Arduino :
+//   "START:<id_labo>\n"  → déclencher une lecture DHT11 pour ce labo
 //
-// Protocole serie Arduino → Qt :
-//   "FIRE:<id_labo>\n"  → incendie detecte, Qt met le labo en Inactif
-//   "TEMP:<valeur>\n"   → envoi periodique de la temperature (toutes les 5s)
-//   "READY\n"           → Arduino initialise et pret
-//   "ERR:DHT_READ\n"    → erreur de lecture du capteur
+// Protocole série Arduino → Qt :
+//   "READY\n"            → Arduino initialisé et prêt
+//   "TEMP:<valeur>\n"    → température lue (envoyée après START)
+//   "FIRE:<id_labo>\n"   → seuil dépassé, Qt doit passer le labo en Inactif
+//   "ERR:DHT_READ\n"     → erreur de lecture du capteur
 //
-// Protocole serie Qt → Arduino :
-//   "ACK\n"             → Qt a bien recu et traite l'alerte incendie
-//   "RESET\n"           → reinitialiser l'etat (apres intervention)
-//
-// Seuil de temperature : 50 degres Celsius (simulant un incendie)
+// Seuil : 20 °C (chaleur ambiante normale, facilement atteint)
+// Le capteur ne lit RIEN tant qu'il n'a pas reçu "START:<id>\n"
 // =====================================================================
 
 #include <DHT.h>
 
-// ── Pins ──────────────────────────────────────────────────────────────
-#define DHT_PIN  7
-#define DHT_TYPE DHT11
+#define DHT_PIN   7
+#define DHT_TYPE  DHT11
 
-// ── ID du laboratoire surveille (configurable) ────────────────────────
-#define ID_LABORATOIRE 1
-
-// ── Seuil de temperature declenchant l'alerte incendie ───────────────
-#define SEUIL_TEMP_INCENDIE 50.0
-
-// ── Intervalle de lecture ─────────────────────────────────────────────
-#define INTERVALLE_LECTURE_MS 5000
+// Seuil pour détection avec briquet (flamme proche du capteur)
+#define SEUIL_TEMP 28.1
 
 DHT dht(DHT_PIN, DHT_TYPE);
 
-bool          incendieDetecte = false;
-bool          alerteEnvoyee   = false;
-unsigned long derniereLecture = 0;
+bool  enAttente    = false;   // true = un START a été reçu, lecture en cours
+int   idLaboActif  = -1;      // id du labo concerné par la lecture en cours
 
 // =====================================================================
 void setup() {
@@ -57,24 +44,32 @@ void setup() {
 
 // =====================================================================
 void loop() {
-
-    // ── Commandes Qt → Arduino ────────────────────────────────────────
+    // Lire les commandes envoyées par Qt
     if (Serial.available()) {
         String cmd = Serial.readStringUntil('\n');
         cmd.trim();
         traiterCommande(cmd);
     }
 
-    // ── Lecture periodique DHT11 ──────────────────────────────────────
-    unsigned long maintenant = millis();
-    if (maintenant - derniereLecture >= INTERVALLE_LECTURE_MS) {
-        derniereLecture = maintenant;
-        lireEtTraiterDHT();
+    // Si un START a été reçu, effectuer la lecture DHT11
+    if (enAttente) {
+        enAttente = false;   // une seule lecture par déclenchement
+        lireEtEnvoyer();
     }
 }
 
 // =====================================================================
-void lireEtTraiterDHT() {
+void traiterCommande(String cmd) {
+    if (cmd.startsWith("START:")) {
+        idLaboActif = cmd.substring(6).toInt();
+        enAttente   = true;
+    }
+}
+
+// =====================================================================
+void lireEtEnvoyer() {
+    // Petite pause pour laisser le capteur se stabiliser
+    delay(500);
     float temperature = dht.readTemperature();
 
     if (isnan(temperature)) {
@@ -82,27 +77,13 @@ void lireEtTraiterDHT() {
         return;
     }
 
+    // Envoyer la température lue
     Serial.print("TEMP:");
     Serial.println(temperature, 1);
 
-    if (temperature >= SEUIL_TEMP_INCENDIE && !alerteEnvoyee) {
-        incendieDetecte = true;
-        alerteEnvoyee   = true;
+    // Si le seuil est dépassé, envoyer l'alerte FIRE
+    if (temperature >= SEUIL_TEMP) {
         Serial.print("FIRE:");
-        Serial.println(ID_LABORATOIRE);
-    }
-}
-
-// =====================================================================
-void traiterCommande(String cmd) {
-
-    if (cmd == "ACK") {
-        return;
-    }
-
-    if (cmd == "RESET") {
-        incendieDetecte = false;
-        alerteEnvoyee   = false;
-        Serial.println("RESET:OK");
+        Serial.println(idLaboActif);
     }
 }
