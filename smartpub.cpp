@@ -625,6 +625,7 @@ SmartPub::SmartPub(QWidget *parent)
         qDebug() << "[SmartPub] Arduino connecte sur"
                  << arduino->getarduino_port_name();
 
+<<<<<<< HEAD
         // --- Demi Scenario 3 : instancié EN PREMIER pour que son slot
         //     readyRead soit appelé avant celui de Scenario1 (ordre Qt) ---
         scenarioIncendie = new DemiScenario3(arduino, this);
@@ -644,10 +645,80 @@ SmartPub::SmartPub(QWidget *parent)
                     scenarioAcces->processMessage();
                     if (scenarioProgramme)
                         scenarioProgramme->processInput();
+=======
+        // --- Scenario 1 : contrôle accès laboratoire (RFID) ---
+        scenarioAcces = new Scenario1(arduino, 1, this);
+
+        connect(scenarioAcces, &Scenario1::porteStatusChanged,
+                this, [this](bool ouvert, const QString& nomChercheur, bool isEntree) {
+                    labChargerDonnees();
+                    if (ouvert && !nomChercheur.isEmpty()) {
+                        const QString action = isEntree
+                            ? tr("a entré dans le laboratoire")
+                            : tr("a quitté le laboratoire");
+                        QMessageBox::information(
+                            this,
+                            tr("Porte ouverte"),
+                            tr("🚪 Porte ouverte\n\n%1 %2.").arg(nomChercheur, action)
+                        );
+                    }
+>>>>>>> b4543ea (integration des scenario)
                 });
 
-        // --- Demi Scenario 2 : affichage programme LED ---
-        scenarioProgramme = new DemiScenario2(arduino);
+        // --- Scenario 2 : OLED (programme journalier) + DHT11 (chaleur labo) ---
+        scenarioProgramme = new Scenario2(arduino, this);
+
+        // Signal DHT11 : labo désactivé → rafraîchir la table laboratoires
+        connect(scenarioProgramme, &Scenario2::laboDesactive,
+                this, &SmartPub::on_laboDesactive);
+        // Note : le cycle OLED se recharge automatiquement à chaque relance.
+        // refreshDonnees() peut être appelé manuellement après une opération BD critique.
+
+        // ── Dispatcher série ─────────────────────────────────────────────────
+        // Routage des trames Arduino :
+        //   Keypad    : KEY: / CODE: / CANCEL   → FinKepadDelete
+        //   Scenario2 : TEMP: / FIRE: / ERR:    → processLineDHT (DHT11)
+        //   Scenario2 : READY / ACK             → processInput   (OLED)
+        //   Scenario1 : RFID: / PORTE_*         → processLine    (RFID)
+        // ─────────────────────────────────────────────────────────────────────
+        connect(arduino->getserial(), &QSerialPort::readyRead,
+                this, [this]() {
+                    while (true) {
+                        QString ligne = arduino->readLine().trimmed();
+                        ligne.remove(QChar('\0'));
+                        if (ligne.isEmpty()) break;
+
+                        qDebug() << "[Dispatcher]" << ligne;
+
+                        // ── 1. Keypad (priorité absolue) ──
+                        if (ligne.startsWith("KEY:") ||
+                            ligne.startsWith("CODE:") ||
+                            ligne == "CANCEL") {
+                            if (m_kepadDelete)
+                                m_kepadDelete->traiterLigneSerie(ligne);
+                            continue;
+                        }
+
+                        // ── 2. Scenario2 Partie B : DHT11 (TEMP / FIRE / ERR) ──
+                        if (ligne.startsWith("TEMP:") ||
+                            ligne.startsWith("FIRE:") ||
+                            ligne.startsWith("ERR:")) {
+                            if (scenarioProgramme)
+                                scenarioProgramme->processLineDHT(ligne);
+                            continue;
+                        }
+
+                        // ── 3. Scenario2 Partie A : OLED (READY / ACK) ──
+                        else if (scenarioProgramme &&
+                                 (ligne.contains("ACK") || ligne.contains("READY"))) {
+                            scenarioProgramme->processInput(ligne.trimmed());
+                            continue;
+                        }
+
+                        // ── 4. Scenario1 : RFID + porte ──
+                        scenarioAcces->processLine(ligne);
+                    }
+                });
 
     } else {
         qDebug() << "[SmartPub] Echec de connexion a l'Arduino";
@@ -1519,7 +1590,11 @@ void SmartPub::on_labSearchChanged(const QString &text) {
 // Slot déclenché au clic sur une ligne — délègue à laboratoire.cpp
 // (implémentation complète dans on_labTableItemClicked dans laboratoire.cpp)
 
+<<<<<<< HEAD
 // Slot déclenché par DemiScenario3::laboDesactive — délègue à laboratoire.cpp
+=======
+// Slot déclenché par Scenario2::laboDesactive — délègue à laboratoire.cpp
+>>>>>>> b4543ea (integration des scenario)
 // (implémentation complète dans on_laboDesactive dans laboratoire.cpp)
 
 void SmartPub::on_btnListeProjets_clicked() { handleProjetListeProjets(); }

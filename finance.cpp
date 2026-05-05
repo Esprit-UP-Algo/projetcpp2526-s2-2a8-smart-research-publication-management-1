@@ -2,7 +2,13 @@
 #include "ui_smartpub.h"
 #include "connection.h"
 #include "trans_secure.h"
-#include <QPrinter>
+#include "osnotification.h"
+#include <QStatusBar>
+#include <QDoubleValidator>
+#include <QLocale>
+#include <QPdfWriter>
+#include <QDesktopServices>
+#include <QUrl>
 #include <QPainter>
 #include <QPageSize>
 #include <QPageLayout>
@@ -55,6 +61,29 @@ void SmartPub::finSetupUI() {
     ui->finStackedWidget->setCurrentIndex(0);
     finVueListeActive = true;
 
+    // === Initialisation suppression sécurisée via clavier DG ===
+    if (!m_kepadDelete) {
+        m_kepadDelete = new FinKepadDelete(arduino, this);
+        connect(m_kepadDelete, &FinKepadDelete::suppressionReussie,
+                this, [this](int) {
+            finChargerTransactionsDepuisOracle();
+        });
+        connect(m_kepadDelete, &FinKepadDelete::suppressionAnnulee,
+                this, [this](int id) {
+            statusBar()->showMessage(
+                QString("Suppression de la transaction #%1 annulée.").arg(id), 5000);
+        });
+        connect(m_kepadDelete, &FinKepadDelete::suppressionRefusee,
+                this, [this](int id) {
+            statusBar()->showMessage(
+                QString("❌ Suppression de la transaction #%1 refusée — trop de tentatives.").arg(id), 7000);
+        });
+        connect(m_kepadDelete, &FinKepadDelete::statutMessage,
+                this, [this](const QString &msg) {
+            statusBar()->showMessage(msg, 6000);
+        });
+    }
+
     // === Noms des colonnes du tableau ===
     ui->finTableTransactions->setHorizontalHeaderLabels(
         {"ID", "Projet", "Type de transaction", "Montant", "Date", "Categorie", "Statut", ""});
@@ -68,6 +97,13 @@ void SmartPub::finSetupUI() {
     ui->finComboBoxType->addItem(QStringLiteral("Autre"), QStringLiteral("autre"));
 
     finRemplirComboProjets();
+
+    // === Validation numerique du champ Montant (chiffres et point decimal uniquement) ===
+    QDoubleValidator *montantValidator = new QDoubleValidator(0.0, 999999999.99, 2, ui->finLineEditMontant);
+    montantValidator->setLocale(QLocale::C);
+    montantValidator->setNotation(QDoubleValidator::StandardNotation);
+    ui->finLineEditMontant->setValidator(montantValidator);
+    ui->finLineEditMontant->setPlaceholderText(QStringLiteral("Ex: 150.00"));
 
     // === Bouton Journal de Sécurité ===
     // Cherche si un bouton existe déjà (évite les doublons au rechargement)
@@ -161,6 +197,75 @@ void SmartPub::finChargerTransactionsDepuisOracle()
         finTransactionsMap.insert(t.id, t);
     }
     finAfficherListeTransactions();
+    finVerifierBudgets();   // surveillance intelligente du budget
+}
+
+// ============================================================================
+// SURVEILLANCE INTELLIGENTE DU BUDGET
+// ============================================================================
+//
+// Calcule les dépenses totales par projet (types non-recettes).
+// Déclenche une notification OS si un projet dépasse son seuil critique.
+//
+// Seuil par défaut : 10 000 TND (configurable via BUDGET_SEUIL_DEFAUT).
+// ============================================================================
+
+void SmartPub::finVerifierBudgets()
+{
+    // Seuil d'alerte par défaut (TND) — modifiable selon vos données
+    static constexpr double BUDGET_SEUIL_DEFAUT = 10000.0;
+
+    // Types considérés comme DÉPENSES (pas des recettes)
+    auto estDepense = [](const QString &type) -> bool {
+        const QString t = type.trimmed().toLower();
+        return t != QLatin1String("subvention") && t != QLatin1String("remboursement");
+    };
+
+    // Calculer les dépenses totales par projet
+    QMap<QString, double> depensesParProjet;  // nom projet → total dépenses
+    for (auto it = finTransactionsMap.constBegin(); it != finTransactionsMap.constEnd(); ++it) {
+        const TransactionData &t = it.value();
+        if (!estDepense(t.type)) continue;
+        const QString nom = t.projet.isEmpty()
+                                ? QStringLiteral("Projet #%1").arg(t.idProjet)
+                                : t.projet;
+        depensesParProjet[nom] += t.montant;
+    }
+
+    // Vérifier les dépassements et émettre les notifications OS
+    bool alerteEmise = false;
+    for (auto it = depensesParProjet.constBegin(); it != depensesParProjet.constEnd(); ++it) {
+        const QString &projetNom    = it.key();
+        const double   totalDepense = it.value();
+
+        if (totalDepense >= BUDGET_SEUIL_DEFAUT) {
+            qDebug().noquote()
+                << QStringLiteral("[BUDGET] ALERTE — Projet '%1' : %2 TND >= seuil %3 TND")
+                       .arg(projetNom,
+                            QString::number(totalDepense, 'f', 2),
+                            QString::number(BUDGET_SEUIL_DEFAUT, 'f', 2));
+
+            OsNotification::instance()->alertBudget(projetNom, totalDepense, BUDGET_SEUIL_DEFAUT);
+            alerteEmise = true;
+
+        } else if (totalDepense >= BUDGET_SEUIL_DEFAUT * 0.80) {
+            // Avertissement à 80 % du seuil
+            const QString title = QString::fromUtf8("\U0001f4ca Budget à 80%");
+            const QString msg   = QString::fromUtf8(
+                "Projet : %1\nDépenses : %2 TND (%3% du seuil de %4 TND)")
+                .arg(projetNom,
+                     QString::number(totalDepense, 'f', 2),
+                     QString::number(totalDepense / BUDGET_SEUIL_DEFAUT * 100.0, 'f', 0),
+                     QString::number(BUDGET_SEUIL_DEFAUT, 'f', 0));
+
+            OsNotification::instance()->show(title, msg, QSystemTrayIcon::Warning, 7000);
+            alerteEmise = true;
+        }
+    }
+
+    if (!alerteEmise) {
+        qDebug() << "[BUDGET] Tous les projets sont dans les limites budgetaires.";
+    }
 }
 
 void SmartPub::finConnectSignals() {
@@ -351,28 +456,30 @@ void SmartPub::finAjouterTransactionTable(const TransactionData &data) {
         "QPushButton:hover { background-color: #dc2626; }"
         "QPushButton:pressed { background-color: #b91c1c; }");
     connect(btnSupprimer, &QPushButton::clicked, this, [this, transId]() {
-        int rep = QMessageBox::question(this, "Confirmer la suppression",
-            QString("Etes-vous sur de vouloir supprimer la transaction #%1 ?\nCette action est irreversible.").arg(transId),
+        // Vérification du rôle
+        if (currentUser.role != UserRole::Admin) {
+            QMessageBox::warning(this, "Accès refusé",
+                "Seul l'Administrateur peut supprimer des transactions.");
+            return;
+        }
+        // Si une procédure est déjà en cours
+        if (m_kepadDelete && m_kepadDelete->enCours()) {
+            QMessageBox::warning(this, "Procédure en cours",
+                "Une suppression est déjà en attente de validation\n"
+                "sur le clavier du Directeur Général.");
+            return;
+        }
+        // Confirmation initiale
+        int rep = QMessageBox::question(this, "Suppression sécurisée",
+            QString("Un code de confirmation va être envoyé par email\n"
+                    "au Directeur Général.\n\n"
+                    "Voulez-vous procéder à la suppression de la\n"
+                    "transaction #%1 ?").arg(transId),
             QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
         if (rep != QMessageBox::Yes) return;
-        QSqlDatabase db = Connection::instance()->getDatabase();
-        if (!db.isOpen()) return;
-        QSqlQuery q(db);
-        q.prepare(QStringLiteral("DELETE FROM FINANCE WHERE ID_TRANSACTION = :id"));
-        q.bindValue(":id", transId);
-        if (q.exec()) {
-            TransSecure::logTransaction("SUPPRESSION", transId,
-                                        finTransactionsMap.contains(transId) ? finTransactionsMap[transId].type : "—",
-                                        finTransactionsMap.contains(transId) ? finTransactionsMap[transId].montant : 0.0,
-                                        finTransactionsMap.contains(transId) ? finTransactionsMap[transId].date : "—",
-                                        finTransactionsMap.contains(transId) ? finTransactionsMap[transId].categorie : "—",
-                                        finTransactionsMap.contains(transId) ? finTransactionsMap[transId].statut : "—",
-                                        finTransactionsMap.contains(transId) ? finTransactionsMap[transId].projet : "—");
-            QMessageBox::information(this, "Succès", "Transaction supprimée avec succès !");
-            finChargerTransactionsDepuisOracle();
-        } else {
-            QMessageBox::critical(this, "Erreur", "Échec de la suppression : " + q.lastError().text());
-        }
+        // Démarrer la procédure clavier DG
+        if (m_kepadDelete)
+            m_kepadDelete->demanderSuppression(transId, m_dgEmail);
     });
 
     actionsLayout->addWidget(btnModifier);
@@ -505,12 +612,128 @@ void SmartPub::handleFinBtnTriClicked() {
 void SmartPub::handleFinBtnExportClicked()
 {
     // ── 1. Choix fichier PDF ──────────────────────────────────────────────────
+    QString selectedFilter;
     QString fileName = QFileDialog::getSaveFileName(
         this,
         QStringLiteral("Exporter le bilan financier"),
         QDir::homePath() + QStringLiteral("/bilan_financier.pdf"),
-        QStringLiteral("PDF (*.pdf)"));
+        QStringLiteral("PDF (*.pdf);;HTML (*.html)"),
+        &selectedFilter);
     if (fileName.isEmpty()) return;
+
+    bool exportHtml = selectedFilter.contains("html", Qt::CaseInsensitive)
+                   || fileName.endsWith(".html", Qt::CaseInsensitive);
+
+    // Forcer la bonne extension
+    if (exportHtml) {
+        if (!fileName.endsWith(".html", Qt::CaseInsensitive))
+            fileName += QStringLiteral(".html");
+    } else {
+        if (!fileName.endsWith(".pdf", Qt::CaseInsensitive))
+            fileName += QStringLiteral(".pdf");
+    }
+
+    // Verifier que le fichier est accessible en ecriture
+    {
+        QFile testFile(fileName);
+        if (!testFile.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+            QMessageBox::critical(this, QStringLiteral("Erreur d'acces"),
+                QStringLiteral("Impossible d'ecrire dans ce fichier.\n"
+                               "S'il est deja ouvert, fermez-le d'abord.\n\n"
+                               "Fichier : ") + fileName);
+            return;
+        }
+        testFile.close();
+        testFile.remove();
+    }
+
+    // ── Export HTML inline (aucune dependance Qt plugin) ────────────────────
+    if (exportHtml) {
+        // Calculs financiers pour le HTML
+        QList<TransactionData> listeHtml = finGetTransactionsFiltreesEtTriees();
+        double totRec = 0.0, totDep = 0.0;
+        auto isRec = [](const QString &type) -> bool {
+            const QString t = type.trimmed().toLower();
+            return t == QLatin1String("subvention") || t == QLatin1String("remboursement");
+        };
+        for (const TransactionData &t : listeHtml) {
+            if (isRec(t.type)) totRec += t.montant; else totDep += t.montant;
+        }
+        double soldeHtml = totRec - totDep;
+        QString soldeColor = soldeHtml >= 0 ? "#10b981" : "#ef4444";
+        QString soldeGrad2 = soldeHtml >= 0 ? "#059669" : "#b91c1c";
+        QString soldeLabel = soldeHtml >= 0 ? "Excedentaire" : "Deficitaire";
+
+        QString rows;
+        for (const TransactionData &t : listeHtml) {
+            QString sc = "#64748b";
+            if      (t.statut.contains("Valid",   Qt::CaseInsensitive)) sc = "#16a34a";
+            else if (t.statut.contains("attente", Qt::CaseInsensitive)) sc = "#d97706";
+            else if (t.statut.contains("Rejet",   Qt::CaseInsensitive)) sc = "#dc2626";
+            rows += QString("<tr><td>%1</td><td>%2</td><td>%3</td><td>%4 TND</td>"
+                            "<td>%5</td><td>%6</td>"
+                            "<td style='color:%7;font-weight:bold'>%8</td></tr>")
+                .arg(t.id).arg(t.projet.toHtmlEscaped()).arg(t.type.toHtmlEscaped())
+                .arg(QString::number(t.montant,'f',2)).arg(t.date.toHtmlEscaped())
+                .arg(t.categorie.toHtmlEscaped()).arg(sc).arg(t.statut.toHtmlEscaped());
+        }
+
+        QString html = QString(
+"<!DOCTYPE html><html lang='fr'><head><meta charset='UTF-8'>"
+"<title>Bilan Financier - SmartPub</title><style>"
+"body{font-family:Arial,sans-serif;margin:0;padding:20px;background:#f8fafc;color:#1e293b}"
+".hdr{background:linear-gradient(135deg,#3b82f6,#10b981);color:white;padding:28px;border-radius:12px;margin-bottom:20px}"
+".hdr h1{margin:0;font-size:22px}.hdr p{margin:4px 0 0;opacity:.85;font-size:13px}"
+".kpis{display:flex;gap:14px;margin-bottom:20px}"
+".kpi{background:white;border:1px solid #e2e8f0;border-radius:10px;padding:18px;flex:1;text-align:center}"
+".kpi .v{font-size:20px;font-weight:bold;margin-bottom:3px}.kpi .l{font-size:11px;color:#64748b}"
+"table{width:100%%;border-collapse:collapse;background:white;border-radius:10px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.1)}"
+"th{background:linear-gradient(90deg,#3b82f6,#10b981);color:white;padding:11px 9px;text-align:left;font-size:12px}"
+"td{padding:9px;font-size:12px;border-bottom:1px solid #f1f5f9}"
+"tr:nth-child(even) td{background:#f8fafc}"
+".solde{background:linear-gradient(135deg,%1,%2);color:white;border-radius:10px;padding:18px;text-align:center;margin:20px 0}"
+".solde .v{font-size:26px;font-weight:bold}"
+".footer{text-align:center;color:#94a3b8;font-size:10px;margin-top:16px}"
+"@media print{body{background:white}}"
+"</style></head><body>"
+"<div class='hdr'><h1>SmartPub &mdash; Bilan Financier</h1>"
+"<p>G&eacute;n&eacute;r&eacute; le %3 &bull; %4 transaction(s)</p></div>"
+"<div class='kpis'>"
+"<div class='kpi'><div class='v' style='color:#10b981'>%5 TND</div><div class='l'>Total Recettes</div></div>"
+"<div class='kpi'><div class='v' style='color:#ef4444'>%6 TND</div><div class='l'>Total D&eacute;penses</div></div>"
+"<div class='kpi'><div class='v' style='color:%1'>%7 TND</div><div class='l'>Solde Net</div></div>"
+"</div>"
+"<table><thead><tr><th>ID</th><th>Projet</th><th>Type</th><th>Montant</th>"
+"<th>Date</th><th>Cat&eacute;gorie</th><th>Statut</th></tr></thead>"
+"<tbody>%8</tbody></table>"
+"<div class='solde'><div>SOLDE NET FINAL</div><div class='v'>%7 TND &mdash; %9</div></div>"
+"<div class='footer'>SmartPub &bull; Confidentiel &bull; %3<br>"
+"<small>Ouvrez dans un navigateur &rarr; Fichier &rarr; Imprimer &rarr; Enregistrer en PDF</small>"
+"</div></body></html>")
+            .arg(soldeColor).arg(soldeGrad2)
+            .arg(QDate::currentDate().toString("dd/MM/yyyy"))
+            .arg(listeHtml.size())
+            .arg(QString::number(totRec,'f',2))
+            .arg(QString::number(totDep,'f',2))
+            .arg(QString::number(soldeHtml,'f',2))
+            .arg(rows)
+            .arg(soldeLabel);
+
+        QFile hf(fileName);
+        if (!hf.open(QIODevice::WriteOnly | QIODevice::Text)) {
+            QMessageBox::critical(this, QStringLiteral("Erreur"),
+                QStringLiteral("Impossible d'ecrire : ") + fileName);
+            return;
+        }
+        hf.write(html.toUtf8());
+        hf.close();
+
+        QMessageBox::information(this, QStringLiteral("Export reussi"),
+            QStringLiteral("Bilan exporte en HTML !\n%1\n\n"
+                           "Pour obtenir un PDF :\nOuvrez dans Chrome/Firefox → Imprimer → Enregistrer en PDF").arg(fileName));
+        QDesktopServices::openUrl(QUrl::fromLocalFile(fileName));
+        return;
+    }
 
     // ── 2. Calculs financiers ─────────────────────────────────────────────────
     QList<TransactionData> liste = finGetTransactionsFiltreesEtTriees();
@@ -543,24 +766,34 @@ void SmartPub::handleFinBtnExportClicked()
     double soldeNet    = totalRecettes - totalDepenses;
     bool excedentaire  = soldeNet >= 0.0;
 
-    // ── 3. Initialisation QPrinter ────────────────────────────────────────────
-    QPrinter printer(QPrinter::HighResolution);
-    printer.setOutputFormat(QPrinter::PdfFormat);
-    printer.setOutputFileName(fileName);
-    printer.setPageSize(QPageSize(QPageSize::A4));
-    printer.setPageOrientation(QPageLayout::Portrait);
-    printer.setPageMargins(QMarginsF(12, 12, 12, 12), QPageLayout::Millimeter);
-
-    QPainter p;
-    if (!p.begin(&printer)) {
-        QMessageBox::critical(this, QStringLiteral("Erreur"),
-                              QStringLiteral("Impossible d'initialiser le moteur PDF."));
-        return;
-    }
+    // ── 3. Initialisation QPdfWriter ──────────────────────────────────────────
+    // QPdfWriter ne dépend d'aucun driver d'impression (contrairement à QPrinter)
+    // et fonctionne nativement sur Windows, Linux et macOS.
+    QPdfWriter pdfWriter(fileName);
+    pdfWriter.setPageSize(QPageSize(QPageSize::A4));
+    pdfWriter.setPageOrientation(QPageLayout::Portrait);
+    pdfWriter.setPageMargins(QMarginsF(12, 12, 12, 12), QPageLayout::Millimeter);
+    // Résolution 96 DPI : coordonnées identiques à un affichage écran standard
+    pdfWriter.setResolution(96);
 
     // ── 4. Constantes de mise en page ─────────────────────────────────────────
-    const QRect  pageRect = printer.pageRect(QPrinter::DevicePixel).toRect();
-    const int    W        = pageRect.width();
+    // Coordonnées logiques A4 à 96 DPI : 794 × 1123 px
+    const QRect  logicalPage(0, 0, 794, 1123);
+
+    QPainter p;
+    if (!p.begin(&pdfWriter)) {
+        // Diagnostic detaille pour aider au debug
+        QString errMsg = QStringLiteral(
+            "QPdfWriter::begin() a echoue.\n\n"
+            "Causes possibles :\n"
+            "  - Le fichier est deja ouvert dans un autre programme\n"
+            "  - Chemin reseau non supporte\n"
+            "  - Plugin Qt 'qpdf' manquant\n\n"
+            "Fichier cible : ") + fileName;
+        QMessageBox::critical(this, QStringLiteral("Erreur PDF"), errMsg);
+        return;
+    }
+    const int    W        = logicalPage.width();
     const int    margin   = 55;
     const int    colW     = W - 2 * margin;
 
@@ -576,8 +809,11 @@ void SmartPub::handleFinBtnExportClicked()
     const QColor cAmber ("#d97706");
 
     // Polices
+    // Utiliser setPixelSize (pas setPointSize) pour eviter la mise a l'echelle DPI
+    // Les tailles sont en pixels logiques (espace 794x1123)
     auto font = [](int sz, bool bold = false) {
-        QFont f(QStringLiteral("Arial"), sz);
+        QFont f(QStringLiteral("Arial"));
+        f.setPixelSize(sz);
         f.setBold(bold);
         return f;
     };
@@ -599,8 +835,8 @@ void SmartPub::handleFinBtnExportClicked()
 
     // Vérifie si on doit passer à une nouvelle page
     auto checkPage = [&](int needed) {
-        if (y + needed > pageRect.height() - margin - 50) {
-            printer.newPage();
+        if (y + needed > logicalPage.height() - margin - 50) {
+            pdfWriter.newPage();
             y = margin;
         }
     };
@@ -624,7 +860,7 @@ void SmartPub::handleFinBtnExportClicked()
             QColor col = isHeader ? cWhite
                        : (!cellColors.isEmpty() && i < cellColors.size()
                           ? cellColors[i] : cDark);
-            p.setFont(font(isHeader ? 8 : 8, isHeader));
+            p.setFont(font(isHeader ? 12 : 11, isHeader));
             p.setPen(col);
             p.drawText(QRect(x + 6, y, widths[i] - 8, rowH),
                        Qt::AlignVCenter | Qt::AlignLeft, cells[i]);
@@ -638,7 +874,7 @@ void SmartPub::handleFinBtnExportClicked()
     // Titre de section
     auto sectionTitle = [&](const QString &title) {
         checkPage(80);
-        p.setFont(font(11, true));
+        p.setFont(font(16, true));
         p.setPen(cDark);
         p.drawText(QRect(margin, y, colW, 36),
                    Qt::AlignVCenter | Qt::AlignLeft, title);
@@ -655,13 +891,13 @@ void SmartPub::handleFinBtnExportClicked()
         p.setPen(Qt::NoPen); p.setBrush(grad);
         p.drawRoundedRect(margin, y, colW, hH, 14, 14);
 
-        p.setFont(font(20, true));
+        p.setFont(font(26, true));
         p.setPen(cWhite);
         p.drawText(QRect(margin + 30, y + 22, colW - 130, 50),
                    Qt::AlignVCenter | Qt::AlignLeft,
                    QStringLiteral("SmartPub \u2014 Bilan Financier"));
 
-        p.setFont(font(9));
+        p.setFont(font(13));
         p.setPen(QColor(255, 255, 255, 200));
         p.drawText(QRect(margin + 30, y + 76, colW - 130, 28),
                    Qt::AlignVCenter | Qt::AlignLeft,
@@ -670,7 +906,7 @@ void SmartPub::handleFinBtnExportClicked()
                    .arg(liste.size()));
 
         // Icône décorative
-        p.setFont(font(42));
+        p.setFont(font(54));
         p.setPen(QColor(255, 255, 255, 60));
         p.drawText(QRect(margin + colW - 110, y + 10, 100, hH - 20),
                    Qt::AlignCenter, QStringLiteral("\u2630"));
@@ -692,10 +928,10 @@ void SmartPub::handleFinBtnExportClicked()
         for (const Kpi &k : kpis) {
             p.setPen(QPen(cBorder, 1)); p.setBrush(cWhite);
             p.drawRoundedRect(kx, y, kpiW, kpiH, 10, 10);
-            p.setFont(font(16, true)); p.setPen(k.color);
+            p.setFont(font(22, true)); p.setPen(k.color);
             p.drawText(QRect(kx, y + 16, kpiW, 42), Qt::AlignCenter,
                        QString::number(k.val, 'f', 2) + QStringLiteral(" TND"));
-            p.setFont(font(8)); p.setPen(cGray);
+            p.setFont(font(12)); p.setPen(cGray);
             p.drawText(QRect(kx, y + 62, kpiW, 26), Qt::AlignCenter, k.label);
             kx += kpiW + 18;
         }
@@ -808,11 +1044,11 @@ void SmartPub::handleFinBtnExportClicked()
         p.setPen(Qt::NoPen); p.setBrush(grad);
         p.drawRoundedRect(margin, y, colW, bH, 12, 12);
 
-        p.setFont(font(9, true)); p.setPen(cWhite);
+        p.setFont(font(13, true)); p.setPen(cWhite);
         p.drawText(QRect(margin, y + 10, colW, 26), Qt::AlignCenter,
                    QStringLiteral("SOLDE NET FINAL"));
 
-        p.setFont(font(18, true));
+        p.setFont(font(24, true));
         p.drawText(QRect(margin, y + 38, colW, 36), Qt::AlignCenter,
                    QString::number(soldeNet,'f',2)
                    + QStringLiteral(" TND  ")
@@ -823,10 +1059,10 @@ void SmartPub::handleFinBtnExportClicked()
 
     // ── 12. PIED DE PAGE ──────────────────────────────────────────────────────
     {
-        int footerY = pageRect.height() - margin - 28;
+        int footerY = logicalPage.height() - margin - 28;
         p.setPen(QPen(cBorder, 1));
         p.drawLine(margin, footerY, margin + colW, footerY);
-        p.setFont(font(7)); p.setPen(cGray);
+        p.setFont(font(11)); p.setPen(cGray);
         p.drawText(QRect(margin, footerY + 6, colW, 22), Qt::AlignCenter,
                    QStringLiteral("SmartPub \u2022 Bilan g\u00e9n\u00e9r\u00e9 automatiquement le %1 \u2022 Confidentiel")
                    .arg(QDate::currentDate().toString("dd/MM/yyyy")));
@@ -1005,17 +1241,17 @@ void SmartPub::handleFinBtnModifierTransactionClicked() {
 }
 
 void SmartPub::handleFinBtnSupprimerTransactionClicked() {
-    if (currentUser.role == UserRole::Guest) {
-        QMessageBox::warning(
-            this, "Accès refusé",
-            "Les invités ne peuvent pas supprimer les transactions.");
+    // Vérification du rôle
+    if (currentUser.role != UserRole::Admin) {
+        QMessageBox::warning(this, "Accès refusé",
+            "Seul l'Administrateur peut supprimer des transactions.");
         return;
     }
 
     int currentRow = ui->finTableTransactions->currentRow();
     if (currentRow < 0) {
         QMessageBox::warning(this, "Erreur",
-                             "Veuillez sélectionner une transaction à supprimer");
+                             "Veuillez sélectionner une transaction à supprimer.");
         return;
     }
 
@@ -1024,31 +1260,26 @@ void SmartPub::handleFinBtnSupprimerTransactionClicked() {
 
     int transactionId = idItem->text().toInt();
 
-    auto reply = QMessageBox::question(
-        this, "Supprimer", "Confirmer la suppression de cette transaction ?",
-        QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
-    if (reply == QMessageBox::Yes) {
-        QSqlDatabase db = Connection::instance()->getDatabase();
-        if (db.isOpen()) {
-            QSqlQuery q(db);
-            q.prepare(QStringLiteral("DELETE FROM FINANCE WHERE ID_TRANSACTION = :id"));
-            q.bindValue(QStringLiteral(":id"), transactionId);
-            if (!q.exec()) {
-                QMessageBox::critical(this, QStringLiteral("Erreur"),
-                                      QStringLiteral("Échec de la suppression : ") + q.lastError().text());
-                return;
-            }
-        }
-        finChargerTransactionsDepuisOracle();
-        TransSecure::logTransaction("SUPPRESSION", transactionId,
-                                    finTransactionsMap.contains(transactionId) ? finTransactionsMap[transactionId].type : "—",
-                                    finTransactionsMap.contains(transactionId) ? finTransactionsMap[transactionId].montant : 0.0,
-                                    finTransactionsMap.contains(transactionId) ? finTransactionsMap[transactionId].date : "—",
-                                    finTransactionsMap.contains(transactionId) ? finTransactionsMap[transactionId].categorie : "—",
-                                    finTransactionsMap.contains(transactionId) ? finTransactionsMap[transactionId].statut : "—",
-                                    finTransactionsMap.contains(transactionId) ? finTransactionsMap[transactionId].projet : "—");
-        QMessageBox::information(this, "Succès", "Transaction supprimée");
+    // Si une procédure est déjà en cours
+    if (m_kepadDelete && m_kepadDelete->enCours()) {
+        QMessageBox::warning(this, "Procédure en cours",
+            "Une suppression est déjà en attente de validation\n"
+            "sur le clavier du Directeur Général.");
+        return;
     }
+
+    // Confirmation initiale avant d'envoyer le mail
+    int rep = QMessageBox::question(this, "Suppression sécurisée",
+        QString("Un code de confirmation va être envoyé par email\n"
+                "au Directeur Général.\n\n"
+                "Voulez-vous procéder à la suppression de la\n"
+                "transaction #%1 ?").arg(transactionId),
+        QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+    if (rep != QMessageBox::Yes) return;
+
+    // Démarrer la procédure sécurisée : mail OTP + attente saisie clavier
+    if (m_kepadDelete)
+        m_kepadDelete->demanderSuppression(transactionId, m_dgEmail);
 }
 
 // ============================================================================
@@ -1185,18 +1416,26 @@ void FinStatistiquesDialog::setupUI() {
 
 void FinStatistiquesDialog::calculerStatistiques() {
     double totalRecettes = 0, totalDepenses = 0;
+
+    // Même logique que dans handleFinBtnExportClicked :
+    // Recette = Subvention ou Remboursement, le reste = Dépense
+    auto estRecette = [](const QString &type) -> bool {
+        const QString t = type.trimmed().toLower();
+        return t == QLatin1String("subvention") || t == QLatin1String("remboursement");
+    };
+
     for (const TransactionData &t : m_transactions) {
-        if (t.type == "Recette")
+        if (estRecette(t.type))
             totalRecettes += t.montant;
         else
             totalDepenses += t.montant;
     }
     double solde = totalRecettes - totalDepenses;
 
-    if (labelTotalRecettes) labelTotalRecettes->setText(QString::number(totalRecettes, 'f', 2) + " €");
-    if (labelTotalDepenses) labelTotalDepenses->setText(QString::number(totalDepenses, 'f', 2) + " €");
+    if (labelTotalRecettes) labelTotalRecettes->setText(QString::number(totalRecettes, 'f', 2) + " TND");
+    if (labelTotalDepenses) labelTotalDepenses->setText(QString::number(totalDepenses, 'f', 2) + " TND");
     if (labelSolde) {
-        labelSolde->setText(QString::number(solde, 'f', 2) + " €");
+        labelSolde->setText(QString::number(solde, 'f', 2) + " TND");
         labelSolde->setStyleSheet(QString("font-size: 28px; font-weight: bold; color: %1;")
             .arg(solde >= 0 ? "#10b981" : "#ef4444"));
     }
@@ -1204,9 +1443,15 @@ void FinStatistiquesDialog::calculerStatistiques() {
 }
 
 void FinStatistiquesDialog::creerGraphiques() {
+    // Même logique que dans handleFinBtnExportClicked
+    auto estRecette = [](const QString &type) -> bool {
+        const QString t = type.trimmed().toLower();
+        return t == QLatin1String("subvention") || t == QLatin1String("remboursement");
+    };
+
     double totalRecettes = 0, totalDepenses = 0;
     for (const TransactionData &t : m_transactions) {
-        if (t.type == "Recette") totalRecettes += t.montant;
+        if (estRecette(t.type)) totalRecettes += t.montant;
         else totalDepenses += t.montant;
     }
 
@@ -1214,25 +1459,30 @@ void FinStatistiquesDialog::creerGraphiques() {
     if (totalRecettes > 0) seriesType->append("Recettes", totalRecettes);
     if (totalDepenses > 0) seriesType->append("Dépenses", totalDepenses);
     if (seriesType->count() > 0) {
-        seriesType->slices().at(0)->setColor(QColor("#10b981"));
-        if (seriesType->count() > 1) seriesType->slices().at(1)->setColor(QColor("#ef4444"));
-        for (int i = 0; i < seriesType->count(); ++i) {
-            seriesType->slices().at(i)->setLabelVisible(true);
-            seriesType->slices().at(i)->setLabel(QString("%1%").arg(
-                seriesType->slices().at(i)->percentage() * 100, 0, 'f', 1));
+        int idx = 0;
+        for (auto *slice : seriesType->slices()) {
+            slice->setColor(idx == 0 && totalRecettes > 0
+                            ? QColor("#10b981") : QColor("#ef4444"));
+            slice->setLabelVisible(true);
+            slice->setLabel(QString("%1\n%2%")
+                            .arg(slice->label())
+                            .arg(slice->percentage() * 100, 0, 'f', 1));
+            ++idx;
         }
     }
 
     QChart *chartType = new QChart();
     chartType->addSeries(seriesType);
+    chartType->setTitle(QStringLiteral("Recettes vs Dépenses"));
     chartType->setAnimationOptions(QChart::SeriesAnimations);
     chartType->setBackgroundBrush(QBrush(QColor("transparent")));
     chartType->legend()->setVisible(true);
+    chartType->legend()->setAlignment(Qt::AlignBottom);
     chartTypeView->setChart(chartType);
 
     QMap<QString, double> montantsParProjet;
     for (const TransactionData &t : m_transactions) {
-        double sgn = (t.type == "Recette") ? 1.0 : -1.0;
+        double sgn = estRecette(t.type) ? 1.0 : -1.0;
         montantsParProjet[t.projet] += sgn * t.montant;
     }
 
@@ -1248,6 +1498,7 @@ void FinStatistiquesDialog::creerGraphiques() {
 
     QChart *chartProjet = new QChart();
     chartProjet->addSeries(barSeries);
+    chartProjet->setTitle(QStringLiteral("Solde par Projet (TND)"));
     chartProjet->setAnimationOptions(QChart::SeriesAnimations);
     chartProjet->setBackgroundBrush(QBrush(QColor("transparent")));
 
@@ -1257,10 +1508,12 @@ void FinStatistiquesDialog::creerGraphiques() {
     barSeries->attachAxis(axisX);
 
     QValueAxis *axisY = new QValueAxis();
+    axisY->setTitleText(QStringLiteral("Montant (TND)"));
     chartProjet->addAxis(axisY, Qt::AlignLeft);
     barSeries->attachAxis(axisY);
 
-    chartProjet->legend()->setVisible(false);
+    chartProjet->legend()->setVisible(true);
+    chartProjet->legend()->setAlignment(Qt::AlignBottom);
     chartProjetView->setChart(chartProjet);
 }
 

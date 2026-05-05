@@ -321,6 +321,51 @@ void loop() {
         afficherAttente();
     }
 
+<<<<<<< HEAD
+    if (displayActive) return;
+
+    // ── ATTENTE REPONSE Qt (non-bloquant) ────────────────────────────
+    if (attendReponse) {
+
+        // Lecture caractere par caractere, non-bloquante
+=======
+    // ── LECTURE OUVRIR_PORTE — priorité haute, même pendant displayActive ──
+    // Qt envoie OUVRIR_PORTE juste après ENTREE/SORTIE. Il peut arriver
+    // pendant que displayActive est true (affichage LCD en cours).
+    // On le traite ici avant le return displayActive.
+    if (!attendReponse && Serial.available() > 0) {
+>>>>>>> b4543ea (integration des scenario)
+        while (Serial.available() > 0) {
+            char c = (char)Serial.read();
+            if (c == '\n') {
+                serialBuffer.trim();
+<<<<<<< HEAD
+                String resp = serialBuffer;
+                serialBuffer = "";
+
+                traiterReponse(resp);
+                attendReponse = false;
+
+                // Vider les residus serie (sans delay)
+                drainSerialBuffer();
+                return;
+
+=======
+                String cmd = serialBuffer;
+                serialBuffer = "";
+                if (cmd == "OUVRIR_PORTE") {
+                    ouvrirPorte();
+                }
+                break;
+>>>>>>> b4543ea (integration des scenario)
+            } else if (c != '\r') {
+                serialBuffer += c;
+            }
+        }
+<<<<<<< HEAD
+=======
+    }
+
     if (displayActive) return;
 
     // ── ATTENTE REPONSE Qt (non-bloquant) ────────────────────────────
@@ -337,14 +382,15 @@ void loop() {
                 traiterReponse(resp);
                 attendReponse = false;
 
-                // Vider les residus serie (sans delay)
-                drainSerialBuffer();
+                // Ne PAS drainer : OUVRIR_PORTE suit immédiatement
+                // et sera traité au prochain cycle via la section prioritaire
                 return;
 
             } else if (c != '\r') {
                 serialBuffer += c;
             }
         }
+>>>>>>> b4543ea (integration des scenario)
 
         // Timeout
         if (millis() - heureEnvoi > TIMEOUT_REPONSE_MS) {
@@ -445,7 +491,11 @@ void traiterReponse(String resp) {
     lcd.clear();
 
     if (resp.startsWith("ENTREE:")) {
+<<<<<<< HEAD
         // ── Acces autorise — ENTREE ───────────────────────────────────
+=======
+        // ── Accès autorisé — ENTRÉE : affichage LCD + buzzer uniquement ──
+>>>>>>> b4543ea (integration des scenario)
         String nom = resp.substring(7);
         nom.trim();
         if ((int)nom.length() > 16) nom = nom.substring(0, 16);
@@ -454,6 +504,7 @@ void traiterReponse(String resp) {
         lcd.setCursor(0, 0); lcd.print(centrer("Bienvenue !"));
         lcd.setCursor(0, 1); lcd.print(centrer(nom));
 
+<<<<<<< HEAD
         // Ouvrir la porte
         ouvrirPorte();
 
@@ -463,6 +514,14 @@ void traiterReponse(String resp) {
 
     } else if (resp.startsWith("SORTIE:")) {
         // ── Acces autorise — SORTIE ───────────────────────────────────
+=======
+        // 2 bips courts = accès autorisé (servo commandé par OUVRIR_PORTE)
+        unsigned int bipOk[] = {100, 100, 100, 0};
+        demarrerBips(bipOk);
+
+    } else if (resp.startsWith("SORTIE:")) {
+        // ── Accès autorisé — SORTIE : affichage LCD + buzzer uniquement ──
+>>>>>>> b4543ea (integration des scenario)
         String nom = resp.substring(7);
         nom.trim();
         if ((int)nom.length() > 16) nom = nom.substring(0, 16);
@@ -471,6 +530,7 @@ void traiterReponse(String resp) {
         lcd.setCursor(0, 0); lcd.print(centrer("A bientot !"));
         lcd.setCursor(0, 1); lcd.print(centrer(nom));
 
+<<<<<<< HEAD
         // Ouvrir la porte
         ouvrirPorte();
 
@@ -480,10 +540,19 @@ void traiterReponse(String resp) {
 
     } else if (resp == "REFUSE") {
         // ── Acces refuse ──────────────────────────────────────────────
+=======
+        // 2 bips courts = accès autorisé (servo commandé par OUVRIR_PORTE)
+        unsigned int bipOk[] = {100, 100, 100, 0};
+        demarrerBips(bipOk);
+
+    } else if (resp == "REFUSE") {
+        // ── Accès refusé ──────────────────────────────────────────────
+>>>>>>> b4543ea (integration des scenario)
         digitalWrite(LED_ROUGE, HIGH);
         lcd.setCursor(0, 0); lcd.print(centrer("Acces refuse"));
         lcd.setCursor(0, 1); lcd.print(centrer("Non autorise"));
 
+<<<<<<< HEAD
         // 1 bip long = acces refuse
         unsigned int bipRefus[] = {500, 0};
         demarrerBips(bipRefus);
@@ -492,6 +561,16 @@ void traiterReponse(String resp) {
 
     } else {
         // ── Reponse inconnue ──────────────────────────────────────────
+=======
+        // 1 bip long = accès refusé
+        unsigned int bipRefus[] = {500, 0};
+        demarrerBips(bipRefus);
+
+        // Porte reste fermée
+
+    } else {
+        // ── Réponse inconnue ──────────────────────────────────────────
+>>>>>>> b4543ea (integration des scenario)
         digitalWrite(LED_ROUGE, HIGH);
         lcd.setCursor(0, 0); lcd.print("Erreur comm.");
         lcd.setCursor(0, 1); lcd.print("Reessayez...");

@@ -1,4 +1,4 @@
-﻿#include "smartpub.h"
+#include "smartpub.h"
 #include "ui_smartpub.h"
 #include "connection.h"
 #include "scoringengine.h"
@@ -182,8 +182,8 @@ void SmartPub::labSetupUI()
     // TABLE
     labTable = new QTableWidget();
     labTable->setObjectName("labTable");
-    labTable->setColumnCount(7);
-    labTable->setHorizontalHeaderLabels({"ID", "Nom", "Thématique", "Budget (€)", "Capacité", "Statut", "Directeur"});
+    labTable->setColumnCount(8);
+    labTable->setHorizontalHeaderLabels({"ID", "Nom", "Thématique", "Budget (€)", "Capacité", "Statut", "Directeur", "Porte"});
     labTable->setColumnHidden(0, true);
     labTable->horizontalHeader()->setStretchLastSection(true);
     labTable->horizontalHeader()->setSectionResizeMode(1, QHeaderView::Stretch);
@@ -415,7 +415,7 @@ void SmartPub::labChargerDonnees()
     QSqlDatabase db = Connection::instance()->getDatabase();
     if (db.isOpen()) {
         QSqlQuery q(db);
-        if (q.exec("SELECT ID_LABORATOIRE, NOM, THEMATIQUE, DISPONIBILITE, ADRESSE, ID_PROJET FROM LABORATOIRE ORDER BY ID_LABORATOIRE")) {
+        if (q.exec("SELECT ID_LABORATOIRE, NOM, THEMATIQUE, DISPONIBILITE, ADRESSE, ID_PROJET, ETAT_PORTE FROM LABORATOIRE ORDER BY ID_LABORATOIRE")) {
             while (q.next()) {
                 LaboratoryData lab;
                 lab.id         = q.value("ID_LABORATOIRE").toInt();
@@ -427,6 +427,7 @@ void SmartPub::labChargerDonnees()
                 lab.capacite   = 0;
                 lab.equipements.clear();
                 lab.directeur.clear();
+                lab.etatPorte  = q.value("ETAT_PORTE").toInt() == 1;
                 labDataMap.insert(lab.id, lab);
                 if (lab.id >= labNextId) labNextId = lab.id + 1;
             }
@@ -467,6 +468,12 @@ void SmartPub::labAfficherListe(const QList<LaboratoryData> &labs)
         labTable->setItem(row, 5, statutItem);
 
         labTable->setItem(row, 6, new QTableWidgetItem(lab.directeur.isEmpty() ? "—" : lab.directeur));
+
+        // Colonne Porte — état physique (ETAT_PORTE)
+        QTableWidgetItem *porteItem = new QTableWidgetItem(lab.etatPorte ? "🟢 Ouvert" : "🔴 Fermé");
+        porteItem->setForeground(lab.etatPorte ? QColor("#10b981") : QColor("#ef4444"));
+        porteItem->setTextAlignment(Qt::AlignCenter);
+        labTable->setItem(row, 7, porteItem);
 
         // Stocker l'id dans UserRole
         labTable->item(row, 0)->setData(Qt::UserRole, lab.id);
@@ -1093,13 +1100,22 @@ void SmartPub::on_labTableItemClicked(int row, int /*column*/)
     qDebug() << "[SmartPub] Clic laboratoire ID :" << id_labo
              << "— déclenchement capteur DHT11";
 
+<<<<<<< HEAD
     if (scenarioIncendie)
         scenarioIncendie->activerPourLabo(id_labo);
+=======
+    if (scenarioProgramme)
+        scenarioProgramme->activerPourLabo(id_labo);
+>>>>>>> b4543ea (integration des scenario)
 }
 
 // ============================================================================
 // on_laboDesactive()
+<<<<<<< HEAD
 // Slot connecté au signal DemiScenario3::laboDesactive(int).
+=======
+// Slot connecté au signal Scenario2::laboDesactive(int).
+>>>>>>> b4543ea (integration des scenario)
 // Met à jour labDataMap et rafraîchit la table en temps réel.
 // ============================================================================
 void SmartPub::on_laboDesactive(int id_labo)

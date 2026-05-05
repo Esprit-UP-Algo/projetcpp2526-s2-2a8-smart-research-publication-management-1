@@ -6,12 +6,13 @@
 // ============================================================================
 // Constructeur
 // ============================================================================
-Scenario1::Scenario1(Arduino* arduino, int id_laboratoire)
-    : arduino(arduino), id_lab(id_laboratoire)
+Scenario1::Scenario1(Arduino* arduino, int id_laboratoire, QObject* parent)
+    : QObject(parent), arduino(arduino), id_lab(id_laboratoire)
 {
 }
 
 // ============================================================================
+<<<<<<< HEAD
 // processMessage()
 // Point d'entrée unique — appelé depuis readyRead() dans smartpub.cpp.
 //
@@ -27,6 +28,65 @@ Scenario1::Scenario1(Arduino* arduino, int id_laboratoire)
 // ============================================================================
 void Scenario1::processMessage()
 {
+=======
+// processLine()
+// Variante de processMessage() qui accepte une ligne déjà lue.
+// Utilisée depuis smartpub.cpp qui lit la ligne une seule fois pour
+// le dispatch multi-scénario.
+// ============================================================================
+void Scenario1::processLine(const QString& line)
+{
+    if (m_enTraitement)
+        return;
+    m_enTraitement = true;
+
+    QString message = line;
+    message.remove(QChar('\0'));
+    message = message.trimmed();
+
+    qDebug() << "[Scenario1] Reçu de l'Arduino :" << message;
+
+    if (message.startsWith("RFID:", Qt::CaseInsensitive)) {
+        const QString uid = message.mid(5).trimmed();
+        if (uid.isEmpty()) {
+            denyAccess();
+        } else {
+            handleRfid(uid);
+        }
+    } else if (message == "PORTE_OUVERTE") {
+        qDebug() << "[Scenario1] Porte ouverte — mise à jour ETAT_PORTE = 1 pour labo ID :" << id_lab;
+        if (!mettreAJourEtatPorte(true))
+            qDebug() << "[Scenario1] Erreur mise à jour ETAT_PORTE (ouverture) !";
+    } else if (message == "PORTE_FERMEE") {
+        qDebug() << "[Scenario1] Porte fermée — mise à jour ETAT_PORTE = 0 pour labo ID :" << id_lab;
+        if (!mettreAJourEtatPorte(false))
+            qDebug() << "[Scenario1] Erreur mise à jour ETAT_PORTE (fermeture) !";
+    } else {
+        qDebug() << "[Scenario1] Message non reconnu, ignoré :" << message;
+    }
+
+    m_enTraitement = false;
+}
+
+// ============================================================================
+// processMessage()
+// Point d'entrée legacy — lit lui-même une ligne depuis l'Arduino.
+// Conservé pour compatibilité mais processLine() est préféré.
+// ============================================================================
+//
+// Lit UNE ligne du buffer série Arduino et dispatche selon le préfixe :
+//   "RFID:<uid>"    → handleRfid() — flux accès chercheur complet
+//   "PORTE_OUVERTE" → mettreAJourEtatPorte(true)  — servo ouvert
+//   "PORTE_FERMEE"  → mettreAJourEtatPorte(false) — servo fermé
+//   autres          → ignoré (messages debug Arduino, etc.)
+//
+// La garde m_enTraitement empêche la réentrance si readyRead() est
+// émis pendant le traitement d'une requête SQL (cas rare mais possible
+// avec certains drivers Qt sur Windows).
+// ============================================================================
+void Scenario1::processMessage()
+{
+>>>>>>> b4543ea (integration des scenario)
     // ── Garde anti-réentrance ─────────────────────────────────────────
     if (m_enTraitement)
         return;
@@ -131,11 +191,18 @@ void Scenario1::handleRfid(const QString& uid)
             // On autorise quand même la sortie physique
         }
 
-        m_lastGranted   = true;
-        m_lastIsEntree  = false;
-        m_lastNomPrenom = nom + " " + prenom;
+        m_lastGranted      = true;
+        m_lastIsEntree     = false;
+        m_lastNomPrenom    = nom + " " + prenom;
+        m_pendingNomPrenom = m_lastNomPrenom;
+        m_pendingIsEntree  = false;
 
+<<<<<<< HEAD
         // Envoie "SORTIE:<nom>" → Arduino ouvre servo + 2 bips verts
+=======
+        // Envoie "SORTIE:<nom>" → Arduino affiche LCD + buzzer (sans servo)
+        // Puis envoie "OUVRIR_PORTE" → Arduino actionne le servo
+>>>>>>> b4543ea (integration des scenario)
         grantExit(nom, prenom);
 
     } else {
@@ -146,11 +213,18 @@ void Scenario1::handleRfid(const QString& uid)
             qDebug() << "[Scenario1] Erreur lors de l'enregistrement de l'entrée !";
         }
 
-        m_lastGranted   = true;
-        m_lastIsEntree  = true;
-        m_lastNomPrenom = nom + " " + prenom;
+        m_lastGranted      = true;
+        m_lastIsEntree     = true;
+        m_lastNomPrenom    = nom + " " + prenom;
+        m_pendingNomPrenom = m_lastNomPrenom;
+        m_pendingIsEntree  = true;
 
+<<<<<<< HEAD
         // Envoie "ENTREE:<nom>" → Arduino ouvre servo + 2 bips verts
+=======
+        // Envoie "ENTREE:<nom>" → Arduino affiche LCD + buzzer (sans servo)
+        // Puis envoie "OUVRIR_PORTE" → Arduino actionne le servo
+>>>>>>> b4543ea (integration des scenario)
         grantEntry(nom, prenom);
     }
 }
@@ -370,6 +444,11 @@ bool Scenario1::enregistrerSortie(int id_chercheur)
 //
 // Appelée depuis processMessage() quand l'Arduino envoie "PORTE_OUVERTE"
 // ou "PORTE_FERMEE" après actionnement du servo SG90.
+<<<<<<< HEAD
+=======
+// Émet le signal porteStatusChanged pour que SmartPub affiche le popup
+// et rafraîchisse la table laboratoires.
+>>>>>>> b4543ea (integration des scenario)
 // ============================================================================
 bool Scenario1::mettreAJourEtatPorte(bool etatOuvert)
 {
@@ -395,32 +474,55 @@ bool Scenario1::mettreAJourEtatPorte(bool etatOuvert)
     qDebug() << "[Scenario1] ETAT_PORTE mis à jour :"
              << (etatOuvert ? "OUVERT (1)" : "FERME (0)")
              << "pour labo ID :" << id_lab;
+<<<<<<< HEAD
+=======
+
+    // Émettre le signal vers SmartPub pour popup + rafraîchissement table
+    emit porteStatusChanged(etatOuvert, m_pendingNomPrenom, m_pendingIsEntree);
+
+    // Réinitialiser le nom en attente après fermeture
+    if (!etatOuvert)
+        m_pendingNomPrenom.clear();
+
+>>>>>>> b4543ea (integration des scenario)
     return true;
 }
 
 // ============================================================================
 // Accès autorisé — ENTRÉE
+<<<<<<< HEAD
 // Envoie "ENTREE:<Nom Prenom>" à l'Arduino
 // L'Arduino actionne le servo (ouverture porte) + 2 bips courts
+=======
+// Envoie "ENTREE:<Nom Prenom>" → Arduino affiche LCD + 2 bips (sans servo)
+// Puis envoie "OUVRIR_PORTE"  → Arduino actionne le servo SG90
+>>>>>>> b4543ea (integration des scenario)
 // ============================================================================
 void Scenario1::grantEntry(const QString& nom, const QString& prenom)
 {
     const QString nomPrenom = (nom + " " + prenom).left(32)
         .replace('\n', ' ').replace('\r', ' ');
     arduino->write_to_arduino(QString("ENTREE:%1\n").arg(nomPrenom).toUtf8());
+    arduino->write_to_arduino("OUVRIR_PORTE\n");
     qDebug() << "[Scenario1] >>> ENTREE AUTORISÉE —" << nomPrenom;
 }
 
 // ============================================================================
 // Accès autorisé — SORTIE
+<<<<<<< HEAD
 // Envoie "SORTIE:<Nom Prenom>" à l'Arduino
 // L'Arduino actionne le servo (ouverture porte) + 2 bips courts
+=======
+// Envoie "SORTIE:<Nom Prenom>" → Arduino affiche LCD + 2 bips (sans servo)
+// Puis envoie "OUVRIR_PORTE"  → Arduino actionne le servo SG90
+>>>>>>> b4543ea (integration des scenario)
 // ============================================================================
 void Scenario1::grantExit(const QString& nom, const QString& prenom)
 {
     const QString nomPrenom = (nom + " " + prenom).left(32)
         .replace('\n', ' ').replace('\r', ' ');
     arduino->write_to_arduino(QString("SORTIE:%1\n").arg(nomPrenom).toUtf8());
+    arduino->write_to_arduino("OUVRIR_PORTE\n");
     qDebug() << "[Scenario1] >>> SORTIE AUTORISÉE —" << nomPrenom;
 }
 

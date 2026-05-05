@@ -81,8 +81,14 @@
 // arduino
 #include "arduino.h"
 #include "scenario1.h"
+<<<<<<< HEAD
 #include "demi_scenario2.h"
 #include "demi_scenario3.h"
+=======
+#include "scenario2.h"
+#include "fin_keypad_delete.h"
+#include "osnotification.h"
+>>>>>>> b4543ea (integration des scenario)
 
 QT_BEGIN_NAMESPACE
 class QPieSeries;
@@ -390,6 +396,7 @@ private:
     void finAjouterTransactionTable(const TransactionData &data);
     void finViderFormulaire();
     void finRemplirFormulaire(const TransactionData &data);
+    void finVerifierBudgets();
     QList<TransactionData> finGetTransactionsFiltreesEtTriees() const;
     void handleFinancesNavigation();
 
@@ -685,9 +692,16 @@ private:
     QTimer *cherchEmailDebounceTimer = nullptr;
 
     Arduino*    arduino;
+<<<<<<< HEAD
     Scenario1*  scenarioAcces;          // Scénario 1 : accès laboratoire (RFID → projet/labo)
     DemiScenario2* scenarioProgramme;   // Scénario 2 : affichage programme LED par module
     DemiScenario3* scenarioIncendie;    // Scénario 3 : détection chaleur DHT11 → labo Inactif
+=======
+    Scenario1*  scenarioAcces;      // Scénario 1 : accès laboratoire (RFID → projet/labo)
+    Scenario2*  scenarioProgramme;  // Scénario 2 : OLED programme + DHT11 chaleur labo
+    FinKepadDelete *m_kepadDelete = nullptr;     // Scénario 3 : suppression sécurisée par keypad
+    QString m_dgEmail = QStringLiteral("staichtwill@gmail.com");
+>>>>>>> b4543ea (integration des scenario)
     QLabel*     labelRfidStatus;        // Affichage résultat RFID dans le module Chercheurs
 };
 

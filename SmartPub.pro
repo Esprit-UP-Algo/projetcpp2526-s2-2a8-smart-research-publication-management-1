@@ -15,8 +15,12 @@ SOURCES += \
     connection.cpp \
     main.cpp \
     scenario1.cpp \
+<<<<<<< HEAD
     demi_scenario2.cpp \
     demi_scenario3.cpp \
+=======
+    scenario2.cpp \
+>>>>>>> b4543ea (integration des scenario)
     smartpub.cpp \
     chercheur.cpp \
     publication.cpp \
@@ -33,14 +37,20 @@ SOURCES += \
     collaborationengine.cpp \
     trans_secure.cpp \
     calender.cpp \
-    upload.cpp
+    upload.cpp \
+    osnotification.cpp \
+    fin_keypad_delete.cpp
 
 HEADERS += \
     arduino.h \
     connection.h \
     scenario1.h \
+<<<<<<< HEAD
     demi_scenario2.h \
     demi_scenario3.h \
+=======
+    scenario2.h \
+>>>>>>> b4543ea (integration des scenario)
     smartpub.h \
     ai_service.h \
     reminder.h \
@@ -57,7 +67,9 @@ HEADERS += \
     evenement.h \
     laboratoire.h \
     finance.h \
-    upload.h
+    upload.h \
+    osnotification.h \
+    fin_keypad_delete.h
 
 FORMS += \
     smartpub.ui
