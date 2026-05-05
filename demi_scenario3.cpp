@@ -6,6 +6,10 @@
 #include <QSqlError>
 #include <QDebug>
 
+
+
+//-------------------------------
+
 // ============================================================================
 // Constructeur
 // Se connecte directement sur readyRead() du QSerialPort avec son propre

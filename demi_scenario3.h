@@ -4,7 +4,11 @@
 // ============================================================================
 // DEMI_SCENARIO3 — Détection chaleur laboratoire via capteur DHT11
 //                  Passage automatique du statut laboratoire : Actif → Inactif
+
 //
+
+//-------------------------------------------------------------------------------
+
 // Flux :
 //   1. L'utilisateur clique sur un laboratoire dans l'interface Qt.
 //   2. activerPourLabo(id) envoie "START:<id>\n" à l'Arduino via le port série.
